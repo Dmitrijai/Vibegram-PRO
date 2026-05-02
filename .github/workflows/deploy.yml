@@ -1,0 +1,55 @@
+# Этот файл автоматически собирает и публикует ваш мессенджер в GitHub Pages
+name: Deploy React app to GitHub Pages
+
+on:
+  push:
+    branches: ["main", "master"] # Запуск при пуше в ветку main или master
+  workflow_dispatch: # Позволяет запускать сборку вручную из интерфейса GitHub
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Загрузка исходного кода
+        uses: actions/checkout@v4
+
+      - name: Установка Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: 'npm'
+        env:
+          FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+      - name: Установка зависимостей
+        run: npm install
+
+      - name: Сборка проекта (Build)
+        run: npm run build
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          HF_API_KEY: ${{ secrets.HF_API_KEY }}
+
+      - name: Настройка GitHub Pages
+        uses: actions/configure-pages@v4
+
+      - name: Загрузка собранных файлов (Upload artifact)
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: './dist' # Папка, которую создает команда npm run build
+
+      - name: Публикация в GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
