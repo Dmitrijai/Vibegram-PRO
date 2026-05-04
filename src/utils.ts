@@ -408,25 +408,25 @@ export async function softDeleteCloudinaryFile(fileUrl: string): Promise<boolean
     }
 }
 
-export async function uploadToCloudinary(file: File | Blob, isAvatar = false, abortSignal?: AbortSignal): Promise<string> {
-    const cloudName = process.env.CLOUDINARY_CLOUD_NAME || import.meta.env.VITE_CLOUDINARY_CLOUD_NAME || '';
-    if (!cloudName) {
-        throw new Error("Не настроен Cloudinary (CLOUDINARY_CLOUD_NAME отсутствует)");
-    }
-    const formData = new FormData();
-    formData.append('file', file);
-    formData.append('upload_preset', import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET || 'vibegram_media');
-
+export async function uploadToCloudinary(file: File | Blob, isAvatar = false, abortSignal?: AbortSignal, targetBucket?: string): Promise<string> {
     try {
+        const sigRes = await fetch('/api/cloudinary/sign', { method: 'POST' });
+        if (!sigRes.ok) throw new Error('Failed to get upload signature');
+        const { timestamp, signature, cloudName, apiKey } = await sigRes.json();
+
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('api_key', apiKey);
+        formData.append('timestamp', timestamp);
+        formData.append('signature', signature);
+        
         const res = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/auto/upload`, {
             method: 'POST',
             body: formData,
             signal: abortSignal
         });
         
-        if (!res.ok) {
-            throw new Error(`Cloudinary upload error: ${await res.text()}`);
-        }
+        if (!res.ok) throw new Error(`Cloudinary upload error: ${await res.text()}`);
         
         const data = await res.json();
         let url = data.secure_url;
@@ -437,10 +437,8 @@ export async function uploadToCloudinary(file: File | Blob, isAvatar = false, ab
              if (isAvatar && data.resource_type === 'image') {
                  transformations += ',c_fill,g_face,w_256,h_256';
              } else if (data.resource_type === 'video') {
-                 // Compressed video
                  transformations += ',w_800,c_limit';
              } else if (data.resource_type === 'image') {
-                 // Compressed image max width
                  transformations += ',w_1600,c_limit';
              }
              url = url.replace('/upload/', `/upload/${transformations}/`);

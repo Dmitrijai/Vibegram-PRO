@@ -182,7 +182,7 @@ export async function loadChats() {
             const unreadCount = chat.messages ? chat.messages.filter((m: any) => !m.is_read && m.sender_id !== state.currentUser.id).length : 0;
             const unreadBadge = unreadCount > 0 ? `<div class="bg-blue-500 text-white text-[11px] font-bold px-1.5 py-0.5 rounded-full min-w-[20px] text-center ml-2 shrink-0">${unreadCount}</div>` : '';
 
-            const isMuted = (state.currentUser?.settings?.muted_chats || []).includes(chat.id);
+            const isMuted = (state.currentProfile?.settings?.muted_chats || []).includes(chat.id);
             const muteBadge = isMuted ? `<svg class="w-3.5 h-3.5 text-gray-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h2.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z m7.414-2l4 4m0-4l-4 4m8-8l-4 4m0-4l4 4"></path></svg>` : '';
 
             const otherUserProfile = !isGroup ? chat.chat_members?.find((m: any) => m.user_id !== state.currentUser.id)?.profiles : null;

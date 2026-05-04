@@ -874,13 +874,29 @@ async function actuallySend(text: string, files: File[], input: HTMLTextAreaElem
             else messageType = 'document';
         }
 
-        const { data: insertedMsg, error } = await supabase.from('messages').insert({
+        let insertedMsg: any;
+        let dbError: any;
+        
+        const { data: msg1, error: err1 } = await supabase.from('messages').insert({
             chat_id: state.activeChatId, sender_id: state.currentUser.id, content: text, media: mediaArr,
             message_type: messageType,
             parent_id: state.replyingTo ? state.replyingTo.id : null
         }).select('*, profiles:sender_id(*)').single();
         
-        if (error) throw error;
+        if (err1 && err1.message && err1.message.includes('messages_message_type_check')) {
+            const { data: msg2, error: err2 } = await supabase.from('messages').insert({
+                chat_id: state.activeChatId, sender_id: state.currentUser.id, content: text, media: mediaArr,
+                message_type: 'text',
+                parent_id: state.replyingTo ? state.replyingTo.id : null
+            }).select('*, profiles:sender_id(*)').single();
+            insertedMsg = msg2;
+            dbError = err2;
+        } else {
+            insertedMsg = msg1;
+            dbError = err1;
+        }
+        
+        if (dbError) throw dbError;
 
         cancelReply();
         delete (window as any).pendingUploads[tempId];
@@ -904,7 +920,7 @@ async function actuallySend(text: string, files: File[], input: HTMLTextAreaElem
         } else {
             console.error('Error sending message:', err);
             document.getElementById(tempId)?.remove();
-            customAlert('Ошибка при отправке сообщения');
+            customAlert('Ошибка при отправке: ' + (err.message || JSON.stringify(err)));
         }
     }
     

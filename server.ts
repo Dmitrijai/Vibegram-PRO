@@ -91,6 +91,21 @@ async function startServer() {
     }
   });
 
+  // API Route for upload signature
+  app.post("/api/cloudinary/sign", async (req, res) => {
+    try {
+      const timestamp = Math.round((new Date()).getTime() / 1000);
+      const paramsToSign = {
+        timestamp: timestamp
+      };
+      const signature = cloudinary.utils.api_sign_request(paramsToSign, process.env.CLOUDINARY_API_SECRET!);
+      res.json({ timestamp, signature, cloudName: process.env.CLOUDINARY_CLOUD_NAME, apiKey: process.env.CLOUDINARY_API_KEY });
+    } catch (error: any) {
+      console.error("Cloudinary sign error: ", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
       server: { middlewareMode: true },
