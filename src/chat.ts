@@ -73,9 +73,10 @@ export async function loadChats() {
         list.innerHTML = '';
         chats.forEach((chat: any) => {
             let isGroup = chat.type === 'group' || chat.type === 'channel';
+            let isSavedMsgs = !isGroup && (!chat.chat_members || chat.chat_members.filter((m: any) => m.user_id !== state.currentUser.id).length === 0);
             
             // Skip empty direct chats (ghost chats) unless it's currently active or it's saved messages
-            if ((chat.type === 'direct' || chat.type === 'private') && (!chat.messages || chat.messages.length === 0) && chat.id !== state.activeChatId && chat.id !== 'new_saved_messages') {
+            if ((chat.type === 'direct' || chat.type === 'private') && (!chat.messages || chat.messages.length === 0) && chat.id !== state.activeChatId && chat.id !== 'new_saved_messages' && !isSavedMsgs) {
                 return;
             }
 
