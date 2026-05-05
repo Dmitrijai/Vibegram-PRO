@@ -260,7 +260,7 @@ export async function deleteMessage(messageId: string) {
     if (msg?.media && Array.isArray(msg.media)) {
         const utils = await import('./utils');
         for (const file of msg.media) {
-            if (file.url && file.url.includes('cloudinary.com')) {
+            if (file.url) {
                 await utils.softDeleteCloudinaryFile(file.url);
             }
         }

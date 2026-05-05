@@ -322,6 +322,9 @@ function finalizeAppSetup() {
             document.documentElement.style.setProperty('--msg-text-size', `${textSize}px`);
             
             const chatBg = state.currentProfile?.settings?.chatBg;
+            try {
+                if (chatBg) localStorage.setItem('chatBg', chatBg);
+            } catch(e) {}
             const chatContainer = document.getElementById('chat-area');
             if (chatContainer) {
                 chatContainer.className = chatContainer.className.replace(/bg-premium-\d|bg-anim-\d|bg-pattern-dots|chat-bg/g, '').trim();

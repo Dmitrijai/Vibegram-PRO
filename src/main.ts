@@ -327,6 +327,10 @@ function setupRealtime() {
                     chatContainer.className = chatContainer.className.replace(/bg-premium-\d|bg-anim-\d|bg-pattern-dots|chat-bg/g, '').trim();
                     if (settings.chatBg && settings.chatBg !== 'default') {
                         chatContainer.classList.add(settings.chatBg);
+                        try { localStorage.setItem('chatBg', settings.chatBg); } catch(e) {}
+                    } else {
+                        chatContainer.classList.add('chat-bg');
+                        try { localStorage.setItem('chatBg', 'default'); } catch(e) {}
                     }
                 }
                 

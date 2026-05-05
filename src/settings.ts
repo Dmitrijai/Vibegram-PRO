@@ -414,6 +414,10 @@ export async function saveSettings() {
     
     const oldSettings = state.currentProfile?.settings || {};
     const newSettings = { ...oldSettings, notifications: notif, privacy, theme, textSize, chatBg };
+    
+    try {
+        localStorage.setItem('chatBg', chatBg);
+    } catch(e) {}
     if (paid_message_price !== undefined) {
         newSettings.paid_message_price = paid_message_price < 0 ? 0 : paid_message_price;
     }
