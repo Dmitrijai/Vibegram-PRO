@@ -280,3 +280,33 @@ export function copyMessageText(content: string) {
     closeAllMessageMenus();
     customToast('Текст скопирован');
 }
+
+export async function toggleCommentsEnabled(messageId: string) {
+    const { data: msg } = await supabase.from('messages').select('media').eq('id', messageId).single();
+    if (!msg) return;
+    
+    let media = msg.media || [];
+    const hasComments = media.some((m: any) => m.type === 'comments_enabled');
+    
+    if (hasComments) {
+        media = media.filter((m: any) => m.type !== 'comments_enabled');
+    } else {
+        media.push({ type: 'comments_enabled' });
+        // Make sure the chat exists
+        const { data: existingChat } = await supabase.from('chats').select('id').eq('id', messageId).single();
+        if (!existingChat) {
+            await supabase.from('chats').insert({ id: messageId, type: 'group', title: 'Комментарии', is_public: true });
+            await supabase.from('chat_members').insert({ chat_id: messageId, user_id: state.currentUser.id, role: 'creator' });
+        }
+    }
+    
+    await supabase.from('messages').update({ media }).eq('id', messageId);
+}
+
+export async function openComments(messageId: string) {
+    const { data: mem } = await supabase.from('chat_members').select('*').eq('chat_id', messageId).eq('user_id', state.currentUser.id).single();
+    if (!mem) {
+        await supabase.from('chat_members').insert({ chat_id: messageId, user_id: state.currentUser.id, role: 'member' });
+    }
+    import('./chat').then(m => m.openChat(messageId, 'Комментарии к посту', 'К', true, 'group', [], null, 'Обсуждение поста', true));
+}

@@ -219,10 +219,11 @@ export function renderMessages(messages: any[], isInitialLoad = false) {
         let forwardHtml = '';
         const mediaArr = msg.media || [];
         
-        const actualMedia = mediaArr.filter((m: any) => m.type !== 'reply' && m.type !== 'forward' && m.type !== 'admin_mode');
+        const actualMedia = mediaArr.filter((m: any) => m.type !== 'reply' && m.type !== 'forward' && m.type !== 'admin_mode' && m.type !== 'comments_enabled');
         const replyData = mediaArr.find((m: any) => m.type === 'reply');
         const forwardData = mediaArr.find((m: any) => m.type === 'forward');
         const adminModeData = mediaArr.find((m: any) => m.type === 'admin_mode');
+        const isCommentsEnabled = mediaArr.some((m: any) => m.type === 'comments_enabled');
 
         if (replyData) {
             replyHtml = `
@@ -430,6 +431,14 @@ export function renderMessages(messages: any[], isInitialLoad = false) {
 
         const senderNameHtml = (state.activeChatType === 'group' && (!isMe || isSystemAdmin)) ? `<div class="text-[13px] font-bold text-blue-500 mb-0.5 flex items-center">${displaySenderName}${premiumBadge}</div>` : '';
         
+        let canManageComments = false;
+        if (state.activeChatType === 'channel') {
+            const myRole = state.activeChatMembers?.find((m: any) => m.user_id === state.currentUser.id)?.role;
+            if (myRole === 'creator' || myRole === 'admin' || state.isAdminStatus) {
+                canManageComments = true;
+            }
+        }
+
         const encodedContent = encodeURIComponent(msg.content || '').replace(/'/g, "%27");
         
         // Reactions HTML
@@ -475,6 +484,13 @@ export function renderMessages(messages: any[], isInitialLoad = false) {
                         Скачать
                     </button>
                     ` : ''}
+                    ${canManageComments ? `
+                    <div class="h-px bg-gray-200 dark:bg-gray-700 my-1"></div>
+                    <button onclick="event.stopPropagation(); closeAllMessageMenus(); window.toggleCommentsEnabled('${msg.id}');" class="w-full text-left px-4 py-2.5 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors flex items-center gap-3">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"></path></svg>
+                        ${isCommentsEnabled ? 'Отключить комм.' : 'Добавить комм.'}
+                    </button>
+                    ` : ''}
                     ${isMe && !state.isAdminStatus ? `
                     <div class="h-px bg-gray-200 dark:bg-gray-700 my-1"></div>
                     ${!(msg.media || []).some((m: any) => m.type === 'forward') ? `
@@ -509,6 +525,14 @@ export function renderMessages(messages: any[], isInitialLoad = false) {
                     ${deleteBtnHtml}
                 </div>
                 <div class="clear-both"></div>
+                ${isCommentsEnabled ? `
+                <div class="mt-2 pt-2 border-t border-gray-200/50 dark:border-gray-700/50 flex w-full">
+                    <button onclick="event.stopPropagation(); window.openComments('${msg.id}')" class="flex-1 flex items-center justify-center gap-2 text-[13px] font-medium text-blue-500/90 dark:text-blue-400/90 hover:bg-blue-50/50 dark:hover:bg-blue-900/20 rounded-md transition-colors py-1">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"></path></svg>
+                        Комментарии
+                    </button>
+                </div>
+                ` : ''}
             </div>
         `;
 
