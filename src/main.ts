@@ -296,11 +296,11 @@ function setupRealtime() {
                 
                 const avatar = document.getElementById('chat-header-avatar')!;
                 if (payload.new.avatar_url) {
-                    avatar.innerHTML = `<img src="${payload.new.avatar_url}" class="w-full h-full object-cover rounded-full">`;
+                    avatar.innerHTML = `<div class="w-full h-full rounded-full" style="background-image: url('${payload.new.avatar_url}'); background-size: cover; background-position: center;"></div>`;
                     avatar.className = `w-10 h-10 mr-3 shadow-sm relative rounded-full`;
                 } else {
                     const firstLetter = (payload.new.display_name || payload.new.username || 'U')[0].toUpperCase();
-                    avatar.innerText = firstLetter;
+                    avatar.innerHTML = `<div class="w-full h-full rounded-full overflow-hidden relative flex items-center justify-center">${firstLetter}</div>`;
                     avatar.className = `w-10 h-10 bg-gradient-to-br from-blue-400 to-indigo-500 rounded-full flex items-center justify-center text-white font-bold mr-3 shadow-sm relative`;
                 }
             }
@@ -359,7 +359,7 @@ function setupRealtime() {
                 state.activeChatDescription = payload.new.description;
                 const avatar = document.getElementById('chat-header-avatar')!;
                 if (payload.new.avatar_url) {
-                    avatar.innerHTML = `<img src="${payload.new.avatar_url}" class="w-full h-full object-cover rounded-full">`;
+                    avatar.innerHTML = `<div class="w-full h-full rounded-full" style="background-image: url('${payload.new.avatar_url}'); background-size: cover; background-position: center;"></div>`;
                     avatar.className = `w-10 h-10 mr-3 shadow-sm relative rounded-full`;
                 }
                 const nameEl = document.getElementById('current-chat-name');

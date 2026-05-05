@@ -939,7 +939,7 @@ export async function uploadGroupAvatar(e: any) {
         
         // Update main UI
         const avatar = document.getElementById('chat-header-avatar')!;
-        avatar.innerHTML = `<img src="${url}" class="w-full h-full object-cover rounded-full">`;
+        avatar.innerHTML = `<div class="w-full h-full rounded-full" style="background-image: url('${url}'); background-size: cover; background-position: center;"></div>`;
         avatar.className = `w-10 h-10 mr-3 shadow-sm relative rounded-full`;
         
         openChatInfo(); // Refresh modal

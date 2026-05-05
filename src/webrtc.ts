@@ -260,23 +260,19 @@ async function startCall(isVideo: boolean) {
         localStream.getTracks().forEach(track => rtcPeerConnection!.addTrack(track, localStream!));
         
         rtcPeerConnection.ontrack = event => {
-            let stream = event.streams?.[0];
-            if (!stream) {
-                 if (!remoteStream!.getTracks().find(t => t.id === event.track.id)) {
-                     remoteStream!.addTrack(event.track);
-                 }
-                 stream = remoteStream!;
+            if (!remoteStream!.getTracks().find(t => t.id === event.track.id)) {
+                remoteStream!.addTrack(event.track);
             }
 
             const attemptPlay = () => {
                 if (isVideo && remoteVideo) {
-                    remoteVideo.srcObject = stream;
+                    if (remoteVideo.srcObject !== remoteStream) remoteVideo.srcObject = remoteStream;
                     const p = remoteVideo.play();
                     if (p) p.catch(e => console.warn('Error playing remote video:', e));
                     document.getElementById('call-avatar-container')?.classList.add('hidden');
                     remoteVideo.classList.remove('hidden');
                 } else if (!isVideo && remoteAudio) {
-                    remoteAudio.srcObject = stream;
+                    if (remoteAudio.srcObject !== remoteStream) remoteAudio.srcObject = remoteStream;
                     const p = remoteAudio.play();
                     if (p) p.catch(e => console.warn('Error playing remote audio:', e));
                 }
@@ -284,8 +280,9 @@ async function startCall(isVideo: boolean) {
             
             if (event.track.muted) {
                 event.track.onunmute = attemptPlay;
+            } else {
+                attemptPlay();
             }
-            attemptPlay();
         };
         
         rtcPeerConnection.onicecandidate = event => {
@@ -296,7 +293,7 @@ async function startCall(isVideo: boolean) {
         
         rtcPeerConnection.oniceconnectionstatechange = () => {
              console.log('ICE Connection state:', rtcPeerConnection?.iceConnectionState);
-             if (rtcPeerConnection?.iceConnectionState === 'failed' || rtcPeerConnection?.iceConnectionState === 'disconnected') {
+             if (rtcPeerConnection?.iceConnectionState === 'failed') {
                  endVideoCall(false);
              }
         };
@@ -381,23 +378,19 @@ export async function answerCall(callerId: string, offer: any, callerName: strin
         localStream.getTracks().forEach(track => rtcPeerConnection!.addTrack(track, localStream!));
         
         rtcPeerConnection.ontrack = event => {
-            let stream = event.streams?.[0];
-            if (!stream) {
-                 if (!remoteStream!.getTracks().find(t => t.id === event.track.id)) {
-                     remoteStream!.addTrack(event.track);
-                 }
-                 stream = remoteStream!;
+            if (!remoteStream!.getTracks().find(t => t.id === event.track.id)) {
+                remoteStream!.addTrack(event.track);
             }
 
             const attemptPlay = () => {
                 if (isVideo && remoteVideo) {
-                    remoteVideo.srcObject = stream;
+                    if (remoteVideo.srcObject !== remoteStream) remoteVideo.srcObject = remoteStream;
                     const p = remoteVideo.play();
                     if (p) p.catch(e => console.warn('Error playing remote video:', e));
                     document.getElementById('call-avatar-container')?.classList.add('hidden');
                     remoteVideo.classList.remove('hidden');
                 } else if (!isVideo && remoteAudio) {
-                    remoteAudio.srcObject = stream;
+                    if (remoteAudio.srcObject !== remoteStream) remoteAudio.srcObject = remoteStream;
                     const p = remoteAudio.play();
                     if (p) p.catch(e => console.warn('Error playing remote audio:', e));
                 }
@@ -405,8 +398,9 @@ export async function answerCall(callerId: string, offer: any, callerName: strin
             
             if (event.track.muted) {
                 event.track.onunmute = attemptPlay;
+            } else {
+                attemptPlay();
             }
-            attemptPlay();
         };
         
         rtcPeerConnection.onicecandidate = event => {
@@ -417,7 +411,7 @@ export async function answerCall(callerId: string, offer: any, callerName: strin
         
         rtcPeerConnection.oniceconnectionstatechange = () => {
              console.log('ICE Connection state:', rtcPeerConnection?.iceConnectionState);
-             if (rtcPeerConnection?.iceConnectionState === 'failed' || rtcPeerConnection?.iceConnectionState === 'disconnected') {
+             if (rtcPeerConnection?.iceConnectionState === 'failed') {
                  endVideoCall(false);
              }
         };

@@ -176,7 +176,7 @@ export async function loadChats() {
                 avatarHtml = `<div class="w-full h-full bg-gradient-to-br from-blue-400 to-indigo-500 rounded-full flex items-center justify-center text-white font-bold text-lg shadow-sm">И</div>`;
             } else {
                 avatarHtml = avatarUrl 
-                    ? `<img src="${avatarUrl}" class="w-full h-full object-cover rounded-full">` 
+                    ? `<div class="w-full h-full rounded-full" style="background-image: url('${avatarUrl}'); background-size: cover; background-position: center;"></div>` 
                     : `<div class="w-full h-full bg-gradient-to-br ${isGroup ? 'from-emerald-400 to-teal-500' : 'from-blue-400 to-indigo-500'} rounded-full flex items-center justify-center text-white font-bold text-lg shadow-sm">${firstLetter}</div>`;
             }
 
@@ -532,6 +532,8 @@ export async function openChat(chatId: string, chatName: string, firstLetter: st
             if (state.activeChatOtherUser) {
                 isChattingWithSupportUser = state.activeChatOtherUser.settings?.is_tech_support === true;
             }
+        } else {
+            state.activeChatOtherUser = null;
         }
         
         const effectiveTechSupport = isTechSupportChat || isChattingWithSupportUser;
@@ -655,10 +657,10 @@ export async function openChat(chatId: string, chatName: string, firstLetter: st
         avatar.innerHTML = `<div class="w-full h-full bg-gradient-to-br from-blue-400 to-indigo-500 rounded-full flex items-center justify-center text-white font-bold text-lg shadow-sm">И</div>`;
         avatar.className = `w-10 h-10 mr-3 shadow-sm relative rounded-full shrink-0 flex items-center justify-center text-white`;
     } else if (avatarUrl) {
-        avatar.innerHTML = `<div class="w-full h-full rounded-full overflow-hidden relative"><img src="${avatarUrl}" class="w-full h-full object-cover"></div>`;
+        avatar.innerHTML = `<div class="w-full h-full rounded-full shadow-sm relative shrink-0" style="background-image: url('${avatarUrl}'); background-size: cover; background-position: center;"></div>`;
         avatar.className = `w-10 h-10 mr-3 shadow-sm relative rounded-full shrink-0 flex items-center justify-center text-white`;
     } else {
-        avatar.innerHTML = `<div class="w-full h-full rounded-full overflow-hidden relative flex items-center justify-center">${firstLetter}</div>`;
+        avatar.innerHTML = `<div class="w-full h-full rounded-full overflow-hidden relative flex items-center justify-center shadow-sm">${firstLetter}</div>`;
         avatar.className = `w-10 h-10 bg-gradient-to-br ${isGroup ? 'from-emerald-400 to-teal-500' : 'from-blue-400 to-indigo-500'} rounded-full flex items-center justify-center text-white font-bold mr-3 shadow-sm relative shrink-0`;
     }
 
