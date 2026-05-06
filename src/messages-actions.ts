@@ -295,7 +295,7 @@ export async function toggleCommentsEnabled(messageId: string) {
         // Make sure the chat exists
         const { data: existingChat } = await supabase.from('chats').select('id').eq('id', messageId).single();
         if (!existingChat) {
-            await supabase.from('chats').insert({ id: messageId, type: 'group', title: 'Комментарии', is_public: true });
+            await supabase.from('chats').insert({ id: messageId, type: 'group', title: 'Комментарии', is_public: true, description: 'POST_COMMENTS' });
             await supabase.from('chat_members').insert({ chat_id: messageId, user_id: state.currentUser.id, role: 'creator' });
         }
     }
@@ -304,6 +304,18 @@ export async function toggleCommentsEnabled(messageId: string) {
 }
 
 export async function openComments(messageId: string) {
+    const { data: msg } = await supabase.from('messages').select('chat_id').eq('id', messageId).single();
+    if (msg) {
+        const { data: parentChat } = await supabase.from('chats').select('title, type, chat_members(user_id, profiles(display_name, username))').eq('id', msg.chat_id).single();
+        if (parentChat) {
+            let parentName = parentChat.title;
+            if (!parentName && parentChat.type !== 'group' && parentChat.type !== 'channel') {
+                const other = parentChat.chat_members?.find((m: any) => m.user_id !== state.currentUser.id);
+                parentName = other?.profiles?.display_name || other?.profiles?.username || 'Чат';
+            }
+            state.activeChatParentInfo = { parentId: msg.chat_id, parentName: parentName || 'Основной чат', messageId: messageId };
+        }
+    }
     const { data: mem } = await supabase.from('chat_members').select('*').eq('chat_id', messageId).eq('user_id', state.currentUser.id).single();
     if (!mem) {
         await supabase.from('chat_members').insert({ chat_id: messageId, user_id: state.currentUser.id, role: 'member' });

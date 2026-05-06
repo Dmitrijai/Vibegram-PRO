@@ -22,6 +22,7 @@ export const state = {
     activeChatIsGroup: false,
     activeChatIsPublic: false,
     activeChatAvatarUrl: null as string | null,
+    activeChatParentInfo: null as { parentId: string, parentName: string } | null,
     activeChatOtherUser: null as any,
     activeChatMembers: [] as any[],
     activeChatDescription: null as string | null | undefined,

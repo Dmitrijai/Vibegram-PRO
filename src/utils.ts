@@ -174,6 +174,23 @@ export function playNotificationSound() {
 }
 
 export function closeChatMobile(skipHistoryBack = false) {
+    if (state.activeChatParentInfo && Object.keys(state.activeChatParentInfo).length > 0) {
+        const parentId = state.activeChatParentInfo.parentId;
+        const targetMsgId = state.activeChatParentInfo.messageId;
+        state.activeChatParentInfo = null; // clear it
+        const chatEl = document.querySelector(`#chats-list > div[data-chat-id="${parentId}"]`) as HTMLElement;
+        if (chatEl) {
+            chatEl.click();
+            if (targetMsgId) {
+                // Try to scroll to it after opening
+                setTimeout(() => {
+                    import('./messages').then(m => m.loadMessagesUntil(parentId, targetMsgId));
+                }, 100);
+            }
+            return;
+        }
+    }
+
     if (!skipHistoryBack && window.location.hash === '#chat') {
         window.history.back();
         return;

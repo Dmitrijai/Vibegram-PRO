@@ -72,6 +72,8 @@ export async function loadChats() {
 
         list.innerHTML = '';
         chats.forEach((chat: any) => {
+            if (chat.description === 'POST_COMMENTS' || (chat.title === 'Комментарии' && chat.type === 'group' && chat.is_public)) return;
+            
             let isGroup = chat.type === 'group' || chat.type === 'channel';
             let isSavedMsgs = !isGroup && (!chat.chat_members || chat.chat_members.filter((m: any) => m.user_id !== state.currentUser.id).length === 0);
             
@@ -329,7 +331,16 @@ export async function deleteChatById(chatId: string) {
     const confirmed = await customConfirm('Удалить этот чат? Действие необратимо.');
     if (!confirmed) return;
     
-    await supabase.from('chats').delete().eq('id', chatId);
+    const { data: myMember } = await supabase.from('chat_members').select('role').eq('chat_id', chatId).eq('user_id', state.currentUser.id).single();
+    if (myMember?.role === 'creator') {
+        await supabase.from('chats').delete().eq('id', chatId);
+    } else {
+        await supabase.from('chat_members').delete().eq('chat_id', chatId).eq('user_id', state.currentUser.id);
+        const { count } = await supabase.from('chat_members').select('*', { count: 'exact', head: true }).eq('chat_id', chatId);
+        if (count === 0) {
+            await supabase.from('chats').delete().eq('id', chatId);
+        }
+    }
     
     if (state.activeChatId === chatId) {
         state.activeChatId = null;
@@ -518,6 +529,7 @@ export async function openChat(chatId: string, chatName: string, firstLetter: st
     state.activeChatId = chatId;
     state.activeChatType = chatType as any;
     state.activeChatIsGroup = isGroup;
+    state.activeChatAvatarUrl = avatarUrl || null;
     state.activeChatDescription = description;
     state.activeChatIsPublic = isPublic || false;
     state.activeChatMembers = members || [];
@@ -577,6 +589,17 @@ export async function openChat(chatId: string, chatName: string, firstLetter: st
 
     const premiumBadgeListHtml = isPremiumUser ? `<span class="inline-flex items-center justify-center ml-1 shrink-0" title="Vibegram Premium"><img src="./image/Google-Gemini-Logo-Transparent.png" class="w-4 h-4 object-contain" alt="Premium"></span>` : '';
     document.getElementById('current-chat-name')!.innerHTML = `<span class="truncate shrink">${chatName}</span>${premiumBadgeListHtml}`;
+    
+    const backBtn = document.querySelector('#chat-header-container button');
+    if (backBtn) {
+        if (state.activeChatParentInfo) {
+            backBtn.className = 'mr-2 p-1.5 text-blue-500 hover:bg-blue-100 dark:hover:bg-gray-700 rounded-lg flex items-center gap-1.5 transition-colors';
+            backBtn.innerHTML = `<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg><span class="hidden md:inline text-sm font-medium">Вернуться в ${state.activeChatParentInfo.parentName}</span>`;
+        } else {
+            backBtn.className = 'md:hidden mr-2 p-2 text-blue-500 hover:bg-blue-100 dark:hover:bg-gray-700 rounded-full';
+            backBtn.innerHTML = `<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg>`;
+        }
+    }
     
     const headerContainer = document.getElementById('chat-header-container');
     if (headerContainer) {

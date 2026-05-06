@@ -299,11 +299,11 @@ function setupRealtime() {
                 const avatar = document.getElementById('chat-header-avatar')!;
                 if (payload.new.avatar_url) {
                     avatar.innerHTML = `<div class="w-full h-full rounded-full" style="background-image: url('${payload.new.avatar_url}'); background-size: cover; background-position: center;"></div>`;
-                    avatar.className = `w-10 h-10 mr-3 shadow-sm relative rounded-full`;
+                    avatar.className = `w-10 h-10 mr-3 shadow-sm relative rounded-full shrink-0 flex items-center justify-center text-white`;
                 } else {
                     const firstLetter = (payload.new.display_name || payload.new.username || 'U')[0].toUpperCase();
-                    avatar.innerHTML = `<div class="w-full h-full rounded-full overflow-hidden relative flex items-center justify-center">${firstLetter}</div>`;
-                    avatar.className = `w-10 h-10 bg-gradient-to-br from-blue-400 to-indigo-500 rounded-full flex items-center justify-center text-white font-bold mr-3 shadow-sm relative`;
+                    avatar.innerHTML = `<div class="w-full h-full rounded-full overflow-hidden relative flex items-center justify-center shadow-sm">${firstLetter}</div>`;
+                    avatar.className = `w-10 h-10 bg-gradient-to-br from-blue-400 to-indigo-500 rounded-full flex items-center justify-center text-white font-bold mr-3 shadow-sm relative shrink-0`;
                 }
             }
             if (payload.new.id === state.currentUser?.id) {
@@ -362,7 +362,7 @@ function setupRealtime() {
                 const avatar = document.getElementById('chat-header-avatar')!;
                 if (payload.new.avatar_url) {
                     avatar.innerHTML = `<div class="w-full h-full rounded-full" style="background-image: url('${payload.new.avatar_url}'); background-size: cover; background-position: center;"></div>`;
-                    avatar.className = `w-10 h-10 mr-3 shadow-sm relative rounded-full`;
+                    avatar.className = `w-10 h-10 mr-3 shadow-sm relative rounded-full shrink-0 flex items-center justify-center text-white`;
                 }
                 const nameEl = document.getElementById('current-chat-name');
                 if (nameEl) {
