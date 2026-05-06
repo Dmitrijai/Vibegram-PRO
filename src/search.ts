@@ -156,8 +156,8 @@ export async function startChatWithUser(userToFind: any) {
         const { error: cmErr } = await supabase.from('chat_members').insert(membersToInsert);
         if (cmErr) console.error("CM Error", cmErr);
     }
-    await loadChats();
     openChat(chatId, isSelf ? 'Избранное' : (userToFind.display_name || userToFind.username), (userToFind.display_name || userToFind.username)[0].toUpperCase(), false, 'private', [{user_id: userToFind.id, profiles: userToFind}], userToFind.avatar_url);
+    await import('./chat').then(m => m.loadChats(true));
 }
 
 export async function startDirectChatById(userId: string) {

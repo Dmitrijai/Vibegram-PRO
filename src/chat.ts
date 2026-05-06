@@ -51,12 +51,15 @@ export async function loadChats() {
         }
 
         const showSavedMessages = state.currentProfile?.settings?.show_saved_messages !== false;
+        
+        const activeChatIsSavedMessages = !state.activeChatIsGroup && state.activeChatMembers?.length > 0 && state.activeChatMembers.every((m: any) => m.user_id === state.currentUser?.id);
+        const isSavedActive = state.activeChatId === 'new_saved_messages' || (savedMessagesChat && savedMessagesChat.id === state.activeChatId) || activeChatIsSavedMessages;
 
-        if (showSavedMessages) {
+        if (showSavedMessages || isSavedActive) {
             if (!savedMessagesChat) {
                 // Mock one
                 savedMessagesChat = {
-                    id: 'new_saved_messages', // We'll handle this in onclick
+                    id: isSavedActive && state.activeChatId && state.activeChatId !== 'new_saved_messages' ? state.activeChatId : 'new_saved_messages',
                     created_at: new Date().toISOString(),
                     type: 'private',
                     title: 'Избранное',
@@ -531,6 +534,10 @@ export async function openChat(chatId: string, chatName: string, firstLetter: st
     state.activeChatDescription = description;
     state.activeChatIsPublic = isPublic || false;
     state.activeChatMembers = members || [];
+
+    if (state.currentProfile?.settings?.show_saved_messages === false) {
+        setTimeout(() => loadChats(false), 50);
+    }
 
     const updateHeaderInfo = () => {
         const statusEl = document.getElementById('current-chat-status')!;
