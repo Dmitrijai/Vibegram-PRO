@@ -1032,18 +1032,6 @@ export async function kickMember(userId: string) {
     const confirmed = await customConfirm('Удалить этого пользователя из группы?');
     if (!confirmed) return;
     await supabase.from('chat_members').delete().eq('chat_id', state.activeChatId).eq('user_id', userId);
-    
-    const { count } = await supabase.from('chat_members').select('*', { count: 'exact', head: true }).eq('chat_id', state.activeChatId);
-    if (count === 0) {
-        await supabase.from('chats').delete().eq('id', state.activeChatId);
-        closeModal();
-        state.activeChatId = null;
-        document.getElementById('chat-area')!.classList.add('hidden');
-        document.getElementById('chat-area')!.classList.remove('flex');
-        document.getElementById('sidebar')!.classList.remove('hidden');
-        if ((window as any).logic?.loadChats) (window as any).logic.loadChats();
-        return;
-    }
     openChatInfo(); // Refresh modal
 }
 
@@ -1368,8 +1356,9 @@ export async function createGroup() {
     if(!username || username.length < 3) return customAlert('Введите корректный ID (от 3 символов)');
     
     // Check if ID is taken
-    const { data: existingChat } = await supabase.from('chats').select('id').eq('username', username).single();
-    if (existingChat) return customAlert('Данный ID уже занят');
+    const { data: existingChats, error } = await supabase.from('chats').select('id').eq('username', username);
+    if (error) console.error("Error checking username:", error);
+    if (existingChats && existingChats.length > 0) return customAlert('Данный ID уже занят');
 
     const isPublic = (document.getElementById('chat-is-public') as HTMLInputElement)?.checked || false;
     const newChatId = crypto.randomUUID();
@@ -1393,8 +1382,9 @@ export async function createChannel() {
     if(!username || username.length < 3) return customAlert('Введите корректный ID (от 3 символов)');
     
     // Check if ID is taken
-    const { data: existingChat } = await supabase.from('chats').select('id').eq('username', username).single();
-    if (existingChat) return customAlert('Данный ID уже занят');
+    const { data: existingChats, error } = await supabase.from('chats').select('id').eq('username', username);
+    if (error) console.error("Error checking channel username:", error);
+    if (existingChats && existingChats.length > 0) return customAlert('Данный ID уже занят');
     
     const isPublic = (document.getElementById('chat-is-public') as HTMLInputElement)?.checked || false;
     const newChatId = crypto.randomUUID();
@@ -1433,11 +1423,6 @@ export async function leaveGroup() {
     
     await supabase.from('chat_members').delete().eq('chat_id', state.activeChatId).eq('user_id', state.currentUser.id);
     
-    const { count } = await supabase.from('chat_members').select('*', { count: 'exact', head: true }).eq('chat_id', state.activeChatId);
-    if (count === 0) {
-        await supabase.from('chats').delete().eq('id', state.activeChatId);
-    }
-    
     closeModal();
     
     // Switch to no chat
@@ -1469,11 +1454,6 @@ export async function deleteChat() {
     } else {
         const { error } = await supabase.from('chat_members').delete().eq('chat_id', state.activeChatId).eq('user_id', state.currentUser.id);
         if (error) console.error("Error leaving chat:", error);
-        
-        const { count } = await supabase.from('chat_members').select('*', { count: 'exact', head: true }).eq('chat_id', state.activeChatId);
-        if (count === 0) {
-            await supabase.from('chats').delete().eq('id', state.activeChatId);
-        }
     }
     
     import('./utils').then(m => m.closeModal(undefined, true));
@@ -1532,12 +1512,17 @@ export function showGlobalPendingModal(pendingMembers: any[]) {
     
     modal.innerHTML = `
         <div class="bg-white dark:bg-gray-900 rounded-3xl w-full max-w-md overflow-hidden shadow-2xl flex flex-col max-h-[85vh]">
-            <div class="p-6 border-b border-gray-100 dark:border-gray-800 shrink-0 bg-white dark:bg-gray-900 z-10 relative">
-                <h3 class="text-xl font-extrabold text-gray-900 dark:text-white flex items-center gap-2">
-                    <svg class="w-6 h-6 text-orange-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v1m6 11h2m-6 0h-8m0 0H4m4 0h8m-4-6v6"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
-                    Новые заявки
-                </h3>
-                <p class="text-[13px] font-medium text-gray-500 mt-2">Рассмотрите входящие запросы на добавление в ваши группы.</p>
+            <div class="p-6 border-b border-gray-100 dark:border-gray-800 shrink-0 bg-white dark:bg-gray-900 z-10 relative flex items-center justify-between">
+                <div>
+                    <h3 class="text-xl font-extrabold text-gray-900 dark:text-white flex items-center gap-2">
+                        <svg class="w-6 h-6 text-orange-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v1m6 11h2m-6 0h-8m0 0H4m4 0h8m-4-6v6"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+                        Новые заявки
+                    </h3>
+                    <p class="text-[13px] font-medium text-gray-500 mt-2">Рассмотрите входящие запросы на добавление в ваши группы.</p>
+                </div>
+                <button onclick="document.getElementById('global-pending-modal')?.remove()" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                </button>
             </div>
             <div class="p-4 overflow-y-auto flex-1 bg-gray-50/50 dark:bg-gray-800/20 space-y-3 relative">
                 ${pendingMembers.map((m: any) => `
@@ -1585,16 +1570,11 @@ export function showGlobalPendingModal(pendingMembers: any[]) {
     }
     
     if (action === 'accept') {
-        await supabase.from('chat_members').update({ role: 'member' }).eq('chat_id', chatId).eq('user_id', userId);
+        const { error } = await supabase.from('chat_members').update({ role: 'member' }).eq('chat_id', chatId).eq('user_id', userId);
+        if (error) console.error(error);
     } else {
-        await supabase.from('chat_members').delete().eq('chat_id', chatId).eq('user_id', userId);
-    }
-    
-    // Check pending requests but without refreshing modal aggressively if empty?
-    // the UI is already updated locally, we can just do a background check.
-    setTimeout(checkGlobalPendingRequests, 1000); // 1s delay for replication
-    if (state.activeChatId === chatId) {
-        setTimeout(() => { import('./group').then(m => m.openChatInfo()); }, 1000);
+        const { error } = await supabase.from('chat_members').delete().eq('chat_id', chatId).eq('user_id', userId);
+        if (error) console.error(error);
     }
 };
 (window as any).checkGlobalPendingRequests = checkGlobalPendingRequests;

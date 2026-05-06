@@ -234,14 +234,17 @@ function setupRealtime() {
                         }
                         
                         const { data: profile } = await supabase.from('profiles').select('settings').eq('id', state.currentUser.id).single();
+                        const { data: chatData } = await supabase.from('chats').select('description, type').eq('id', payload.new.chat_id).single();
+                        const isCommentChat = chatData?.description === 'POST_COMMENTS' || (chatData?.type === 'group' && chatData?.title === 'Комментарии');
+                        
                         const settings = profile?.settings || {};
                         const mutedChats = settings.muted_chats || [];
                         
-                        if (!mutedChats.includes(payload.new.chat_id) && settings.notifications !== false) {
+                        if (!mutedChats.includes(payload.new.chat_id) && settings.notifications !== false && !isCommentChat) {
                             if ((window as any).logic?.playNotificationSound) (window as any).logic.playNotificationSound();
                         }
                         
-                        if (document.hidden && "Notification" in window && Notification.permission === "granted") {
+                        if (document.hidden && "Notification" in window && Notification.permission === "granted" && !isCommentChat) {
                             const { data: sender } = await supabase.from('profiles').select('display_name, username').eq('id', payload.new.sender_id).single();
                             const senderName = sender?.display_name || sender?.username || 'Пользователь';
                             const text = payload.new.content || (payload.new.message_type === 'voice' ? '🎤 Голосовое сообщение' : 'Медиа сообщение');
@@ -251,9 +254,12 @@ function setupRealtime() {
                 } else {
                     if (payload.new.sender_id !== state.currentUser?.id) {
                         const { data: profile } = await supabase.from('profiles').select('settings').eq('id', state.currentUser.id).single();
+                        const { data: chatData } = await supabase.from('chats').select('description, type, title').eq('id', payload.new.chat_id).single();
+                        const isCommentChat = chatData?.description === 'POST_COMMENTS' || (chatData?.type === 'group' && chatData?.title === 'Комментарии');
+                        
                         const settings = profile?.settings || {};
                         const mutedChats = settings.muted_chats || [];
-                        if (!mutedChats.includes(payload.new.chat_id) && settings.notifications !== false) {
+                        if (!mutedChats.includes(payload.new.chat_id) && settings.notifications !== false && !isCommentChat) {
                             const { data: sender } = await supabase.from('profiles').select('display_name, username, avatar_url').eq('id', payload.new.sender_id).single();
                             const senderName = sender?.display_name || sender?.username || 'Пользователь';
                             const text = payload.new.content || (payload.new.message_type === 'voice' ? '🎤 Голосовое сообщение' : 'Медиа сообщение');
