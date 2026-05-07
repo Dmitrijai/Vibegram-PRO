@@ -228,7 +228,7 @@ export async function openUserProfile(userId: string) {
             </div>
         </div>
 
-        <div class="flex-1 overflow-y-auto bg-gray-50 dark:bg-gray-900 pb-6 hidden-scrollbar relative text-left max-h-[40vh] min-h-[200px]">
+        <div class="flex-1 overflow-y-auto bg-gray-50 dark:bg-gray-900 pb-6 hidden-scrollbar relative text-left">
             ${bioHtml}
             
             <div class="p-6">
@@ -238,10 +238,12 @@ export async function openUserProfile(userId: string) {
                             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"></path></svg>
                             Перейти к чату
                         </button>
-                        <button onclick="window.sendVibeToUser('${userToFind.id}')" class="w-full bg-indigo-100 hover:bg-indigo-200 dark:bg-indigo-900/40 dark:hover:bg-indigo-800/60 text-indigo-700 dark:text-indigo-300 font-medium py-3 px-4 rounded-xl active:scale-[0.98] transition-all flex items-center justify-center gap-2">
-                            <span class="text-lg">✨</span>
-                            Отправить виб
-                        </button>
+                        ${userToFind.username ? `<button onclick="if(window.sendVibToUserModal) { window.sendVibToUserModal('${userToFind.username}'); }" class="w-full bg-gradient-to-r from-indigo-500 to-purple-600 shadow-md hover:shadow-lg text-white font-medium py-3 px-4 rounded-xl active:scale-[0.98] transition-all flex items-center justify-center gap-2">
+                            <div class="inline-flex items-center justify-center w-5 h-5 rounded-full bg-gradient-to-tr from-yellow-300 to-amber-500 border border-white/50 animate-pulse">
+                                <svg class="w-3 h-3 text-yellow-900" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M11.3 1.046A1 1 0 0112 2v5h4a1 1 0 01.82 1.573l-7 10A1 1 0 018 18v-5H4a1 1 0 01-.82-1.573l7-10a1 1 0 011.12-.381z" clip-rule="evenodd"></path></svg>
+                            </div>
+                            Отправить VIB
+                        </button>` : ''}
                     </div>
                 ` : `
                     <div class="text-center text-sm text-gray-500 dark:text-gray-400">Это ваш профиль</div>
@@ -254,21 +256,3 @@ export async function openUserProfile(userId: string) {
     setTimeout(() => modal.classList.add('modal-active'), 50);
 }
 (window as any).openUserProfile = openUserProfile;
-
-(window as any).sendVibeToUser = async (userId: string) => {
-    const { data: userToFind } = await supabase.from('profiles').select('*').eq('id', userId).single();
-    if (!userToFind) return;
-    
-    import('./utils').then(m => m.closeModal());
-    await startChatWithUser(userToFind);
-    
-    // Wait slightly for chat to load
-    setTimeout(() => {
-        const inputBox = document.getElementById('message-input') as HTMLInputElement | HTMLTextAreaElement;
-        const sendBtn = document.getElementById('send-button') as HTMLButtonElement;
-        if (inputBox && sendBtn) {
-            inputBox.value = '✨ Отправил(а) виб ✨';
-            sendBtn.click();
-        }
-    }, 500);
-};
