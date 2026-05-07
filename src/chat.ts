@@ -344,10 +344,7 @@ export async function deleteChatById(chatId: string) {
     }
     
     if (state.activeChatId === chatId) {
-        state.activeChatId = null;
-        document.getElementById('chat-area')!.classList.add('hidden');
-        document.getElementById('chat-area')!.classList.remove('flex');
-        document.getElementById('sidebar')!.classList.remove('hidden');
+        import('./utils').then(m => m.closeChatMobile(true));
     }
     loadChats();
 }

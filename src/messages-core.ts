@@ -445,11 +445,11 @@ export function renderMessages(messages: any[], isInitialLoad = false) {
         let reactionsHtml = generateReactionsHtml(msg.id, msg.reactions);
 
         let avatarHtml = '';
-        if (!isMe && (state.activeChatType === 'group' || state.activeChatType === 'channel')) {
+        if (!isMe && state.activeChatType === 'group') {
             const firstLetter = (displaySenderName[0] || '').toUpperCase();
             const avatarUrl = msg.profiles?.avatar_url;
             avatarHtml = `
-                <div class="w-8 h-8 rounded-full bg-gradient-to-br from-blue-400 to-indigo-500 shrink-0 mr-2 self-end mb-1 cursor-pointer flex items-center justify-center text-white font-bold text-sm overflow-hidden shadow-sm" onclick="event.stopPropagation(); openUserProfile('${msg.sender_id}')" title="${displaySenderName}">
+                <div class="w-8 h-8 rounded-full bg-gradient-to-br from-blue-400 to-indigo-500 shrink-0 mr-2 self-end mb-1 cursor-pointer flex items-center justify-center text-white font-bold text-sm overflow-hidden shadow-sm" onclick="event.stopPropagation(); window.openUserProfile('${msg.sender_id}')" title="${displaySenderName}">
                     ${avatarUrl ? `<img src="${avatarUrl}" class="w-full h-full object-cover">` : firstLetter}
                 </div>
             `;
