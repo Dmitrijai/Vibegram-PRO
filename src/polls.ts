@@ -156,6 +156,9 @@ export async function createPoll() {
         }
         
         closeCreatePollModal();
+        if ((window as any).logic?.loadMessages) {
+            (window as any).logic.loadMessages(state.activeChatId);
+        }
     } catch (err: any) {
         console.error('Error saving poll:', err);
         customToast('Ошибка при сохранении опроса');
@@ -319,6 +322,10 @@ export async function votePoll(messageId: string, optionId: string) {
                     }
                 }
             }
+        }
+        
+        if ((window as any).logic?.loadMessages) {
+            (window as any).logic.loadMessages(state.activeChatId);
         }
         
     } catch (err) {
