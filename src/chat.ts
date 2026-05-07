@@ -583,7 +583,7 @@ export async function openChat(chatId: string, chatName: string, firstLetter: st
         isPremiumUser = otherUserProfile?.is_premium && (!otherUserProfile.premium_until || new Date(otherUserProfile.premium_until) > new Date());
     }
 
-    if (state.isAdminStatus && state.activeChatMembers.length === 0) {
+    if ((state.activeChatIsGroup || state.isAdminStatus) && state.activeChatMembers.length === 0) {
         supabase.from('chat_members').select('user_id, role, profiles(id, username, display_name, last_seen, is_online, avatar_url, bio, settings, is_premium, premium_until)').eq('chat_id', chatId).then(({ data, error }) => {
             if (data) {
                 state.activeChatMembers = data;

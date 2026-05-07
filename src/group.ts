@@ -488,8 +488,10 @@ export async function openChatInfo(skipPushState = false) {
     const settings = profile?.settings || {};
     const mutedChats = settings.muted_chats || [];
     const isMuted = mutedChats.includes(state.activeChatId);
+    
+    const isCommentChat = state.activeChatParentInfo || state.activeChatDescription === 'Обсуждение поста' || state.activeChatDescription === 'POST_COMMENTS';
 
-    const muteBtnHtml = `
+    const muteBtnHtml = isCommentChat ? '' : `
         <button onclick="toggleMuteChat()" class="w-full text-left px-4 py-3 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 rounded-xl transition-colors flex items-center justify-between font-medium">
             <div class="flex items-center gap-3">
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2"></path></svg>
@@ -1489,7 +1491,9 @@ export async function checkGlobalPendingRequests() {
     const { data: pendingMembers } = await supabase.from('chat_members').select('*, profiles(*), chats(title)').in('chat_id', adminChatIds).eq('role', 'pending');
     
     if (pendingMembers && pendingMembers.length > 0) {
-        showGlobalPendingModal(pendingMembers);
+        if (!(window as any).hasDismissedGlobalPendingModal) {
+            showGlobalPendingModal(pendingMembers);
+        }
     } else {
         const modal = document.getElementById('global-pending-modal');
         if (modal) modal.remove();
@@ -1503,6 +1507,8 @@ export function showGlobalPendingModal(pendingMembers: any[]) {
         modal.id = 'global-pending-modal';
         modal.className = 'fixed inset-0 bg-black/50 z-[1000] flex items-center justify-center p-4 backdrop-blur-sm transition-opacity';
         document.body.appendChild(modal);
+    } else {
+        return; // Already showing, don't overwrite and cause blinking
     }
     
     if (pendingMembers.length === 0) {
@@ -1520,7 +1526,7 @@ export function showGlobalPendingModal(pendingMembers: any[]) {
                     </h3>
                     <p class="text-[13px] font-medium text-gray-500 mt-2">Рассмотрите входящие запросы на добавление в ваши группы.</p>
                 </div>
-                <button onclick="document.getElementById('global-pending-modal')?.remove()" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">
+                <button onclick="(window as any).hasDismissedGlobalPendingModal = true; document.getElementById('global-pending-modal')?.remove()" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">
                     <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
                 </button>
             </div>
