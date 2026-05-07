@@ -1006,6 +1006,12 @@ export async function approveJoinRequest(userId: string, btnElement?: HTMLElemen
         if (item) item.remove();
     }
     await supabase.from('chat_members').update({ role: 'member' }).eq('chat_id', state.activeChatId).eq('user_id', userId);
+    
+    // Update local state
+    const member = state.activeChatMembers.find((m: any) => m.user_id === userId);
+    if (member) member.role = 'member';
+    if ((window as any).updateHeaderInfo) (window as any).updateHeaderInfo();
+    
     // Don't re-render immediately as we manually removed the item and want to keep modal open smoothly
     setTimeout(() => { openChatInfo(true) }, 1000);
 }
@@ -1016,6 +1022,11 @@ export async function rejectJoinRequest(userId: string, btnElement?: HTMLElement
         if (item) item.remove();
     }
     await supabase.from('chat_members').delete().eq('chat_id', state.activeChatId).eq('user_id', userId);
+    
+    // Update local state
+    state.activeChatMembers = state.activeChatMembers.filter((m: any) => m.user_id !== userId);
+    if ((window as any).updateHeaderInfo) (window as any).updateHeaderInfo();
+    
     // Don't re-render immediately as we manually removed the item
     setTimeout(() => { openChatInfo(true) }, 1000);
 }
@@ -1411,10 +1422,7 @@ export async function leaveGroup() {
         await supabase.from('chats').delete().eq('id', state.activeChatId);
         closeModal();
         
-        state.activeChatId = null;
-        document.getElementById('chat-area')!.classList.add('hidden');
-        document.getElementById('chat-area')!.classList.remove('flex');
-        document.getElementById('sidebar')!.classList.remove('hidden');
+        import('./utils').then(m => m.closeChatMobile(true));
         
         loadChats();
         return;
@@ -1427,11 +1435,7 @@ export async function leaveGroup() {
     
     closeModal();
     
-    // Switch to no chat
-    state.activeChatId = null;
-    document.getElementById('chat-area')!.classList.add('hidden');
-    document.getElementById('chat-area')!.classList.remove('flex');
-    document.getElementById('sidebar')!.classList.remove('hidden');
+    import('./utils').then(m => m.closeChatMobile(true));
     
     loadChats();
 }
@@ -1460,11 +1464,7 @@ export async function deleteChat() {
     
     import('./utils').then(m => m.closeModal(undefined, true));
     
-    // Switch to no chat
-    state.activeChatId = null;
-    document.getElementById('chat-area')!.classList.add('hidden');
-    document.getElementById('chat-area')!.classList.remove('flex');
-    document.getElementById('sidebar')!.classList.remove('hidden');
+    import('./utils').then(m => m.closeChatMobile(true));
     
     loadChats();
 }
@@ -1526,7 +1526,7 @@ export function showGlobalPendingModal(pendingMembers: any[]) {
                     </h3>
                     <p class="text-[13px] font-medium text-gray-500 mt-2">Рассмотрите входящие запросы на добавление в ваши группы.</p>
                 </div>
-                <button onclick="window.hasDismissedGlobalPendingModal = true; document.getElementById('global-pending-modal')?.remove()" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">
+                <button onclick="window.hasDismissedGlobalPendingModal = true; var m = document.getElementById('global-pending-modal'); if (m) m.remove();" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">
                     <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
                 </button>
             </div>

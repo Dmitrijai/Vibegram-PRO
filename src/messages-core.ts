@@ -429,7 +429,7 @@ export function renderMessages(messages: any[], isInitialLoad = false) {
         const isPremium = msg.profiles?.is_premium && (!msg.profiles.premium_until || new Date(msg.profiles.premium_until) > new Date());
         const premiumBadge = isPremium ? `<span class="inline-flex items-center justify-center ml-1" title="Vibegram Premium"><img src="./image/Google-Gemini-Logo-Transparent.png" class="w-3.5 h-3.5 object-contain" alt="Premium"></span>` : '';
 
-        const senderNameHtml = (state.activeChatType === 'group' && (!isMe || isSystemAdmin)) ? `<div class="text-[13px] font-bold text-blue-500 mb-0.5 flex items-center">${displaySenderName}${premiumBadge}</div>` : '';
+        const senderNameHtml = (state.activeChatType === 'group' && (!isMe || isSystemAdmin)) ? `<div onclick="event.stopPropagation(); openUserProfile('${msg.sender_id}')" class="text-[13px] font-bold text-blue-500 mb-0.5 flex items-center cursor-pointer hover:underline w-fit">${displaySenderName}${premiumBadge}</div>` : '';
         
         let canManageComments = false;
         if (state.activeChatType === 'channel') {
@@ -443,6 +443,17 @@ export function renderMessages(messages: any[], isInitialLoad = false) {
         
         // Reactions HTML
         let reactionsHtml = generateReactionsHtml(msg.id, msg.reactions);
+
+        let avatarHtml = '';
+        if (!isMe && (state.activeChatType === 'group' || state.activeChatType === 'channel')) {
+            const firstLetter = (displaySenderName[0] || '').toUpperCase();
+            const avatarUrl = msg.profiles?.avatar_url;
+            avatarHtml = `
+                <div class="w-8 h-8 rounded-full bg-gradient-to-br from-blue-400 to-indigo-500 shrink-0 mr-2 self-end mb-1 cursor-pointer flex items-center justify-center text-white font-bold text-sm overflow-hidden shadow-sm" onclick="event.stopPropagation(); openUserProfile('${msg.sender_id}')" title="${displaySenderName}">
+                    ${avatarUrl ? `<img src="${avatarUrl}" class="w-full h-full object-cover">` : firstLetter}
+                </div>
+            `;
+        }
 
         const deleteBtnHtml = `
             <div class="relative ml-1 -mr-1 flex items-center">
@@ -514,26 +525,29 @@ export function renderMessages(messages: any[], isInitialLoad = false) {
         `;
 
         const innerHTML = `
-            <div class="relative group select-none ${isMe ? 'bg-[#e3f2fd] dark:bg-blue-900/40 text-gray-900 dark:text-gray-100 rounded-[18px] rounded-br-[4px]' : 'bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 rounded-[18px] rounded-bl-[4px]'} p-2 px-3 shadow-sm border border-gray-200/60 dark:border-gray-700/60 max-w-full" id="msg-${msg.id}" ontouchstart="handleMessageTouchStart(event, '${msg.id}')" ontouchend="handleMessageTouchEnd(event)" ontouchmove="handleMessageTouchMove(event)" onmousedown="handleMessageTouchStart(event, '${msg.id}')" onmouseup="handleMessageTouchEnd(event)" onmousemove="handleMessageTouchMove(event)" onmouseleave="handleMessageTouchEnd(event)">
-                ${forwardHtml}
-                ${replyHtml}
-                ${senderNameHtml} ${fileHtml}
-                ${renderContent(msg.content)}
-                <div id="reactions-container-${msg.id}">${reactionsHtml}</div>
-                <div class="text-[11px] font-medium ${isMe ? 'text-blue-500 dark:text-blue-400' : 'text-gray-400 dark:text-gray-500'} mt-1 flex justify-end items-center float-right ml-4 pt-1">
-                    ${time} ${ticks}
-                    ${deleteBtnHtml}
+            <div class="flex items-end max-w-full">
+                ${avatarHtml}
+                <div class="relative group select-none ${isMe ? 'bg-[#e3f2fd] dark:bg-blue-900/40 text-gray-900 dark:text-gray-100 rounded-[18px] rounded-br-[4px]' : 'bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 rounded-[18px] rounded-bl-[4px]'} p-2 px-3 shadow-sm border border-gray-200/60 dark:border-gray-700/60 max-w-full flex-1 min-w-0" id="msg-${msg.id}" ontouchstart="handleMessageTouchStart(event, '${msg.id}')" ontouchend="handleMessageTouchEnd(event)" ontouchmove="handleMessageTouchMove(event)" onmousedown="handleMessageTouchStart(event, '${msg.id}')" onmouseup="handleMessageTouchEnd(event)" onmousemove="handleMessageTouchMove(event)" onmouseleave="handleMessageTouchEnd(event)">
+                    ${forwardHtml}
+                    ${replyHtml}
+                    ${senderNameHtml} ${fileHtml}
+                    ${renderContent(msg.content)}
+                    <div id="reactions-container-${msg.id}">${reactionsHtml}</div>
+                    <div class="text-[11px] font-medium ${isMe ? 'text-blue-500 dark:text-blue-400' : 'text-gray-400 dark:text-gray-500'} mt-1 flex justify-end items-center float-right ml-4 pt-1">
+                        ${time} ${ticks}
+                        ${deleteBtnHtml}
+                    </div>
+                    <div class="clear-both"></div>
+                    ${isCommentsEnabled ? `
+                    <div class="mt-2 pt-2 border-t border-gray-200/50 dark:border-gray-700/50 flex w-full">
+                        <button onclick="event.stopPropagation(); window.openComments('${msg.id}')" class="flex-1 flex items-center justify-center gap-2 text-[13px] font-medium text-blue-500/90 dark:text-blue-400/90 hover:bg-blue-50/50 dark:hover:bg-blue-900/20 rounded-md transition-colors py-1 relative">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"></path></svg>
+                            Комментарии
+                            <span class="comment-count-badge hidden ml-1 bg-blue-100 dark:bg-blue-900/50 text-blue-600 dark:text-blue-400 text-[11px] font-bold px-1.5 py-0.5 rounded-full" data-post-id="${msg.id}">0</span>
+                        </button>
+                    </div>
+                    ` : ''}
                 </div>
-                <div class="clear-both"></div>
-                ${isCommentsEnabled ? `
-                <div class="mt-2 pt-2 border-t border-gray-200/50 dark:border-gray-700/50 flex w-full">
-                    <button onclick="event.stopPropagation(); window.openComments('${msg.id}')" class="flex-1 flex items-center justify-center gap-2 text-[13px] font-medium text-blue-500/90 dark:text-blue-400/90 hover:bg-blue-50/50 dark:hover:bg-blue-900/20 rounded-md transition-colors py-1 relative">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"></path></svg>
-                        Комментарии
-                        <span class="comment-count-badge hidden ml-1 bg-blue-100 dark:bg-blue-900/50 text-blue-600 dark:text-blue-400 text-[11px] font-bold px-1.5 py-0.5 rounded-full" data-post-id="${msg.id}">0</span>
-                    </button>
-                </div>
-                ` : ''}
             </div>
         `;
 

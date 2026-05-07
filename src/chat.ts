@@ -8,7 +8,7 @@ export async function loadChats() {
             if (m.checkGlobalPendingRequests) m.checkGlobalPendingRequests();
         }).catch(err => console.error("Error loading group for pending checks:", err));
         
-        const { data: members, error: membersError } = await supabase.from('chat_members').select('chat_id').eq('user_id', state.currentUser.id);
+        const { data: members, error: membersError } = await supabase.from('chat_members').select('chat_id').eq('user_id', state.currentUser.id).neq('role', 'pending');
         if (membersError) throw membersError;
         
         let chatIds = members ? members.map(m => m.chat_id) : [];
@@ -535,6 +535,10 @@ export async function openChat(chatId: string, chatName: string, firstLetter: st
     state.activeChatIsPublic = isPublic || false;
     state.activeChatMembers = members || [];
 
+    if (state.activeChatParentInfo && state.activeChatParentInfo.messageId !== chatId) {
+        state.activeChatParentInfo = null;
+    }
+
     if (state.currentProfile?.settings?.show_saved_messages === false) {
         setTimeout(() => loadChats(false), 50);
     }
@@ -572,10 +576,12 @@ export async function openChat(chatId: string, chatName: string, firstLetter: st
                 statusEl.className = '';
             }
         } else {
-             statusEl.innerText = `${state.activeChatType === 'channel' ? 'Канал' : 'Группа'} • ${state.activeChatMembers ? state.activeChatMembers.length : 0} ${state.activeChatType === 'channel' ? 'подписчик(ов)' : 'участник(ов)'}`;
+             const activeMembersCount = state.activeChatMembers ? state.activeChatMembers.filter((m: any) => m.role !== 'pending').length : 0;
+             statusEl.innerText = `${state.activeChatType === 'channel' ? 'Канал' : 'Группа'} • ${activeMembersCount} ${state.activeChatType === 'channel' ? 'подписчиков' : 'участников'}`;
              statusEl.className = 'text-xs text-gray-500 dark:text-gray-400 font-medium';
         }
     };
+    (window as any).updateHeaderInfo = updateHeaderInfo;
 
     let isPremiumUser = false;
     if (chatType === 'direct' || chatType === 'private') {

@@ -228,6 +228,15 @@ export function closeChatMobile(skipHistoryBack = false) {
         }
     }
     state.activeChatId = null; 
+    document.getElementById('current-chat-name')!.innerHTML = 'Выберите чат';
+    document.getElementById('current-chat-status')!.innerText = '';
+    document.getElementById('chat-header-avatar')!.classList.add('hidden');
+    document.getElementById('messages-list')!.innerHTML = '';
+    const inputArea = document.getElementById('input-area');
+    if (inputArea) inputArea.style.display = 'none';
+    const backBtn = document.querySelector('#chat-header-container button');
+    if (backBtn) backBtn.className = 'hidden';
+    
     document.getElementById('sidebar')!.classList.remove('hidden'); 
     document.getElementById('chat-area')!.classList.add('hidden'); 
     document.querySelectorAll('#chats-list > div').forEach(el => {
