@@ -316,9 +316,21 @@ export async function openComments(messageId: string) {
             state.activeChatParentInfo = { parentId: msg.chat_id, parentName: parentName || 'Основной чат', messageId: messageId };
         }
     }
-    const { data: mem } = await supabase.from('chat_members').select('*').eq('chat_id', messageId).eq('user_id', state.currentUser.id).single();
+    const { data: mem } = await supabase.from('chat_members').select('*').eq('chat_id', messageId).eq('user_id', state.currentUser.id).maybeSingle();
     if (!mem) {
-        await supabase.from('chat_members').insert({ chat_id: messageId, user_id: state.currentUser.id, role: 'member' });
+        const { data: existingChat } = await supabase.from('chats').select('id').eq('id', messageId).maybeSingle();
+        if (!existingChat) {
+            const { error: chatErr } = await supabase.from('chats').insert({
+                id: messageId,
+                type: 'group',
+                title: 'Комментарии',
+                description: 'POST_COMMENTS',
+                is_public: true
+            });
+            if (chatErr) console.error("Error creating comment chat:", chatErr);
+        }
+        const { error: memErr } = await supabase.from('chat_members').insert({ chat_id: messageId, user_id: state.currentUser.id, role: 'member' });
+        if (memErr) console.error("Error joining comment chat: ", memErr);
     }
     import('./chat').then(m => m.openChat(messageId, 'Комментарии к посту', 'К', true, 'group', [], null, 'Обсуждение поста', true));
 }

@@ -131,7 +131,7 @@ export async function startChatWithUser(userToFind: any) {
         const { data: myChats } = await supabase.from('chat_members').select('chat_id').eq('user_id', state.currentUser.id);
         const myChatIds = myChats?.map(c => c.chat_id) || [];
         if (myChatIds.length > 0) {
-            const { data: allMembers } = await supabase.from('chat_members').select('chat_id').in('chat_id', myChatIds);
+            const { data: allMembers } = await supabase.from('chat_members').select('chat_id, chats!inner(type)').in('chat_id', myChatIds).in('chats.type', ['private', 'direct']);
             const counts: Record<string, number> = {};
             allMembers?.forEach(m => counts[m.chat_id] = (counts[m.chat_id] || 0) + 1);
             const selfChatId = Object.keys(counts).find(id => counts[id] === 1);

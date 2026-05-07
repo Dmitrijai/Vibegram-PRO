@@ -1526,7 +1526,7 @@ export function showGlobalPendingModal(pendingMembers: any[]) {
                     </h3>
                     <p class="text-[13px] font-medium text-gray-500 mt-2">Рассмотрите входящие запросы на добавление в ваши группы.</p>
                 </div>
-                <button onclick="(window as any).hasDismissedGlobalPendingModal = true; document.getElementById('global-pending-modal')?.remove()" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">
+                <button onclick="window.hasDismissedGlobalPendingModal = true; document.getElementById('global-pending-modal')?.remove()" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">
                     <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
                 </button>
             </div>
@@ -1567,7 +1567,6 @@ export function showGlobalPendingModal(pendingMembers: any[]) {
             const modal = document.getElementById('global-pending-modal');
             if (modal) {
                 const remainingCards = modal.querySelectorAll('.pending-request-card');
-                // The parent is the container for cards: 
                 if (remainingCards.length === 0) {
                     modal.remove();
                 }
@@ -1578,6 +1577,17 @@ export function showGlobalPendingModal(pendingMembers: any[]) {
     if (action === 'accept') {
         const { error } = await supabase.from('chat_members').update({ role: 'member' }).eq('chat_id', chatId).eq('user_id', userId);
         if (error) console.error(error);
+        
+        const modal = document.getElementById('global-pending-modal');
+        if (modal) modal.remove();
+        
+        const { data: chat } = await supabase.from('chats').select('*, chat_members(*, profiles(*))').eq('id', chatId).single();
+        if (chat) {
+            import('./chat').then(m => {
+                m.openChat(chat.id, chat.title || 'Группа', chat.title?.[0]?.toUpperCase() || 'Г', true, chat.type, chat.chat_members, chat.avatar_url, chat.description, chat.is_public, true);
+                setTimeout(() => openChatInfo(false), 300);
+            });
+        }
     } else {
         const { error } = await supabase.from('chat_members').delete().eq('chat_id', chatId).eq('user_id', userId);
         if (error) console.error(error);
