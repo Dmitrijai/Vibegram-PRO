@@ -234,7 +234,7 @@ function setupRealtime() {
                         }
                         
                         const { data: profile } = await supabase.from('profiles').select('settings').eq('id', state.currentUser.id).single();
-                        const { data: chatData } = await supabase.from('chats').select('description, type').eq('id', payload.new.chat_id).single();
+                        const { data: chatData } = await supabase.from('chats').select('description, type, title').eq('id', payload.new.chat_id).single();
                         const isCommentChat = chatData?.description === 'POST_COMMENTS' || (chatData?.type === 'group' && chatData?.title === 'Комментарии');
                         
                         const settings = profile?.settings || {};

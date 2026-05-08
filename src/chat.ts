@@ -542,7 +542,7 @@ export async function openChat(chatId: string, chatName: string, firstLetter: st
     }
 
     if (state.currentProfile?.settings?.show_saved_messages === false) {
-        setTimeout(() => loadChats(false), 50);
+        setTimeout(() => loadChats(), 50);
     }
 
     const updateHeaderInfo = () => {

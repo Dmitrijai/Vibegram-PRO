@@ -157,7 +157,7 @@ export async function startChatWithUser(userToFind: any) {
         if (cmErr) console.error("CM Error", cmErr);
     }
     openChat(chatId, isSelf ? 'Избранное' : (userToFind.display_name || userToFind.username), (userToFind.display_name || userToFind.username)[0].toUpperCase(), false, 'private', [{user_id: userToFind.id, profiles: userToFind}], userToFind.avatar_url);
-    await import('./chat').then(m => m.loadChats(true));
+    await import('./chat').then(m => m.loadChats());
 }
 
 export async function startDirectChatById(userId: string) {
