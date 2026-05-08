@@ -34,26 +34,40 @@ export async function generateAiImage() {
     document.body.appendChild(overlay);
 
     try {
-        const imageBlob = await executeHfWithFallback(async (apiKey: string) => {
-            const url = "https://api-inference.huggingface.co/models/stabilityai/stable-diffusion-xl-base-1.0";
-
-            const response = await fetch("/api/hf-proxy", {
-                headers: {
-                    "Content-Type": "application/json",
-                },
-                method: "POST",
-                body: JSON.stringify({ url, apiKey, inputs: prompt }),
+        let imageBlob: Blob | null = null;
+        try {
+            imageBlob = await executeHfWithFallback(async (apiKey: string) => {
+                const url = "https://api-inference.huggingface.co/models/stabilityai/stable-diffusion-xl-base-1.0";
+    
+                const response = await fetch(url, {
+                    headers: {
+                        "Authorization": `Bearer ${apiKey}`,
+                        "Content-Type": "application/json",
+                    },
+                    method: "POST",
+                    body: JSON.stringify({ inputs: prompt }),
+                });
+                
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    const err = new Error(`HF error: ${response.status} ${response.statusText} - ${errorText}`);
+                    (err as any).status = response.status;
+                    throw err;
+                }
+    
+                return await response.blob();
             });
-            
-            if (!response.ok) {
-                const errorText = await response.text();
-                const err = new Error(`HF error: ${response.status} ${response.statusText} - ${errorText}`);
-                (err as any).status = response.status;
-                throw err;
-            }
-
-            return await response.blob();
-        });
+        } catch (hfError) {
+             console.warn("Hugging Face API failed, falling back to Pollinations...", hfError);
+             const pollUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?nologo=true&seed=${Math.floor(Math.random() * 1000000)}`;
+             const response = await fetch(pollUrl);
+             if (!response.ok) {
+                 throw new Error(`Pollinations API error: ${response.status}`);
+             }
+             imageBlob = await response.blob();
+        }
+        
+        if (!imageBlob) throw new Error("Изображение не удалось сгенерировать.");
 
         // Create a File object
         const file = new File([imageBlob], `ai_generated_${Date.now()}.jpg`, { type: 'image/jpeg' });
