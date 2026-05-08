@@ -13,6 +13,8 @@ export async function generateAiImage() {
     const prompt = text.replace('@ai ', '').trim();
     if (!prompt) return alert('Введите запрос для генерации');
 
+    const abortController = new AbortController();
+
     // Setup loading UI
     const generateBtn = document.getElementById('ai-generate-btn') as HTMLButtonElement;
     generateBtn.disabled = true;
@@ -30,12 +32,22 @@ export async function generateAiImage() {
         </div>
         <div class="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-purple-400 to-pink-500 animate-pulse">Создаем магию...</div>
         <div class="text-sm text-gray-300 mt-2">Рисуем: ${prompt}</div>
+        <button id="cancel-ai-btn" class="mt-8 px-6 py-2 bg-red-500/80 hover:bg-red-500 text-white rounded-full font-medium transition-all transform hover:scale-105 flex items-center gap-2 backdrop-blur-md border border-red-400/30 shadow-lg shadow-red-500/20">
+            <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+            </svg>
+            Отменить
+        </button>
     `;
     document.body.appendChild(overlay);
 
+    document.getElementById('cancel-ai-btn')?.addEventListener('click', () => {
+        abortController.abort();
+    });
+
     try {
         const pollUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?nologo=true&seed=${Math.floor(Math.random() * 1000000)}`;
-        const response = await fetch(pollUrl);
+        const response = await fetch(pollUrl, { signal: abortController.signal });
         if (!response.ok) {
             throw new Error(`Ошибка генерации: ${response.status}`);
         }
@@ -62,6 +74,10 @@ export async function generateAiImage() {
         renderMediaModal();
         
     } catch (e: any) {
+        if (e.name === 'AbortError') {
+            console.log('Генерация отменена пользователем');
+            return;
+        }
         console.error('AI Error:', e);
         if (!e.message?.includes('All HF API keys exhausted')) {
             let errorMessage = 'Произошла неизвестная ошибка при генерации изображения.';
