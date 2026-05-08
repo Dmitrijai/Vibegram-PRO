@@ -3,7 +3,7 @@ import { customToast } from './utils';
 import { GoogleGenAI } from '@google/genai';
 import { executeAiWithFallback } from './ai-keys';
 
-export async function transcribeMedia(url: string, messageId: string) {
+export async function transcribeMedia(url: string, messageId: string, msgType?: string) {
     try {
         const btn = document.getElementById(`transcribe-btn-${messageId}`);
         if (btn) {
@@ -34,8 +34,8 @@ export async function transcribeMedia(url: string, messageId: string) {
             mimeType = mimeType.split(';')[0];
         }
         
-        // Force audio/webm if it's a voice message (Supabase might serve it as video/webm by extension)
-        if (url.includes('_voice.')) {
+        // Force audio/webm to prevent Gemini from parsing video frames which fails on pure MediaRecorder webM files
+        if (msgType === 'voice' || msgType === 'video_circle' || mimeType.includes('video')) {
             mimeType = 'audio/webm';
         }
 
