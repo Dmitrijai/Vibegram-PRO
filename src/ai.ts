@@ -35,17 +35,14 @@ export async function generateAiImage() {
 
     try {
         const imageBlob = await executeHfWithFallback(async (apiKey: string) => {
-            // Используем CORS-прокси для обхода ограничения браузера на github.io
             const url = "https://api-inference.huggingface.co/models/stabilityai/stable-diffusion-xl-base-1.0";
-            const proxyUrl = "https://corsproxy.io/?" + encodeURIComponent(url);
 
-            const response = await fetch(proxyUrl, {
+            const response = await fetch("/api/hf-proxy", {
                 headers: {
-                    Authorization: `Bearer ${apiKey}`,
                     "Content-Type": "application/json",
                 },
                 method: "POST",
-                body: JSON.stringify({inputs: prompt}),
+                body: JSON.stringify({ url, apiKey, inputs: prompt }),
             });
             
             if (!response.ok) {

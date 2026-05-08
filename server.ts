@@ -106,6 +106,34 @@ async function startServer() {
     }
   });
 
+  // API Route for HF proxy
+  app.post("/api/hf-proxy", async (req, res) => {
+    try {
+      const { url, apiKey, inputs } = req.body;
+      const response = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${apiKey}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ inputs })
+      });
+
+      if (!response.ok) {
+         const errText = await response.text();
+         res.status(response.status).send(errText);
+         return;
+      }
+      
+      const arrayBuffer = await response.arrayBuffer();
+      res.setHeader("Content-Type", response.headers.get("Content-Type") || "image/jpeg");
+      res.send(Buffer.from(arrayBuffer));
+      
+    } catch (e: any) {
+       res.status(500).json({ error: e.message });
+    }
+  });
+
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
       server: { middlewareMode: true },
