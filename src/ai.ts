@@ -1,7 +1,7 @@
 import { GoogleGenAI, HarmCategory, HarmBlockThreshold } from "@google/genai";
 import { state } from './supabase';
 import { renderMediaModal } from './messages-media';
-import { executeAiWithFallback, executeHfWithFallback } from './ai-keys';
+import { executeAiWithFallback } from './ai-keys';
 import { customAlert } from './utils';
 
 export async function generateAiImage() {
@@ -34,19 +34,41 @@ export async function generateAiImage() {
     document.body.appendChild(overlay);
 
     try {
-        // We use pollinations.ai because it is completely free, requires no API key, and supports cross-origin (CORS) requests directly from the browser.
-        // Hugging Face Inference API often blocks requests from browsers via CORS policies depending on the model/endpoint.
-        const imageUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=1024&height=1024&nologo=true&seed=${Math.floor(Math.random() * 1000000)}`;
-        
-        const response = await fetch(imageUrl);
-        if (!response.ok) {
-            throw new Error(`Pollinations API error: ${response.status} ${response.statusText}`);
-        }
-        
-        const imageBlob = await response.blob();
+        const imageBlob = await executeAiWithFallback(async (ai: GoogleGenAI) => {
+            const response = await ai.models.generateContent({
+                model: 'gemini-2.5-flash-image',
+                contents: {
+                    parts: [
+                        { text: prompt },
+                    ]
+                },
+                config: {
+                    imageConfig: {
+                        aspectRatio: "1:1",
+                        imageSize: "1K"
+                    }
+                }
+            });
+            
+            let base64 = '';
+            for (const part of response.candidates?.[0]?.content?.parts || []) {
+                if (part.inlineData && part.inlineData.data) {
+                    base64 = part.inlineData.data;
+                    break;
+                }
+            }
+            if (!base64) throw new Error("Изображение не было сгенерировано.");
+
+            const binary = atob(base64);
+            const array = new Uint8Array(binary.length);
+            for (let i = 0; i < binary.length; i++) {
+                array[i] = binary.charCodeAt(i);
+            }
+            return new Blob([array], { type: 'image/jpeg' });
+        });
 
         // Create a File object
-        const file = new File([imageBlob], `ai_generated_${Date.now()}.png`, { type: 'image/png' });
+        const file = new File([imageBlob], `ai_generated_${Date.now()}.jpg`, { type: 'image/jpeg' });
         (file as any).asFile = false; // Important flag to treat as media, not generic file
         
         // Add to selected files
