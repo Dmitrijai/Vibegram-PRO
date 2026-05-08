@@ -1,7 +1,7 @@
 import { GoogleGenAI, HarmCategory, HarmBlockThreshold } from "@google/genai";
 import { state } from './supabase';
 import { renderMediaModal } from './messages-media';
-import { executeAiWithFallback } from './ai-keys';
+import { executeAiWithFallback, executeHfWithFallback } from './ai-keys';
 import { customAlert } from './utils';
 
 export async function generateAiImage() {
@@ -34,37 +34,28 @@ export async function generateAiImage() {
     document.body.appendChild(overlay);
 
     try {
-        const imageBlob = await executeAiWithFallback(async (ai: GoogleGenAI) => {
-            const response = await ai.models.generateContent({
-                model: 'gemini-2.5-flash-image',
-                contents: {
-                    parts: [
-                        { text: prompt },
-                    ]
+        const imageBlob = await executeHfWithFallback(async (apiKey: string) => {
+            // Используем CORS-прокси для обхода ограничения браузера на github.io
+            const url = "https://api-inference.huggingface.co/models/stabilityai/stable-diffusion-xl-base-1.0";
+            const proxyUrl = "https://corsproxy.io/?" + encodeURIComponent(url);
+
+            const response = await fetch(proxyUrl, {
+                headers: {
+                    Authorization: `Bearer ${apiKey}`,
+                    "Content-Type": "application/json",
                 },
-                config: {
-                    imageConfig: {
-                        aspectRatio: "1:1",
-                        imageSize: "1K"
-                    }
-                }
+                method: "POST",
+                body: JSON.stringify({inputs: prompt}),
             });
             
-            let base64 = '';
-            for (const part of response.candidates?.[0]?.content?.parts || []) {
-                if (part.inlineData && part.inlineData.data) {
-                    base64 = part.inlineData.data;
-                    break;
-                }
+            if (!response.ok) {
+                const errorText = await response.text();
+                const err = new Error(`HF error: ${response.status} ${response.statusText} - ${errorText}`);
+                (err as any).status = response.status;
+                throw err;
             }
-            if (!base64) throw new Error("Изображение не было сгенерировано.");
 
-            const binary = atob(base64);
-            const array = new Uint8Array(binary.length);
-            for (let i = 0; i < binary.length; i++) {
-                array[i] = binary.charCodeAt(i);
-            }
-            return new Blob([array], { type: 'image/jpeg' });
+            return await response.blob();
         });
 
         // Create a File object
