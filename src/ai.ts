@@ -34,29 +34,16 @@ export async function generateAiImage() {
     document.body.appendChild(overlay);
 
     try {
-        const imageBlob = await executeHfWithFallback(async (apiKey: string) => {
-            const response = await fetch(
-                "https://api-inference.huggingface.co/models/stabilityai/stable-diffusion-xl-base-1.0",
-                {
-                    headers: {
-                        Authorization: `Bearer ${apiKey}`,
-                        "Content-Type": "application/json",
-                    },
-                    method: "POST",
-                    body: JSON.stringify({inputs: prompt}),
-                }
-            );
-
-            if (!response.ok) {
-                const errorText = await response.text();
-                // Parse out specific error status for fallback to recognize
-                const err = new Error(`HF error: ${response.status} ${response.statusText} - ${errorText}`);
-                (err as any).status = response.status;
-                throw err;
-            }
-
-            return await response.blob();
-        });
+        // We use pollinations.ai because it is completely free, requires no API key, and supports cross-origin (CORS) requests directly from the browser.
+        // Hugging Face Inference API often blocks requests from browsers via CORS policies depending on the model/endpoint.
+        const imageUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=1024&height=1024&nologo=true&seed=${Math.floor(Math.random() * 1000000)}`;
+        
+        const response = await fetch(imageUrl);
+        if (!response.ok) {
+            throw new Error(`Pollinations API error: ${response.status} ${response.statusText}`);
+        }
+        
+        const imageBlob = await response.blob();
 
         // Create a File object
         const file = new File([imageBlob], `ai_generated_${Date.now()}.png`, { type: 'image/png' });
