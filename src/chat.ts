@@ -261,15 +261,10 @@ export async function openChatContextMenu(chatId: string, chatName: string, e: M
         y = (e as MouseEvent).clientY;
     }
 
-    // Make sure it doesn't go off screen
-    setTimeout(() => {
-        const rect = menu.getBoundingClientRect();
-        if (x + rect.width > window.innerWidth) x = window.innerWidth - rect.width - 10;
-        if (y + rect.height > window.innerHeight) y = window.innerHeight - rect.height - 10;
-        menu.style.left = `${Math.max(10, x)}px`;
-        menu.style.top = `${Math.max(10, y)}px`;
-    }, 0);
-    
+    // Position it initially offscreen so it doesn't flash
+    menu.style.left = '-9999px';
+    menu.style.top = '-9999px';
+
     const { data: profile } = await supabase.from('profiles').select('settings').eq('id', state.currentUser!.id).single();
     const isMuted = (profile?.settings?.muted_chats || []).includes(chatId);
 
@@ -295,6 +290,16 @@ export async function openChatContextMenu(chatId: string, chatName: string, e: M
         `}
     `;
     document.body.appendChild(menu);
+
+    setTimeout(() => {
+        const rect = menu.getBoundingClientRect();
+        let finalX = x;
+        let finalY = y;
+        if (finalX + rect.width > window.innerWidth) finalX = window.innerWidth - rect.width - 10;
+        if (finalY + rect.height > window.innerHeight) finalY = window.innerHeight - rect.height - 10;
+        menu.style.left = `${Math.max(10, finalX)}px`;
+        menu.style.top = `${Math.max(10, finalY)}px`;
+    }, 0);
 
     const closeMenu = (e: any) => {
         if (!menu.contains(e.target)) {

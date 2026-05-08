@@ -27,19 +27,22 @@ export async function transcribeMedia(url: string, messageId: string) {
         });
         
         // Determine mime type
-        let mimeType = blob.type;
-        if (!mimeType) {
-            mimeType = url.includes('.mp4') ? 'video/mp4' : 'audio/webm';
-        }
+        let mimeType = blob.type || (url.includes('.mp4') ? 'video/mp4' : 'audio/webm');
+        
         // Strip codec info that Gemini rejects (e.g. "audio/webm; codecs=opus" -> "audio/webm")
         if (mimeType.includes(';')) {
             mimeType = mimeType.split(';')[0];
+        }
+        
+        // Force audio/webm if it's a voice message (Supabase might serve it as video/webm by extension)
+        if (url.includes('_voice.')) {
+            mimeType = 'audio/webm';
         }
 
         // Call Gemini
         const result = await executeAiWithFallback(async (ai: GoogleGenAI) => {
             return await ai.models.generateContent({
-                model: 'gemini-3-flash-preview',
+                model: 'gemini-2.5-flash',
                 contents: [
                     {
                         role: 'user',
