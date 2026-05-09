@@ -3,78 +3,27 @@ import { getFakeEmail, showError, customConfirm } from './utils';
 import { loadChats } from './chat';
 import { initWebRTC } from './webrtc';
 
-export async function initGoogleAuth() {
-    try {
-        if (!document.getElementById('gsi-script')) {
-            const script = document.createElement('script');
-            script.id = 'gsi-script';
-            script.src = 'https://accounts.google.com/gsi/client';
-            document.head.appendChild(script);
-            await new Promise((resolve, reject) => {
-                script.onload = resolve;
-                script.onerror = () => reject(new Error('Не удалось загрузить скрипт Google'));
-            });
-        }
-        
-        const clientId = '362424832513-mdflqja6lr0jq81es5frq66vqic6i1n9.apps.googleusercontent.com';
-        
-        const handleCredentialResponse = async (response: any) => {
-            const btn = document.getElementById('native-google-btn') as HTMLButtonElement | null;
-            try {
-                if (btn) btn.innerHTML = '<div class="w-5 h-5 border-2 border-gray-400 border-t-transparent rounded-full animate-spin"></div> Подключение...';
-                
-                const { error } = await supabase.auth.signInWithIdToken({
-                    provider: 'google',
-                    token: response.credential,
-                });
-                if (error) throw error;
-            } catch (err: any) {
-                if (btn) btn.innerHTML = 'Продолжить с Google';
-                import('./utils').then(m => m.showError('Ошибка входа Google: ' + err.message));
-            }
-        };
-
-        (window as any).google.accounts.id.initialize({
-            client_id: clientId,
-            callback: handleCredentialResponse,
-            auto_select: false,
-            cancel_on_tap_outside: false
-        });
-
-        const container = document.getElementById('google-btn-container');
-        const nativeBtn = document.getElementById('native-google-btn');
-        if (container && nativeBtn) {
-            nativeBtn.style.display = 'none'; // Скрываем нашу кастомную кнопку
-            (window as any).google.accounts.id.renderButton(
-                container,
-                { theme: document.documentElement.classList.contains('dark') ? 'filled_black' : 'outline', size: 'large', type: 'standard', text: 'continue_with', width: container.offsetWidth }
-            );
-        }
-    } catch (err: any) {
-        console.error('Failed to init Google Auth:', err);
-    }
-}
-
 export async function loginWithGoogle() {
-    // Если кнопка One Tap (gsi) еще не загрузилась или заблокирована
-    const btn = document.getElementById('native-google-btn') as HTMLButtonElement | null;
+    const btn = event?.currentTarget as HTMLButtonElement | undefined;
     if (btn) {
-        btn.innerHTML = '<div class="w-5 h-5 border-2 border-gray-400 border-t-transparent rounded-full animate-spin"></div> Загрузка...';
+        btn.disabled = true;
+        btn.innerHTML = '<div class="w-5 h-5 border-2 border-gray-400 border-t-transparent rounded-full animate-spin"></div> Перенаправление...';
     }
-    try {
-        // Попытка запустить стандартный вход (с редиректом) только как крайняя мера, 
-        // если скрипт гугла не сработал. Но мы ставим skipBrowserRedirect: false.
-        const { error } = await supabase.auth.signInWithOAuth({
-            provider: 'google',
-            options: {
-                redirectTo: window.location.origin + window.location.pathname,
-            }
-        });
-        if (error) throw error;
-    } catch (err: any) {
-        if (btn) btn.innerHTML = 'Продолжить с Google';
-        import('./utils').then(m => m.showError('Ошибка входа через Google: ' + err.message));
-    }
+
+    const clientId = '362424832513-mdflqja6lr0jq81es5frq66vqic6i1n9.apps.googleusercontent.com';
+    // Редирект на текущий URL (т.е. на страницу приложения)
+    const redirectUri = window.location.origin + window.location.pathname;
+    
+    // Генерируем URL для авторизации Google (Implicit Flow) -- работает вообще без бэкенда!
+    const oAuthUrl = new URL('https://accounts.google.com/o/oauth2/v2/auth');
+    oAuthUrl.searchParams.set('client_id', clientId);
+    oAuthUrl.searchParams.set('redirect_uri', redirectUri);
+    oAuthUrl.searchParams.set('response_type', 'id_token'); // Получаем сразу ID Token
+    oAuthUrl.searchParams.set('scope', 'email profile openid');
+    oAuthUrl.searchParams.set('nonce', Math.random().toString(36).substring(2));
+    oAuthUrl.searchParams.set('prompt', 'select_account');
+
+    window.location.href = oAuthUrl.toString();
 }
 
 export async function checkUser(authEvent?: string) {
@@ -84,6 +33,8 @@ export async function checkUser(authEvent?: string) {
         const searchParams = new URLSearchParams(window.location.search);
         const errDesc = hashParams.get('error_description') || searchParams.get('error_description');
         const errParam = hashParams.get('error') || searchParams.get('error');
+        const idToken = hashParams.get('id_token');
+
         if (errParam || errDesc) {
             console.error('OAuth Redirect Error:', errParam, errDesc);
             import('./utils').then(m => m.showError('Ошибка авторизации: ' + decodeURIComponent((errDesc || errParam)!.replace(/\+/g, ' '))));
@@ -95,7 +46,31 @@ export async function checkUser(authEvent?: string) {
                 loader.classList.add('opacity-0', 'pointer-events-none');
                 setTimeout(() => loader.remove(), 300);
             }
+            document.getElementById('auth-screen')!.classList.remove('hidden');
             return;
+        }
+
+        if (idToken) {
+            // Очищаем URL от токена
+            window.history.replaceState({}, document.title, window.location.pathname);
+            const loader = document.getElementById('initial-loader');
+            if (loader) loader.innerHTML = `<div class="p-8 bg-white/10 backdrop-blur-md rounded-2xl flex flex-col items-center shadow-xl border border-white/20"><div class="w-16 h-16 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin mb-4"></div><p class="text-white text-lg font-medium">Безопасный вход...</p></div>`;
+            
+            const { error: idError } = await supabase.auth.signInWithIdToken({
+                provider: 'google',
+                token: idToken,
+            });
+            
+            if (idError) {
+                console.error("ID Token Login Error:", idError);
+                import('./utils').then(m => m.showError('Ошибка сессии Google: ' + idError.message));
+                document.getElementById('auth-screen')!.classList.remove('hidden');
+                if (loader) {
+                    loader.classList.add('opacity-0', 'pointer-events-none');
+                    setTimeout(() => loader.remove(), 300);
+                }
+                return;
+            }
         }
 
         if ("Notification" in window && Notification.permission === "default") {
@@ -108,7 +83,6 @@ export async function checkUser(authEvent?: string) {
                 import('./utils').then(m => m.showError('Не удалось подключиться к серверу (Failed to fetch). Возможно, заблокировано в вашей стране, включите VPN.'));
             }
             document.getElementById('auth-screen')!.classList.remove('hidden');
-            initGoogleAuth();
             const loader = document.getElementById('initial-loader');
             if (loader) {
                 loader.classList.add('opacity-0', 'pointer-events-none');
@@ -204,7 +178,6 @@ export async function checkUser(authEvent?: string) {
         } else {
             // User not logged in, show auth screen
             document.getElementById('auth-screen')!.classList.remove('hidden');
-            initGoogleAuth();
         }
     } catch (err: any) {
         console.error('Failed to check user:', err);

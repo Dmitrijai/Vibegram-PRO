@@ -8,10 +8,7 @@ export default {
         // Переписываем хост на Supabase
         url.hostname = SUPABASE_HOST;
 
-        // Создаем новый запрос с измененным URL, сохраняя метод, тело и заголовки
         const newRequest = new Request(url.toString(), request);
-        
-        // Добавляем заголовки, если нужно (обычно Supabase сам разбирается, но для OAuth полезно)
         newRequest.headers.set("X-Forwarded-Host", request.headers.get("Host"));
         
         // Если это OPTIONS (CORS Preflight), обрабатываем сами
@@ -24,8 +21,13 @@ export default {
             });
         }
 
-        // Проксируем запрос в Supabase (включая WebSockets - Cloudflare делает это автоматически)
         try {
+            // ВАЖНО: Для WebSockets мы должны вернуть ответ напрямую без создания нового Response!
+            if (request.headers.get("Upgrade") === "websocket") {
+                return await fetch(newRequest);
+            }
+
+            // Проксируем обычный запрос
             const response = await fetch(newRequest);
             
             // Клонируем ответ, чтобы добавить свои CORS заголовки
