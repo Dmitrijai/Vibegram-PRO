@@ -23,6 +23,29 @@ export async function loginWithGoogle() {
 export async function checkUser(authEvent?: string) {
     if ((window as any).originalAdminUser) return;
     try {
+        const hashParams = new URLSearchParams(window.location.hash.substring(1));
+        const searchParams = new URLSearchParams(window.location.search);
+        const errDesc = hashParams.get('error_description') || searchParams.get('error_description');
+        const errParam = hashParams.get('error') || searchParams.get('error');
+        if (errParam || errDesc) {
+            console.error('OAuth Redirect Error:', errParam, errDesc);
+            import('./utils').then(m => {
+                if (errDesc?.includes('Unable to exchange external code') || errDesc?.includes('external_code')) {
+                    m.showError('Ошибка авторизации Google: "Unable to exchange external code". Пожалуйста, проверьте в панели Supabase (Authentication -> Providers -> Google), что Client Secret верный и точно совпадает с Google Cloud Console.');
+                } else {
+                    m.showError('Ошибка авторизации: ' + decodeURIComponent((errDesc || errParam)!.replace(/\+/g, ' ')));
+                }
+            });
+            // Clear URL
+            window.history.replaceState({}, document.title, window.location.pathname);
+            const loader = document.getElementById('initial-loader');
+            if (loader) {
+                loader.classList.add('opacity-0', 'pointer-events-none');
+                setTimeout(() => loader.remove(), 300);
+            }
+            return;
+        }
+
         if ("Notification" in window && Notification.permission === "default") {
             Notification.requestPermission();
         }
