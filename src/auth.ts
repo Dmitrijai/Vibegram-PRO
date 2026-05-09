@@ -3,61 +3,21 @@ import { getFakeEmail, showError, customConfirm } from './utils';
 import { loadChats } from './chat';
 import { initWebRTC } from './webrtc';
 
-export async function initGoogleAuth() {
-    try {
-        if (!document.getElementById('gsi-script')) {
-            const script = document.createElement('script');
-            script.id = 'gsi-script';
-            script.src = 'https://accounts.google.com/gsi/client';
-            document.head.appendChild(script);
-            await new Promise((resolve, reject) => {
-                script.onload = resolve;
-                script.onerror = () => reject(new Error('Не удалось загрузить скрипт Google'));
-            });
-        }
-        
-        const clientId = '362424832513-mdflqja6lr0jq81es5frq66vqic6i1n9.apps.googleusercontent.com';
-        
-        const handleCredentialResponse = async (response: any) => {
-            const btn = document.getElementById('old-google-btn') as HTMLButtonElement | null;
-            try {
-                if (btn) btn.innerHTML = '<div class="w-5 h-5 border-2 border-gray-400 border-t-transparent rounded-full animate-spin"></div> Подключение...';
-                
-                const { error } = await supabase.auth.signInWithIdToken({
-                    provider: 'google',
-                    token: response.credential,
-                });
-                if (error) throw error;
-            } catch (err: any) {
-                if (btn) btn.innerHTML = 'Продолжить с Google';
-                import('./utils').then(m => m.showError('Ошибка входа Google: ' + err.message));
-            }
-        };
-
-        (window as any).google.accounts.id.initialize({
-            client_id: clientId,
-            callback: handleCredentialResponse,
-            context: 'use',
-            cancel_on_tap_outside: false
-        });
-
-        const container = document.getElementById('google-btn-container');
-        const oldBtn = document.getElementById('old-google-btn');
-        if (container && oldBtn) {
-            oldBtn.style.display = 'none';
-            (window as any).google.accounts.id.renderButton(
-                container,
-                { theme: document.documentElement.classList.contains('dark') ? 'filled_black' : 'outline', size: 'large', type: 'standard', text: 'continue_with', width: container.offsetWidth }
-            );
-        }
-    } catch (err: any) {
-        console.error('Failed to init Google Auth:', err);
-    }
-}
-
 export async function loginWithGoogle() {
-    // This is now a fallback if rendering failed
-    initGoogleAuth();
+    const btn = event?.currentTarget as HTMLButtonElement | undefined;
+    if (btn) btn.disabled = true;
+    try {
+        const { error } = await supabase.auth.signInWithOAuth({
+            provider: 'google',
+            options: {
+                redirectTo: window.location.origin + window.location.pathname,
+            }
+        });
+        if (error) throw error;
+    } catch (err: any) {
+        if (btn) btn.disabled = false;
+        import('./utils').then(m => m.showError('Ошибка входа через Google: ' + err.message));
+    }
 }
 
 export async function checkUser(authEvent?: string) {
@@ -185,7 +145,6 @@ export async function checkUser(authEvent?: string) {
         } else {
             // User not logged in, show auth screen
             document.getElementById('auth-screen')!.classList.remove('hidden');
-            initGoogleAuth();
         }
     } catch (err: any) {
         console.error('Failed to check user:', err);
