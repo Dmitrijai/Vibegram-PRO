@@ -31,7 +31,7 @@ export async function checkUser(authEvent?: string) {
             console.error('OAuth Redirect Error:', errParam, errDesc);
             import('./utils').then(m => {
                 if (errDesc?.includes('Unable to exchange external code') || errDesc?.includes('external_code')) {
-                    m.showError('Ошибка авторизации Google: "Unable to exchange external code". Пожалуйста, проверьте в панели Supabase (Authentication -> Providers -> Google), что Client Secret верный и точно совпадает с Google Cloud Console.');
+                    m.showError('Ошибка Google: убедитесь, что ваш Cloudflare Worker передает заголовок X-Forwarded-Proto: https (иначе Supabase отправляет неверный redirect_uri).', 10000);
                 } else {
                     m.showError('Ошибка авторизации: ' + decodeURIComponent((errDesc || errParam)!.replace(/\+/g, ' ')));
                 }
