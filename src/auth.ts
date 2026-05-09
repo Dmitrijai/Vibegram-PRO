@@ -56,8 +56,25 @@ export async function initGoogleAuth() {
 }
 
 export async function loginWithGoogle() {
-    // Этот метод вызывается если нажать на запасную кнопку
-    initGoogleAuth();
+    // Если кнопка One Tap (gsi) еще не загрузилась или заблокирована
+    const btn = document.getElementById('native-google-btn') as HTMLButtonElement | null;
+    if (btn) {
+        btn.innerHTML = '<div class="w-5 h-5 border-2 border-gray-400 border-t-transparent rounded-full animate-spin"></div> Загрузка...';
+    }
+    try {
+        // Попытка запустить стандартный вход (с редиректом) только как крайняя мера, 
+        // если скрипт гугла не сработал. Но мы ставим skipBrowserRedirect: false.
+        const { error } = await supabase.auth.signInWithOAuth({
+            provider: 'google',
+            options: {
+                redirectTo: window.location.origin + window.location.pathname,
+            }
+        });
+        if (error) throw error;
+    } catch (err: any) {
+        if (btn) btn.innerHTML = 'Продолжить с Google';
+        import('./utils').then(m => m.showError('Ошибка входа через Google: ' + err.message));
+    }
 }
 
 export async function checkUser(authEvent?: string) {
@@ -69,13 +86,8 @@ export async function checkUser(authEvent?: string) {
         const errParam = hashParams.get('error') || searchParams.get('error');
         if (errParam || errDesc) {
             console.error('OAuth Redirect Error:', errParam, errDesc);
-            import('./utils').then(m => {
-                if (errDesc?.includes('Unable to exchange external code') || errDesc?.includes('external_code')) {
-                    m.showError('Ошибка Google: убедитесь, что ваш Cloudflare Worker передает заголовок X-Forwarded-Proto: https (иначе Supabase отправляет неверный redirect_uri).', 10000);
-                } else {
-                    m.showError('Ошибка авторизации: ' + decodeURIComponent((errDesc || errParam)!.replace(/\+/g, ' ')));
-                }
-            });
+            import('./utils').then(m => m.showError('Ошибка авторизации: ' + decodeURIComponent((errDesc || errParam)!.replace(/\+/g, ' '))));
+            
             // Clear URL
             window.history.replaceState({}, document.title, window.location.pathname);
             const loader = document.getElementById('initial-loader');
@@ -93,7 +105,14 @@ export async function checkUser(authEvent?: string) {
         if (error) {
             console.error('Auth error:', error.message || error);
             if (error.message === 'Failed to fetch') {
-                import('./utils').then(m => m.showError('Не удалось подключиться к серверу (Failed to fetch). Возможно, база данных Supabase остановлена.'));
+                import('./utils').then(m => m.showError('Не удалось подключиться к серверу (Failed to fetch). Возможно, заблокировано в вашей стране, включите VPN.'));
+            }
+            document.getElementById('auth-screen')!.classList.remove('hidden');
+            initGoogleAuth();
+            const loader = document.getElementById('initial-loader');
+            if (loader) {
+                loader.classList.add('opacity-0', 'pointer-events-none');
+                setTimeout(() => loader.remove(), 300);
             }
             return;
         }
