@@ -10,6 +10,7 @@ export default {
 
         const newRequest = new Request(url.toString(), request);
         newRequest.headers.set("X-Forwarded-Host", request.headers.get("Host"));
+        newRequest.headers.set("X-Forwarded-Proto", "https");
         
         // Если это OPTIONS (CORS Preflight), обрабатываем сами
         if (request.method === "OPTIONS") {
