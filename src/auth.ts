@@ -10,21 +10,20 @@ export async function loginWithGoogle() {
         btn.innerHTML = '<div class="w-5 h-5 border-2 border-gray-400 border-t-transparent rounded-full animate-spin"></div> Перенаправление...';
     }
 
-    try {
-        const { error } = await supabase.auth.signInWithOAuth({
-            provider: 'google',
-            options: {
-                redirectTo: window.location.origin + window.location.pathname,
-            }
-        });
-        if (error) throw error;
-    } catch (err: any) {
-        if (btn) {
-            btn.disabled = false;
-            btn.innerHTML = 'Продолжить с Google';
-        }
-        import('./utils').then(m => m.showError('Ошибка входа через Google: ' + err.message));
-    }
+    const clientId = '362424832513-mdflqja6lr0jq81es5frq66vqic6i1n9.apps.googleusercontent.com';
+    // Редирект на текущий URL (т.е. на страницу приложения)
+    const redirectUri = window.location.origin + window.location.pathname;
+    
+    // Генерируем URL для авторизации Google (Implicit Flow) -- работает вообще без бэкенда!
+    const oAuthUrl = new URL('https://accounts.google.com/o/oauth2/v2/auth');
+    oAuthUrl.searchParams.set('client_id', clientId);
+    oAuthUrl.searchParams.set('redirect_uri', redirectUri);
+    oAuthUrl.searchParams.set('response_type', 'id_token'); // Получаем сразу ID Token
+    oAuthUrl.searchParams.set('scope', 'email profile openid');
+    oAuthUrl.searchParams.set('nonce', Math.random().toString(36).substring(2));
+    oAuthUrl.searchParams.set('prompt', 'select_account');
+
+    window.location.href = oAuthUrl.toString();
 }
 
 export async function checkUser(authEvent?: string) {
@@ -34,6 +33,7 @@ export async function checkUser(authEvent?: string) {
         const searchParams = new URLSearchParams(window.location.search);
         const errDesc = hashParams.get('error_description') || searchParams.get('error_description');
         const errParam = hashParams.get('error') || searchParams.get('error');
+        const idToken = hashParams.get('id_token');
 
         if (errParam || errDesc) {
             console.error('OAuth Redirect Error:', errParam, errDesc);
@@ -48,6 +48,29 @@ export async function checkUser(authEvent?: string) {
             }
             document.getElementById('auth-screen')!.classList.remove('hidden');
             return;
+        }
+
+        if (idToken) {
+            // Очищаем URL от токена
+            window.history.replaceState({}, document.title, window.location.pathname);
+            const loader = document.getElementById('initial-loader');
+            if (loader) loader.innerHTML = `<div class="p-8 bg-white/10 backdrop-blur-md rounded-2xl flex flex-col items-center shadow-xl border border-white/20"><div class="w-16 h-16 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin mb-4"></div><p class="text-white text-lg font-medium">Безопасный вход...</p></div>`;
+            
+            const { error: idError } = await supabase.auth.signInWithIdToken({
+                provider: 'google',
+                token: idToken,
+            });
+            
+            if (idError) {
+                console.error("ID Token Login Error:", idError);
+                import('./utils').then(m => m.showError('Ошибка сессии Google: ' + idError.message));
+                document.getElementById('auth-screen')!.classList.remove('hidden');
+                if (loader) {
+                    loader.classList.add('opacity-0', 'pointer-events-none');
+                    setTimeout(() => loader.remove(), 300);
+                }
+                return;
+            }
         }
 
         if ("Notification" in window && Notification.permission === "default") {

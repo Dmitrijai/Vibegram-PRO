@@ -6,12 +6,10 @@ export default {
         const SUPABASE_HOST = "dxoyyflsqrzgzjfihgcx.supabase.co";
         
         // Переписываем хост на Supabase
-        const originalHost = url.hostname;
         url.hostname = SUPABASE_HOST;
 
         const newRequest = new Request(url.toString(), request);
-        newRequest.headers.set("X-Forwarded-Host", originalHost);
-        newRequest.headers.set("X-Forwarded-Proto", "https");
+        newRequest.headers.set("X-Forwarded-Host", request.headers.get("Host"));
         
         // Если это OPTIONS (CORS Preflight), обрабатываем сами
         if (request.method === "OPTIONS") {
