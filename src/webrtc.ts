@@ -261,13 +261,12 @@ async function startCall(isVideo: boolean) {
 
             if (isVideo && remoteVideo) {
                 if (remoteVideo.srcObject !== remoteStream) remoteVideo.srcObject = remoteStream;
-                remoteVideo.play().catch(e => console.warn('Error playing remote video:', e));
+                // Rely on autoplay attribute instead of calling .play() manually to prevent AbortError
                 document.getElementById('call-avatar-container')?.classList.add('hidden');
                 remoteVideo.classList.remove('hidden');
             } 
             if (!isVideo && remoteAudio) {
                 if (remoteAudio.srcObject !== remoteStream) remoteAudio.srcObject = remoteStream;
-                remoteAudio.play().catch(e => console.warn('Error playing remote audio:', e));
             }
         };
         
@@ -365,13 +364,12 @@ export async function answerCall(callerId: string, offer: any, callerName: strin
 
             if (isVideo && remoteVideo) {
                 if (remoteVideo.srcObject !== remoteStream) remoteVideo.srcObject = remoteStream;
-                remoteVideo.play().catch(e => console.warn('Error playing remote video:', e));
+                // Rely on autoplay attribute instead of calling .play() manually to prevent AbortError
                 document.getElementById('call-avatar-container')?.classList.add('hidden');
                 remoteVideo.classList.remove('hidden');
             } 
             if (!isVideo && remoteAudio) {
                 if (remoteAudio.srcObject !== remoteStream) remoteAudio.srcObject = remoteStream;
-                remoteAudio.play().catch(e => console.warn('Error playing remote audio:', e));
             }
         };
         
