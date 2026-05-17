@@ -248,42 +248,26 @@ async function startCall(isVideo: boolean) {
         remoteStream = new MediaStream();
         const remoteVideo = document.getElementById('remote-video') as HTMLVideoElement;
         const remoteAudio = document.getElementById('remote-audio') as HTMLAudioElement;
-        if (remoteVideo && isVideo) {
-            remoteVideo.srcObject = remoteStream;
-            remoteVideo.play().catch(e => console.warn('Error playing remote video:', e));
-        }
-        if (remoteAudio && !isVideo) {
-            remoteAudio.srcObject = remoteStream;
-            remoteAudio.play().catch(e => console.warn('Error playing remote audio:', e));
-        }
         
         localStream.getTracks().forEach(track => rtcPeerConnection!.addTrack(track, localStream!));
         
         rtcPeerConnection.ontrack = event => {
-            if (event.streams && event.streams[0]) {
-                remoteStream = event.streams[0];
-            } else if (!remoteStream!.getTracks().find(t => t.id === event.track.id)) {
-                remoteStream!.addTrack(event.track);
+            const stream = event.streams && event.streams[0] ? event.streams[0] : new MediaStream([event.track]);
+            if (!remoteStream) {
+                remoteStream = stream;
+            } else if (!remoteStream.getTracks().find(t => t.id === event.track.id)) {
+                remoteStream.addTrack(event.track);
             }
 
-            const attemptPlay = () => {
-                if (isVideo && remoteVideo) {
-                    if (remoteVideo.srcObject !== remoteStream) remoteVideo.srcObject = remoteStream;
-                    const p = remoteVideo.play();
-                    if (p) p.catch(e => console.warn('Error playing remote video:', e));
-                    document.getElementById('call-avatar-container')?.classList.add('hidden');
-                    remoteVideo.classList.remove('hidden');
-                } else if (!isVideo && remoteAudio) {
-                    if (remoteAudio.srcObject !== remoteStream) remoteAudio.srcObject = remoteStream;
-                    const p = remoteAudio.play();
-                    if (p) p.catch(e => console.warn('Error playing remote audio:', e));
-                }
-            };
-            
-            if (event.track.muted) {
-                event.track.onunmute = attemptPlay;
-            } else {
-                attemptPlay();
+            if (isVideo && remoteVideo) {
+                if (remoteVideo.srcObject !== remoteStream) remoteVideo.srcObject = remoteStream;
+                remoteVideo.play().catch(e => console.warn('Error playing remote video:', e));
+                document.getElementById('call-avatar-container')?.classList.add('hidden');
+                remoteVideo.classList.remove('hidden');
+            } 
+            if (!isVideo && remoteAudio) {
+                if (remoteAudio.srcObject !== remoteStream) remoteAudio.srcObject = remoteStream;
+                remoteAudio.play().catch(e => console.warn('Error playing remote audio:', e));
             }
         };
         
@@ -368,42 +352,26 @@ export async function answerCall(callerId: string, offer: any, callerName: strin
         remoteStream = new MediaStream();
         const remoteVideo = document.getElementById('remote-video') as HTMLVideoElement;
         const remoteAudio = document.getElementById('remote-audio') as HTMLAudioElement;
-        if (remoteVideo && isVideo) {
-            remoteVideo.srcObject = remoteStream;
-            remoteVideo.play().catch(e => console.warn('Error playing remote video:', e));
-        }
-        if (remoteAudio && !isVideo) {
-            remoteAudio.srcObject = remoteStream;
-            remoteAudio.play().catch(e => console.warn('Error playing remote audio:', e));
-        }
         
         localStream.getTracks().forEach(track => rtcPeerConnection!.addTrack(track, localStream!));
         
         rtcPeerConnection.ontrack = event => {
-            if (event.streams && event.streams[0]) {
-                remoteStream = event.streams[0];
-            } else if (!remoteStream!.getTracks().find(t => t.id === event.track.id)) {
-                remoteStream!.addTrack(event.track);
+            const stream = event.streams && event.streams[0] ? event.streams[0] : new MediaStream([event.track]);
+            if (!remoteStream) {
+                remoteStream = stream;
+            } else if (!remoteStream.getTracks().find(t => t.id === event.track.id)) {
+                remoteStream.addTrack(event.track);
             }
 
-            const attemptPlay = () => {
-                if (isVideo && remoteVideo) {
-                    if (remoteVideo.srcObject !== remoteStream) remoteVideo.srcObject = remoteStream;
-                    const p = remoteVideo.play();
-                    if (p) p.catch(e => console.warn('Error playing remote video:', e));
-                    document.getElementById('call-avatar-container')?.classList.add('hidden');
-                    remoteVideo.classList.remove('hidden');
-                } else if (!isVideo && remoteAudio) {
-                    if (remoteAudio.srcObject !== remoteStream) remoteAudio.srcObject = remoteStream;
-                    const p = remoteAudio.play();
-                    if (p) p.catch(e => console.warn('Error playing remote audio:', e));
-                }
-            };
-            
-            if (event.track.muted) {
-                event.track.onunmute = attemptPlay;
-            } else {
-                attemptPlay();
+            if (isVideo && remoteVideo) {
+                if (remoteVideo.srcObject !== remoteStream) remoteVideo.srcObject = remoteStream;
+                remoteVideo.play().catch(e => console.warn('Error playing remote video:', e));
+                document.getElementById('call-avatar-container')?.classList.add('hidden');
+                remoteVideo.classList.remove('hidden');
+            } 
+            if (!isVideo && remoteAudio) {
+                if (remoteAudio.srcObject !== remoteStream) remoteAudio.srcObject = remoteStream;
+                remoteAudio.play().catch(e => console.warn('Error playing remote audio:', e));
             }
         };
         
