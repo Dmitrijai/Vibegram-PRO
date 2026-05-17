@@ -322,9 +322,6 @@ function finalizeAppSetup() {
             document.documentElement.style.setProperty('--msg-text-size', `${textSize}px`);
             
             const chatBg = state.currentProfile?.settings?.chatBg;
-            try {
-                if (chatBg) localStorage.setItem('chatBg', chatBg);
-            } catch(e) {}
             const chatContainer = document.getElementById('chat-area');
             if (chatContainer) {
                 chatContainer.className = chatContainer.className.replace(/bg-premium-\d|bg-anim-\d|bg-pattern-dots|chat-bg/g, '').trim();
@@ -458,8 +455,7 @@ async function processVibHeartbeat(elapsedSeconds: number) {
                         if (p) {
                             await supabase.from('profiles').update({ vib_balance: (p.vib_balance || 0) + bonusAmount }).eq('id', state.currentUser.id);
                             // Ignore insert error for vib_transfers if policy rejects it
-                            const res = await supabase.from('vib_transfers').insert({ sender_id: state.currentUser.id, receiver_id: state.currentUser.id, amount: bonusAmount, message: 'Ежедневный бонус' });
-                            if (res.error) throw res.error;
+                            await supabase.from('vib_transfers').insert({ sender_id: state.currentUser.id, receiver_id: state.currentUser.id, amount: bonusAmount, message: 'Ежедневный бонус' }).catch(() => {});
                         }
                     } catch(fbErr) {
                         console.error('Fallback daily bonus failed:', fbErr);
@@ -476,8 +472,7 @@ async function processVibHeartbeat(elapsedSeconds: number) {
                             const { data: p } = await supabase.from('profiles').select('vib_balance').eq('id', state.currentUser.id).single();
                             if (p) {
                                 await supabase.from('profiles').update({ vib_balance: (p.vib_balance || 0) + weeklyBonusAmount }).eq('id', state.currentUser.id);
-                                const res = await supabase.from('vib_transfers').insert({ sender_id: state.currentUser.id, receiver_id: state.currentUser.id, amount: weeklyBonusAmount, message: 'Бонус за 7 дней активности!' });
-                                if (res.error) throw res.error;
+                                await supabase.from('vib_transfers').insert({ sender_id: state.currentUser.id, receiver_id: state.currentUser.id, amount: weeklyBonusAmount, message: 'Бонус за 7 дней активности!' }).catch(() => {});
                             }
                         } catch(fbErr) {}
                     }

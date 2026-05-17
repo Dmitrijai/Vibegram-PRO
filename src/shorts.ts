@@ -970,7 +970,7 @@ async function loadShortComments(shortId: string) {
     try {
         const { data: comments, error } = await supabase
             .from('short_comments')
-            .select(`*, profiles:user_id(display_name, username, avatar_url, is_premium, premium_until)`)
+            .select(`*, profiles:author_id(display_name, username, avatar_url, is_premium, premium_until)`)
             .eq('short_id', shortId)
             .order('created_at', { ascending: true });
             
@@ -1073,17 +1073,12 @@ let replyingToCommentId: string | null = null;
     input.value = '';
     
     try {
-        const payload: any = {
+        await supabase.from('short_comments').insert({
             short_id: currentShortIdForComments,
-            user_id: state.currentUser.id,
-            content: text
-        };
-        if (replyingToCommentId) {
-            payload.parent_id = replyingToCommentId;
-        }
-
-        const { error: insertError } = await supabase.from('short_comments').insert(payload);
-        if (insertError) throw insertError;
+            author_id: state.currentUser.id,
+            content: text,
+            parent_id: replyingToCommentId
+        });
         
         replyingToCommentId = null;
         input.placeholder = 'Добавить комментарий...';
@@ -1215,7 +1210,7 @@ let selectedShortFile: File | null = null;
         if (progressOverlay) progressOverlay.className = 'absolute inset-0 bg-gray-900/80 flex flex-col items-center justify-center z-20 backdrop-blur-sm';
         
         const { uploadToCloudinary } = await import('./utils');
-        const publicUrl = await uploadToCloudinary(selectedShortFile, false, undefined, 'shorts');
+        const publicUrl = await uploadToCloudinary(selectedShortFile, false);
         
         const { error: insertError } = await supabase.from('shorts').insert({
             author_id: state.currentUser.id,

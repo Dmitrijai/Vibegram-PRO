@@ -54,7 +54,7 @@ CREATE TABLE public.messages (
   sender_id uuid REFERENCES public.profiles ON DELETE set null,
   content text,
   media jsonb DEFAULT '[]'::jsonb,
-  message_type text DEFAULT 'text' CHECK (message_type in ('text', 'voice', 'video_circle', 'poll', 'photo', 'video', 'document')),
+  message_type text DEFAULT 'text' CHECK (message_type in ('text', 'voice', 'video_circle', 'poll')),
   parent_id uuid REFERENCES public.messages ON DELETE set null,
   is_read boolean DEFAULT false,
   reactions jsonb DEFAULT '{}'::jsonb,

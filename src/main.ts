@@ -98,8 +98,6 @@ window.addEventListener('popstate', (e) => {
 (window as any).editMessage = logic.editMessage;
 (window as any).replyToMessage = logic.replyToMessage;
 (window as any).cancelReply = logic.cancelReply;
-(window as any).toggleCommentsEnabled = logic.toggleCommentsEnabled;
-(window as any).openComments = logic.openComments;
 (window as any).openCreatePollModal = logic.openCreatePollModal;
 (window as any).closeCreatePollModal = logic.closeCreatePollModal;
 (window as any).addPollOption = logic.addPollOption;
@@ -234,17 +232,14 @@ function setupRealtime() {
                         }
                         
                         const { data: profile } = await supabase.from('profiles').select('settings').eq('id', state.currentUser.id).single();
-                        const { data: chatData } = await supabase.from('chats').select('description, type').eq('id', payload.new.chat_id).single();
-                        const isCommentChat = chatData?.description === 'POST_COMMENTS' || (chatData?.type === 'group' && chatData?.title === 'Комментарии');
-                        
                         const settings = profile?.settings || {};
                         const mutedChats = settings.muted_chats || [];
                         
-                        if (!mutedChats.includes(payload.new.chat_id) && settings.notifications !== false && !isCommentChat) {
+                        if (!mutedChats.includes(payload.new.chat_id) && settings.notifications !== false) {
                             if ((window as any).logic?.playNotificationSound) (window as any).logic.playNotificationSound();
                         }
                         
-                        if (document.hidden && "Notification" in window && Notification.permission === "granted" && !isCommentChat) {
+                        if (document.hidden && "Notification" in window && Notification.permission === "granted") {
                             const { data: sender } = await supabase.from('profiles').select('display_name, username').eq('id', payload.new.sender_id).single();
                             const senderName = sender?.display_name || sender?.username || 'Пользователь';
                             const text = payload.new.content || (payload.new.message_type === 'voice' ? '🎤 Голосовое сообщение' : 'Медиа сообщение');
@@ -254,12 +249,9 @@ function setupRealtime() {
                 } else {
                     if (payload.new.sender_id !== state.currentUser?.id) {
                         const { data: profile } = await supabase.from('profiles').select('settings').eq('id', state.currentUser.id).single();
-                        const { data: chatData } = await supabase.from('chats').select('description, type, title').eq('id', payload.new.chat_id).single();
-                        const isCommentChat = chatData?.description === 'POST_COMMENTS' || (chatData?.type === 'group' && chatData?.title === 'Комментарии');
-                        
                         const settings = profile?.settings || {};
                         const mutedChats = settings.muted_chats || [];
-                        if (!mutedChats.includes(payload.new.chat_id) && settings.notifications !== false && !isCommentChat) {
+                        if (!mutedChats.includes(payload.new.chat_id) && settings.notifications !== false) {
                             const { data: sender } = await supabase.from('profiles').select('display_name, username, avatar_url').eq('id', payload.new.sender_id).single();
                             const senderName = sender?.display_name || sender?.username || 'Пользователь';
                             const text = payload.new.content || (payload.new.message_type === 'voice' ? '🎤 Голосовое сообщение' : 'Медиа сообщение');
@@ -304,12 +296,12 @@ function setupRealtime() {
                 
                 const avatar = document.getElementById('chat-header-avatar')!;
                 if (payload.new.avatar_url) {
-                    avatar.innerHTML = `<div class="w-full h-full rounded-full" style="background-image: url('${payload.new.avatar_url}'); background-size: cover; background-position: center;"></div>`;
-                    avatar.className = `w-10 h-10 mr-3 shadow-sm relative rounded-full shrink-0 flex items-center justify-center text-white`;
+                    avatar.innerHTML = `<img src="${payload.new.avatar_url}" class="w-full h-full object-cover rounded-full">`;
+                    avatar.className = `w-10 h-10 mr-3 shadow-sm relative rounded-full`;
                 } else {
                     const firstLetter = (payload.new.display_name || payload.new.username || 'U')[0].toUpperCase();
-                    avatar.innerHTML = `<div class="w-full h-full rounded-full overflow-hidden relative flex items-center justify-center shadow-sm">${firstLetter}</div>`;
-                    avatar.className = `w-10 h-10 bg-gradient-to-br from-blue-400 to-indigo-500 rounded-full flex items-center justify-center text-white font-bold mr-3 shadow-sm relative shrink-0`;
+                    avatar.innerText = firstLetter;
+                    avatar.className = `w-10 h-10 bg-gradient-to-br from-blue-400 to-indigo-500 rounded-full flex items-center justify-center text-white font-bold mr-3 shadow-sm relative`;
                 }
             }
             if (payload.new.id === state.currentUser?.id) {
@@ -317,36 +309,6 @@ function setupRealtime() {
                 const balDisplay = document.getElementById('my-vib-balance-display');
                 if (balDisplay) {
                     balDisplay.innerText = String(payload.new.vib_balance || 0);
-                }
-                const settings = payload.new.settings || {};
-                
-                const theme = settings.theme || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
-                if (theme === 'dark') {
-                    document.documentElement.classList.add('dark');
-                } else {
-                    document.documentElement.classList.remove('dark');
-                }
-                
-                const textSize = settings.textSize || 15;
-                document.documentElement.style.setProperty('--msg-text-size', `${textSize}px`);
-                
-                const chatContainer = document.getElementById('chat-area');
-                if (chatContainer) {
-                    chatContainer.className = chatContainer.className.replace(/bg-premium-\d|bg-anim-\d|bg-pattern-dots|chat-bg/g, '').trim();
-                    if (settings.chatBg && settings.chatBg !== 'default') {
-                        chatContainer.classList.add(settings.chatBg);
-                        try { localStorage.setItem('chatBg', settings.chatBg); } catch(e) {}
-                    } else {
-                        chatContainer.classList.add('chat-bg');
-                        try { localStorage.setItem('chatBg', 'default'); } catch(e) {}
-                    }
-                }
-                
-                const isPremium = payload.new.is_premium && (!payload.new.premium_until || new Date(payload.new.premium_until) > new Date());
-                const badge = isPremium ? `<span class="inline-flex items-center justify-center ml-1 shrink-0" title="Vibegram Premium"><img src="./image/Google-Gemini-Logo-Transparent.png" class="w-3.5 h-3.5 object-contain" alt="Premium"></span>` : '';
-                const myNicknameEl = document.getElementById('my-nickname');
-                if (myNicknameEl) {
-                    myNicknameEl.innerHTML = `<span class="flex items-center">${payload.new.display_name || payload.new.username || ''}${badge}</span>`;
                 }
             }
             if (state.activeChatId && ((payload.new.id === state.activeChatOtherUser?.id) || (payload.new.id === state.currentUser?.id))) {
@@ -367,12 +329,8 @@ function setupRealtime() {
                 state.activeChatDescription = payload.new.description;
                 const avatar = document.getElementById('chat-header-avatar')!;
                 if (payload.new.avatar_url) {
-                    avatar.innerHTML = `<div class="w-full h-full rounded-full" style="background-image: url('${payload.new.avatar_url}'); background-size: cover; background-position: center;"></div>`;
-                    avatar.className = `w-10 h-10 mr-3 shadow-sm relative rounded-full shrink-0 flex items-center justify-center text-white`;
-                }
-                const nameEl = document.getElementById('current-chat-name');
-                if (nameEl) {
-                    nameEl.innerHTML = `<span class="truncate shrink">${payload.new.title}</span>`;
+                    avatar.innerHTML = `<img src="${payload.new.avatar_url}" class="w-full h-full object-cover rounded-full">`;
+                    avatar.className = `w-10 h-10 mr-3 shadow-sm relative rounded-full`;
                 }
             }
             if ((window as any).logic?.loadChats) (window as any).logic.loadChats();

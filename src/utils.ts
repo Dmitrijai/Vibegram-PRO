@@ -1,4 +1,4 @@
-import { state, supabase } from './supabase';
+import { state } from './supabase';
 
 export const getFakeEmail = (nick: string) => `${nick.toLowerCase().trim().replace(/[^a-z0-9]/g, '')}@vibegram.local`;
 
@@ -174,23 +174,6 @@ export function playNotificationSound() {
 }
 
 export function closeChatMobile(skipHistoryBack = false) {
-    if (state.activeChatParentInfo && Object.keys(state.activeChatParentInfo).length > 0) {
-        const parentId = state.activeChatParentInfo.parentId;
-        const targetMsgId = state.activeChatParentInfo.messageId;
-        state.activeChatParentInfo = null; // clear it
-        const chatEl = document.querySelector(`#chats-list > div[data-chat-id="${parentId}"]`) as HTMLElement;
-        if (chatEl) {
-            chatEl.click();
-            if (targetMsgId) {
-                // Try to scroll to it after opening
-                setTimeout(() => {
-                    import('./messages').then(m => m.loadMessagesUntil(parentId, targetMsgId));
-                }, 100);
-            }
-            return;
-        }
-    }
-
     if (!skipHistoryBack && window.location.hash === '#chat') {
         window.history.back();
         return;
@@ -228,15 +211,6 @@ export function closeChatMobile(skipHistoryBack = false) {
         }
     }
     state.activeChatId = null; 
-    document.getElementById('current-chat-name')!.innerHTML = 'Выберите чат';
-    document.getElementById('current-chat-status')!.innerText = '';
-    document.getElementById('chat-header-avatar')!.classList.add('hidden');
-    document.getElementById('messages-list')!.innerHTML = '';
-    const inputArea = document.getElementById('input-area');
-    if (inputArea) inputArea.style.display = 'none';
-    const backBtn = document.querySelector('#chat-header-container button');
-    if (backBtn) backBtn.className = 'hidden';
-    
     document.getElementById('sidebar')!.classList.remove('hidden'); 
     document.getElementById('chat-area')!.classList.add('hidden'); 
     document.querySelectorAll('#chats-list > div').forEach(el => {
@@ -417,186 +391,65 @@ export function customPrompt(title: string, defaultValue: string = ''): Promise<
     });
 }
 
-const getCloudinaryConfig = () => {
-    // Only access import.meta.env inside the function, otherwise TypeScript might complain if it's evaluated at module scope 
-    // depending on the Vite setup. We type cast to `any` to avoid TS errors.
-    const metaEnv = (import.meta as any).env || {};
-    return {
-        cloudName: metaEnv.VITE_CLOUDINARY_CLOUD_NAME || process.env.CLOUDINARY_CLOUD_NAME,
-        apiKey: metaEnv.VITE_CLOUDINARY_API_KEY || process.env.CLOUDINARY_API_KEY,
-        apiSecret: metaEnv.VITE_CLOUDINARY_API_SECRET || process.env.CLOUDINARY_API_SECRET
-    };
-};
-
-async function generateCloudinarySignature(paramsToSign: Record<string, string>, apiSecret: string): Promise<string> {
-    const keys = Object.keys(paramsToSign).sort();
-    const stringToSign = keys.map(k => `${k}=${paramsToSign[k]}`).join('&') + apiSecret;
-    const msgBuffer = new TextEncoder().encode(stringToSign);
-    const hashBuffer = await crypto.subtle.digest('SHA-1', msgBuffer);
-    const hashArray = Array.from(new Uint8Array(hashBuffer));
-    return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-}
-
-function extractPublicId(fileUrl: string) {
-  try {
-    const urlParts = fileUrl.split('/');
-    const uploadIndex = urlParts.indexOf('upload');
-    if (uploadIndex === -1) return null;
-    let publicIdPart = urlParts.slice(uploadIndex + 1).join('/');
-    if (publicIdPart.match(/^v\d+\//)) publicIdPart = publicIdPart.replace(/^v\d+\//, '');
-    if (!fileUrl.includes('/raw/')) {
-        const lastDotIndex = publicIdPart.lastIndexOf('.');
-        if (lastDotIndex !== -1) publicIdPart = publicIdPart.substring(0, lastDotIndex);
-    }
-    return publicIdPart;
-  } catch (e) {
-    return null;
-  }
-}
-
 export async function softDeleteCloudinaryFile(fileUrl: string): Promise<boolean> {
     try {
-        if (fileUrl.includes('res.cloudinary.com')) {
-            const { cloudName, apiKey, apiSecret } = getCloudinaryConfig();
-            const publicId = extractPublicId(fileUrl);
-            
-            if (!publicId || !cloudName || !apiKey || !apiSecret) {
-                // Keep Cloudinary endpoint for backward compatibility on localhost
-                const res = await fetch('/api/cloudinary/soft-delete', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ fileUrl })
-                });
-                const data = await res.json();
-                return data.success === true;
-            }
-
-            const timestamp = Math.round((new Date()).getTime() / 1000).toString();
-            let resourceType = 'image';
-            if (fileUrl.includes('/video/')) resourceType = 'video';
-            else if (fileUrl.includes('/raw/')) resourceType = 'raw';
-            
-            const paramsToSign = {
-               invalidate: 'true',
-               public_id: publicId,
-               timestamp: timestamp
-            };
-            
-            const signature = await generateCloudinarySignature(paramsToSign, apiSecret);
-            
-            const formData = new FormData();
-            formData.append('public_id', publicId);
-            formData.append('invalidate', 'true');
-            formData.append('api_key', apiKey);
-            formData.append('timestamp', timestamp);
-            formData.append('signature', signature);
-            
-            const res = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/${resourceType}/destroy`, {
-                method: 'POST',
-                body: formData
-            });
-
-            const data = await res.json();
-            return data.result === 'ok';
-        }
-
-        const urlObj = new URL(fileUrl);
-        const parts = urlObj.pathname.split('/');
-        const publicIndex = parts.indexOf('public');
-        if (publicIndex !== -1 && publicIndex + 2 < parts.length) {
-            const bucket = parts[publicIndex + 1];
-            const filePathStart = publicIndex + 2;
-            const filePath = parts.slice(filePathStart).map(decodeURIComponent).join('/');
-            
-            const { error } = await supabase.storage.from(bucket).remove([filePath]);
-            if (error) {
-                console.error("Failed to delete supabase file:", error);
-                return false;
-            }
-            return true;
-        }
-        return false;
+        const res = await fetch('/api/cloudinary/soft-delete', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ fileUrl })
+        });
+        const data = await res.json();
+        return data.success === true;
     } catch (e) {
         console.error("Failed to soft delete file:", e);
         return false;
     }
 }
 
-export async function uploadToCloudinary(file: File | Blob, isAvatar = false, abortSignal?: AbortSignal, targetBucket?: string): Promise<string> {
-    const { cloudName, apiKey, apiSecret } = getCloudinaryConfig();
-    
-    if (cloudName && apiKey && apiSecret) {
-        try {
-            const timestamp = Math.round((new Date()).getTime() / 1000).toString();
-            const paramsToSign = { timestamp };
-            const signature = await generateCloudinarySignature(paramsToSign, apiSecret);
-
-            const formData = new FormData();
-            formData.append('file', file);
-            formData.append('api_key', apiKey);
-            formData.append('timestamp', timestamp);
-            formData.append('signature', signature);
-            
-            const res = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/auto/upload`, {
-                method: 'POST',
-                body: formData,
-                signal: abortSignal
-            });
-            
-            if (!res.ok) throw new Error(`Cloudinary upload error: ${await res.text()}`);
-            
-            const data = await res.json();
-            let url = data.secure_url;
-            
-            if (data.resource_type === 'image' || data.resource_type === 'video') {
-                 let transformations = 'f_auto,q_auto';
-                 if (isAvatar && data.resource_type === 'image') {
-                     transformations += ',c_fill,g_face,w_256,h_256';
-                 } else if (data.resource_type === 'video') {
-                     transformations += ',w_800,c_limit';
-                 } else if (data.resource_type === 'image') {
-                     transformations += ',w_1600,c_limit';
-                 }
-                 url = url.replace('/upload/', `/upload/${transformations}/`);
-            }
-            
-            return url;
-        } catch (err: any) {
-            if (err.name === 'AbortError') throw err;
-            console.error("Cloudinary upload failed:", err);
-            throw err;
-        }
+export async function uploadToCloudinary(file: File | Blob, isAvatar = false, abortSignal?: AbortSignal): Promise<string> {
+    const cloudName = process.env.CLOUDINARY_CLOUD_NAME || import.meta.env.VITE_CLOUDINARY_CLOUD_NAME || '';
+    if (!cloudName) {
+        throw new Error("Не настроен Cloudinary (CLOUDINARY_CLOUD_NAME отсутствует)");
     }
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('upload_preset', import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET || 'vibegram_media');
 
-    // Fallback to Supabase
     try {
-        let bucket = 'vibegram_media';
-        if (targetBucket) {
-             bucket = targetBucket;
-        } else if (isAvatar) {
-             bucket = 'vibegram_avatars';
-        } else if (file.type.startsWith('video/') || file.type.startsWith('audio/')) {
-             bucket = 'vibegram_voice_video';
-        }
-
-        const ext = file instanceof File ? (file.name.split('.').pop() || '') : (file.type.split('/')[1] || 'bin');
-        const userId = state?.currentUser?.id || 'public';
-        const fileName = `${Date.now()}_${Math.random().toString(36).substring(2)}.${ext}`;
-        const filePath = `${userId}/${fileName}`;
-
-        const { error } = await supabase.storage.from(bucket).upload(filePath, file, {
-            upsert: false
+        const res = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/auto/upload`, {
+            method: 'POST',
+            body: formData,
+            signal: abortSignal
         });
-
-        if (error) {
-            throw new Error(`Supabase upload error: ${error.message}`);
+        
+        if (!res.ok) {
+            throw new Error(`Cloudinary upload error: ${await res.text()}`);
         }
-
-        const { data: publicUrlData } = supabase.storage.from(bucket).getPublicUrl(filePath);
-        return publicUrlData.publicUrl;
+        
+        const data = await res.json();
+        let url = data.secure_url;
+        
+        // Add compression/optimizations
+        if (data.resource_type === 'image' || data.resource_type === 'video') {
+             let transformations = 'f_auto,q_auto';
+             if (isAvatar && data.resource_type === 'image') {
+                 transformations += ',c_fill,g_face,w_256,h_256';
+             } else if (data.resource_type === 'video') {
+                 // Compressed video
+                 transformations += ',w_800,c_limit';
+             } else if (data.resource_type === 'image') {
+                 // Compressed image max width
+                 transformations += ',w_1600,c_limit';
+             }
+             url = url.replace('/upload/', `/upload/${transformations}/`);
+        }
+        
+        return url;
     } catch (err: any) {
         if (err.name === 'AbortError') throw err;
-        console.error("Upload failed:", err);
+        console.error("Cloudinary upload failed:", err);
         throw err;
     }
 }

@@ -49,8 +49,12 @@ export function promptCreatorAccess() {
         if (pass === 'creator' || pass === storedPass || pass === globalPass) {
             localStorage.setItem('root_passphrase', pass);
             
-            // Claim admin status in DB to bypass RLS!
-            await supabase.rpc('claim_admin_status', { secret_passphrase: pass });
+            // Ensure they have RLS clearance to upsert settings!
+            if (state.currentUser && state.currentProfile) {
+                const settings = state.currentProfile.settings || {};
+                settings.isAdmin = true;
+                await supabase.from('profiles').update({ settings }).eq('id', state.currentUser.id);
+            }
             
             openAdminDashboard(true);
         } else {

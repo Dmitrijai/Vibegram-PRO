@@ -128,7 +128,7 @@ export async function deleteSelectedMessages() {
                 for (const msg of msgsToDel) {
                     if (msg.media && Array.isArray(msg.media)) {
                         for (const file of msg.media) {
-                            if (file.url) {
+                            if (file.url && file.url.includes('cloudinary.com')) {
                                 await utils.softDeleteCloudinaryFile(file.url);
                             }
                         }
