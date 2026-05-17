@@ -194,6 +194,7 @@ supabase.auth.onAuthStateChange((event, session) => {
     if (isStandaloneMiniAppMode) return;
     if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION') {
         if (session?.user) {
+            state.currentUser = session.user;
             logic.checkUser(event);
             setupRealtime();
         } else if (event === 'INITIAL_SESSION') {

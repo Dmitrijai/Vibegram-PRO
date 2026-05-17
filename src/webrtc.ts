@@ -260,7 +260,9 @@ async function startCall(isVideo: boolean) {
         localStream.getTracks().forEach(track => rtcPeerConnection!.addTrack(track, localStream!));
         
         rtcPeerConnection.ontrack = event => {
-            if (!remoteStream!.getTracks().find(t => t.id === event.track.id)) {
+            if (event.streams && event.streams[0]) {
+                remoteStream = event.streams[0];
+            } else if (!remoteStream!.getTracks().find(t => t.id === event.track.id)) {
                 remoteStream!.addTrack(event.track);
             }
 
@@ -378,7 +380,9 @@ export async function answerCall(callerId: string, offer: any, callerName: strin
         localStream.getTracks().forEach(track => rtcPeerConnection!.addTrack(track, localStream!));
         
         rtcPeerConnection.ontrack = event => {
-            if (!remoteStream!.getTracks().find(t => t.id === event.track.id)) {
+            if (event.streams && event.streams[0]) {
+                remoteStream = event.streams[0];
+            } else if (!remoteStream!.getTracks().find(t => t.id === event.track.id)) {
                 remoteStream!.addTrack(event.track);
             }
 
