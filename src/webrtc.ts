@@ -21,6 +21,7 @@ function playRingtone() {
     playRingtonePromise = currentRingtone.play();
     if (playRingtonePromise !== undefined) {
         playRingtonePromise.catch(e => {
+            if (e.name === 'AbortError') return; // Ignore expected interruptions
             console.error('Audio play failed:', e);
             // If autoplay is blocked, we can't do much without user interaction
             // We can show a toast to the user
@@ -261,24 +262,38 @@ async function startCall(isVideo: boolean) {
         const remoteVideo = document.getElementById('remote-video') as HTMLVideoElement;
         const remoteAudio = document.getElementById('remote-audio') as HTMLAudioElement;
         
+        remoteStream = new MediaStream();
+        if (isVideo && remoteVideo) {
+             remoteVideo.srcObject = remoteStream;
+             document.getElementById('call-avatar-container')?.classList.add('hidden');
+             remoteVideo.classList.remove('hidden');
+        } else if (!isVideo && remoteAudio) {
+             remoteAudio.srcObject = remoteStream;
+        }
+
         localStream.getTracks().forEach(track => rtcPeerConnection!.addTrack(track, localStream!));
         
         rtcPeerConnection.ontrack = event => {
             if (event.streams && event.streams[0]) {
-                remoteStream = event.streams[0];
-            } else {
-                if (!remoteStream) remoteStream = new MediaStream();
-                if (!remoteStream.getTracks().find(t => t.id === event.track.id)) {
-                    remoteStream.addTrack(event.track);
+                event.streams[0].getTracks().forEach(track => {
+                     if (!remoteStream!.getTracks().find(t => t.id === track.id)) {
+                          remoteStream!.addTrack(track);
+                     }
+                });
+            } else if (event.track) {
+                if (!remoteStream!.getTracks().find(t => t.id === event.track.id)) {
+                    remoteStream!.addTrack(event.track);
                 }
             }
 
             if (isVideo && remoteVideo) {
-                if (remoteVideo.srcObject !== remoteStream) remoteVideo.srcObject = remoteStream;
-                document.getElementById('call-avatar-container')?.classList.add('hidden');
-                remoteVideo.classList.remove('hidden');
+                if (remoteVideo.paused) {
+                    remoteVideo.play().catch(e => console.warn('video play error:', e));
+                }
             } else if (!isVideo && remoteAudio) {
-                if (remoteAudio.srcObject !== remoteStream) remoteAudio.srcObject = remoteStream;
+                if (remoteAudio.paused) {
+                    remoteAudio.play().catch(e => console.warn('audio play error:', e));
+                }
             }
         };
         
@@ -363,24 +378,38 @@ export async function answerCall(callerId: string, offer: any, callerName: strin
         const remoteVideo = document.getElementById('remote-video') as HTMLVideoElement;
         const remoteAudio = document.getElementById('remote-audio') as HTMLAudioElement;
         
+        remoteStream = new MediaStream();
+        if (isVideo && remoteVideo) {
+             remoteVideo.srcObject = remoteStream;
+             document.getElementById('call-avatar-container')?.classList.add('hidden');
+             remoteVideo.classList.remove('hidden');
+        } else if (!isVideo && remoteAudio) {
+             remoteAudio.srcObject = remoteStream;
+        }
+
         localStream.getTracks().forEach(track => rtcPeerConnection!.addTrack(track, localStream!));
         
         rtcPeerConnection.ontrack = event => {
             if (event.streams && event.streams[0]) {
-                remoteStream = event.streams[0];
-            } else {
-                if (!remoteStream) remoteStream = new MediaStream();
-                if (!remoteStream.getTracks().find(t => t.id === event.track.id)) {
-                    remoteStream.addTrack(event.track);
+                event.streams[0].getTracks().forEach(track => {
+                     if (!remoteStream!.getTracks().find(t => t.id === track.id)) {
+                          remoteStream!.addTrack(track);
+                     }
+                });
+            } else if (event.track) {
+                if (!remoteStream!.getTracks().find(t => t.id === event.track.id)) {
+                    remoteStream!.addTrack(event.track);
                 }
             }
 
             if (isVideo && remoteVideo) {
-                if (remoteVideo.srcObject !== remoteStream) remoteVideo.srcObject = remoteStream;
-                document.getElementById('call-avatar-container')?.classList.add('hidden');
-                remoteVideo.classList.remove('hidden');
+                if (remoteVideo.paused) {
+                    remoteVideo.play().catch(e => console.warn('video play error:', e));
+                }
             } else if (!isVideo && remoteAudio) {
-                if (remoteAudio.srcObject !== remoteStream) remoteAudio.srcObject = remoteStream;
+                if (remoteAudio.paused) {
+                    remoteAudio.play().catch(e => console.warn('audio play error:', e));
+                }
             }
         };
         
