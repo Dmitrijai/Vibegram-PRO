@@ -3,7 +3,7 @@ import { customToast } from './utils';
 import { GoogleGenAI } from '@google/genai';
 import { executeAiWithFallback } from './ai-keys';
 
-export async function transcribeMedia(url: string, messageId: string, msgType?: string) {
+export async function transcribeMedia(url: string, messageId: string) {
     try {
         const btn = document.getElementById(`transcribe-btn-${messageId}`);
         if (btn) {
@@ -27,22 +27,19 @@ export async function transcribeMedia(url: string, messageId: string, msgType?: 
         });
         
         // Determine mime type
-        let mimeType = blob.type || (url.includes('.mp4') ? 'video/mp4' : 'audio/webm');
-        
+        let mimeType = blob.type;
+        if (!mimeType) {
+            mimeType = url.includes('.mp4') ? 'video/mp4' : 'audio/webm';
+        }
         // Strip codec info that Gemini rejects (e.g. "audio/webm; codecs=opus" -> "audio/webm")
         if (mimeType.includes(';')) {
             mimeType = mimeType.split(';')[0];
-        }
-        
-        // Force audio/webm to prevent Gemini from parsing video frames which fails on pure MediaRecorder webM files
-        if (msgType === 'voice' || msgType === 'video_circle' || mimeType.includes('video')) {
-            mimeType = 'audio/webm';
         }
 
         // Call Gemini
         const result = await executeAiWithFallback(async (ai: GoogleGenAI) => {
             return await ai.models.generateContent({
-                model: 'gemini-2.5-flash',
+                model: 'gemini-3-flash-preview',
                 contents: [
                     {
                         role: 'user',
@@ -76,12 +73,6 @@ export async function transcribeMedia(url: string, messageId: string, msgType?: 
                 .eq('id', messageId);
                 
             if (updateError) throw updateError;
-            
-            const textContainer = document.getElementById(`transcription-text-${messageId}`);
-            if (textContainer) {
-                textContainer.innerHTML = `<div class="mt-1 text-sm text-gray-700 dark:text-gray-200 bg-black/5 dark:bg-white/5 p-2 rounded-lg animate-fadeIn ${msgType === 'video_circle' ? 'max-w-[200px]' : ''}">${transcription}</div>`;
-            }
-            if (btn) btn.remove();
         }
 
     } catch (err: any) {

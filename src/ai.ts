@@ -13,8 +13,6 @@ export async function generateAiImage() {
     const prompt = text.replace('@ai ', '').trim();
     if (!prompt) return alert('Введите запрос для генерации');
 
-    const abortController = new AbortController();
-
     // Setup loading UI
     const generateBtn = document.getElementById('ai-generate-btn') as HTMLButtonElement;
     generateBtn.disabled = true;
@@ -32,31 +30,36 @@ export async function generateAiImage() {
         </div>
         <div class="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-purple-400 to-pink-500 animate-pulse">Создаем магию...</div>
         <div class="text-sm text-gray-300 mt-2">Рисуем: ${prompt}</div>
-        <button id="cancel-ai-btn" class="mt-8 px-6 py-2 bg-red-500/80 hover:bg-red-500 text-white rounded-full font-medium transition-all transform hover:scale-105 flex items-center gap-2 backdrop-blur-md border border-red-400/30 shadow-lg shadow-red-500/20">
-            <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
-            </svg>
-            Отменить
-        </button>
     `;
     document.body.appendChild(overlay);
 
-    document.getElementById('cancel-ai-btn')?.addEventListener('click', () => {
-        abortController.abort();
-    });
-
     try {
-        const pollUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?nologo=true&seed=${Math.floor(Math.random() * 1000000)}`;
-        const response = await fetch(pollUrl, { signal: abortController.signal });
-        if (!response.ok) {
-            throw new Error(`Ошибка генерации: ${response.status}`);
-        }
-        const imageBlob = await response.blob();
-        
-        if (!imageBlob) throw new Error("Изображение не удалось сгенерировать.");
+        const imageBlob = await executeHfWithFallback(async (apiKey: string) => {
+            const response = await fetch(
+                "https://api-inference.huggingface.co/models/stabilityai/stable-diffusion-3.5-medium",
+                {
+                    headers: {
+                        Authorization: `Bearer ${apiKey}`,
+                        "Content-Type": "application/json",
+                    },
+                    method: "POST",
+                    body: JSON.stringify({inputs: prompt}),
+                }
+            );
+
+            if (!response.ok) {
+                const errorText = await response.text();
+                // Parse out specific error status for fallback to recognize
+                const err = new Error(`HF error: ${response.status} ${response.statusText} - ${errorText}`);
+                (err as any).status = response.status;
+                throw err;
+            }
+
+            return await response.blob();
+        });
 
         // Create a File object
-        const file = new File([imageBlob], `ai_generated_${Date.now()}.jpg`, { type: 'image/jpeg' });
+        const file = new File([imageBlob], `ai_generated_${Date.now()}.png`, { type: 'image/png' });
         (file as any).asFile = false; // Important flag to treat as media, not generic file
         
         // Add to selected files
@@ -74,10 +77,6 @@ export async function generateAiImage() {
         renderMediaModal();
         
     } catch (e: any) {
-        if (e.name === 'AbortError') {
-            console.log('Генерация отменена пользователем');
-            return;
-        }
         console.error('AI Error:', e);
         if (!e.message?.includes('All HF API keys exhausted')) {
             let errorMessage = 'Произошла неизвестная ошибка при генерации изображения.';

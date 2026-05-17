@@ -231,23 +231,14 @@ export function closeChatMobile(skipHistoryBack = false) {
     document.getElementById('current-chat-name')!.innerHTML = 'Выберите чат';
     document.getElementById('current-chat-status')!.innerText = '';
     document.getElementById('chat-header-avatar')!.classList.add('hidden');
-    document.getElementById('messages-list')!.innerHTML = `
-        <div class="flex h-full items-center justify-center">
-            <div class="bg-black/40 dark:bg-black/60 text-white px-5 py-2 rounded-full text-sm backdrop-blur-md shadow-lg">Выберите чат для начала общения</div>
-        </div>
-    `;
+    document.getElementById('messages-list')!.innerHTML = '';
     const inputArea = document.getElementById('input-area');
     if (inputArea) inputArea.style.display = 'none';
     const backBtn = document.querySelector('#chat-header-container button');
     if (backBtn) backBtn.className = 'hidden';
     
     document.getElementById('sidebar')!.classList.remove('hidden'); 
-    
-    // Only hide chat-area if we are on mobile. On desktop it should stay visible but empty.
-    if (window.innerWidth < 768) {
-        document.getElementById('chat-area')!.classList.add('hidden');
-    }
-    
+    document.getElementById('chat-area')!.classList.add('hidden'); 
     document.querySelectorAll('#chats-list > div').forEach(el => {
         el.classList.remove('bg-blue-50', 'dark:bg-blue-900/40', 'bg-blue-50/60', 'dark:bg-blue-900/30');
     });

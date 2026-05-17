@@ -157,7 +157,7 @@ export async function startChatWithUser(userToFind: any) {
         if (cmErr) console.error("CM Error", cmErr);
     }
     openChat(chatId, isSelf ? 'Избранное' : (userToFind.display_name || userToFind.username), (userToFind.display_name || userToFind.username)[0].toUpperCase(), false, 'private', [{user_id: userToFind.id, profiles: userToFind}], userToFind.avatar_url);
-    await import('./chat').then(m => m.loadChats());
+    await import('./chat').then(m => m.loadChats(true));
 }
 
 export async function startDirectChatById(userId: string) {
@@ -228,23 +228,15 @@ export async function openUserProfile(userId: string) {
             </div>
         </div>
 
-        <div class="flex-1 overflow-y-auto bg-gray-50 dark:bg-gray-900 pb-6 hidden-scrollbar relative text-left">
+        <div class="flex-1 overflow-y-auto bg-gray-50 dark:bg-gray-900 pb-6 hidden-scrollbar relative text-left h-[40vh] min-h-[300px]">
             ${bioHtml}
             
             <div class="p-6">
                 ${userToFind.id !== state.currentUser?.id ? `
-                    <div class="flex flex-col gap-3">
-                        <button onclick="startDirectChatById('${userToFind.id}')" class="w-full bg-blue-500 hover:bg-blue-600 text-white font-medium py-3 px-4 rounded-xl shadow-lg shadow-blue-500/20 active:scale-[0.98] transition-all flex items-center justify-center gap-2">
-                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"></path></svg>
-                            Перейти к чату
-                        </button>
-                        ${userToFind.username ? `<button onclick="if(window.sendVibToUserModal) { window.sendVibToUserModal('${userToFind.username}'); }" class="w-full bg-gradient-to-r from-indigo-500 to-purple-600 shadow-md hover:shadow-lg text-white font-medium py-3 px-4 rounded-xl active:scale-[0.98] transition-all flex items-center justify-center gap-2">
-                            <div class="inline-flex items-center justify-center w-5 h-5 rounded-full bg-gradient-to-tr from-yellow-300 to-amber-500 border border-white/50 animate-pulse">
-                                <svg class="w-3 h-3 text-yellow-900" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M11.3 1.046A1 1 0 0112 2v5h4a1 1 0 01.82 1.573l-7 10A1 1 0 018 18v-5H4a1 1 0 01-.82-1.573l7-10a1 1 0 011.12-.381z" clip-rule="evenodd"></path></svg>
-                            </div>
-                            Отправить VIB
-                        </button>` : ''}
-                    </div>
+                    <button onclick="startDirectChatById('${userToFind.id}')" class="w-full bg-blue-500 hover:bg-blue-600 text-white font-medium py-3 px-4 rounded-xl shadow-lg shadow-blue-500/20 active:scale-[0.98] transition-all mb-4 flex items-center justify-center gap-2">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"></path></svg>
+                        Перейти к чату
+                    </button>
                 ` : `
                     <div class="text-center text-sm text-gray-500 dark:text-gray-400">Это ваш профиль</div>
                 `}

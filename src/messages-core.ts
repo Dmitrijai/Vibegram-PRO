@@ -294,8 +294,8 @@ export function renderMessages(messages: any[], isInitialLoad = false) {
                 </div>
             `;
         } else if (msg.message_type === 'voice' && actualMedia.length > 0) {
-            const transcriptionText = `<div id="transcription-text-${msg.id}" class="w-full">${actualMedia[0].transcription ? `<div class="mt-1 text-sm text-gray-700 dark:text-gray-200 bg-black/5 dark:bg-white/5 p-2 rounded-lg">${actualMedia[0].transcription}</div>` : ''}</div>`;
-            const transcribeBtn = !actualMedia[0].transcription ? `<button id="transcribe-btn-${msg.id}" onclick="transcribeMedia('${actualMedia[0].url}', '${msg.id}', 'voice')" class="w-7 h-7 shrink-0 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-600 dark:text-gray-300 rounded-full flex items-center justify-center transition-colors ml-1" title="Расшифровать"><span class="text-[10px] font-bold">Aa</span></button>` : '';
+            const transcriptionText = actualMedia[0].transcription ? `<div class="mt-1 text-sm text-gray-700 dark:text-gray-200 bg-black/5 dark:bg-white/5 p-2 rounded-lg">${actualMedia[0].transcription}</div>` : '';
+            const transcribeBtn = !actualMedia[0].transcription ? `<button id="transcribe-btn-${msg.id}" onclick="transcribeMedia('${actualMedia[0].url}', '${msg.id}')" class="w-7 h-7 shrink-0 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-600 dark:text-gray-300 rounded-full flex items-center justify-center transition-colors ml-1" title="Расшифровать"><span class="text-[10px] font-bold">Aa</span></button>` : '';
             
             fileHtml = `
                 <div class="flex flex-col mb-1">
@@ -316,8 +316,8 @@ export function renderMessages(messages: any[], isInitialLoad = false) {
                 </div>
             `;
         } else if (msg.message_type === 'video_circle' && actualMedia.length > 0) {
-            const transcriptionText = `<div id="transcription-text-${msg.id}" class="w-full flex justify-end">${actualMedia[0].transcription ? `<div class="mt-1 text-sm text-gray-700 dark:text-gray-200 bg-black/5 dark:bg-white/5 p-2 rounded-lg max-w-[200px]">${actualMedia[0].transcription}</div>` : ''}</div>`;
-            const transcribeBtn = !actualMedia[0].transcription ? `<button id="transcribe-btn-${msg.id}" onclick="transcribeMedia('${actualMedia[0].url}', '${msg.id}', 'video_circle')" class="absolute bottom-0 right-0 w-8 h-8 bg-gray-800/70 hover:bg-gray-800 text-white rounded-full flex items-center justify-center transition-colors z-10 backdrop-blur-sm" title="Расшифровать"><span class="text-[11px] font-bold">Aa</span></button>` : '';
+            const transcriptionText = actualMedia[0].transcription ? `<div class="mt-1 text-sm text-gray-700 dark:text-gray-200 bg-black/5 dark:bg-white/5 p-2 rounded-lg max-w-[200px]">${actualMedia[0].transcription}</div>` : '';
+            const transcribeBtn = !actualMedia[0].transcription ? `<button id="transcribe-btn-${msg.id}" onclick="transcribeMedia('${actualMedia[0].url}', '${msg.id}')" class="absolute bottom-0 right-0 w-8 h-8 bg-gray-800/70 hover:bg-gray-800 text-white rounded-full flex items-center justify-center transition-colors z-10 backdrop-blur-sm" title="Расшифровать"><span class="text-[11px] font-bold">Aa</span></button>` : '';
 
             fileHtml = `
                 <div class="flex flex-col mb-1 items-end">
@@ -445,11 +445,11 @@ export function renderMessages(messages: any[], isInitialLoad = false) {
         let reactionsHtml = generateReactionsHtml(msg.id, msg.reactions);
 
         let avatarHtml = '';
-        if (!isMe && state.activeChatType === 'group') {
+        if (!isMe && (state.activeChatType === 'group' || state.activeChatType === 'channel')) {
             const firstLetter = (displaySenderName[0] || '').toUpperCase();
             const avatarUrl = msg.profiles?.avatar_url;
             avatarHtml = `
-                <div class="w-8 h-8 rounded-full bg-gradient-to-br from-blue-400 to-indigo-500 shrink-0 mr-2 self-end mb-1 cursor-pointer flex items-center justify-center text-white font-bold text-sm overflow-hidden shadow-sm" onclick="event.stopPropagation(); window.openUserProfile('${msg.sender_id}')" title="${displaySenderName}">
+                <div class="w-8 h-8 rounded-full bg-gradient-to-br from-blue-400 to-indigo-500 shrink-0 mr-2 self-end mb-1 cursor-pointer flex items-center justify-center text-white font-bold text-sm overflow-hidden shadow-sm" onclick="event.stopPropagation(); openUserProfile('${msg.sender_id}')" title="${displaySenderName}">
                     ${avatarUrl ? `<img src="${avatarUrl}" class="w-full h-full object-cover">` : firstLetter}
                 </div>
             `;
@@ -950,14 +950,14 @@ async function actuallySend(text: string, files: File[], input: HTMLTextAreaElem
             chat_id: state.activeChatId, sender_id: state.currentUser.id, content: text, media: mediaArr,
             message_type: messageType,
             parent_id: state.replyingTo ? state.replyingTo.id : null
-        }).select('*, profiles(*)').single();
-
+        }).select('*, profiles:sender_id(*)').single();
+        
         if (err1 && err1.message && err1.message.includes('messages_message_type_check')) {
             const { data: msg2, error: err2 } = await supabase.from('messages').insert({
                 chat_id: state.activeChatId, sender_id: state.currentUser.id, content: text, media: mediaArr,
                 message_type: 'text',
                 parent_id: state.replyingTo ? state.replyingTo.id : null
-            }).select('*, profiles(*)').single();
+            }).select('*, profiles:sender_id(*)').single();
             insertedMsg = msg2;
             dbError = err2;
         } else {

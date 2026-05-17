@@ -311,8 +311,7 @@ export async function openComments(messageId: string) {
             let parentName = parentChat.title;
             if (!parentName && parentChat.type !== 'group' && parentChat.type !== 'channel') {
                 const other = parentChat.chat_members?.find((m: any) => m.user_id !== state.currentUser.id);
-                const prof = Array.isArray(other?.profiles) ? other?.profiles[0] : other?.profiles;
-                parentName = prof?.display_name || prof?.username || 'Чат';
+                parentName = other?.profiles?.display_name || other?.profiles?.username || 'Чат';
             }
             state.activeChatParentInfo = { parentId: msg.chat_id, parentName: parentName || 'Основной чат', messageId: messageId };
         }
