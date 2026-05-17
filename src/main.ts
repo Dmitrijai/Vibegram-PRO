@@ -187,12 +187,6 @@ supabase.auth.getSession().then(({ data: { session } }) => {
             setTimeout(() => loader.remove(), 300);
         }
         document.getElementById('auth-screen')!.classList.remove('hidden');
-    } else {
-        if (!state.currentUser) {
-            state.currentUser = session.user;
-            logic.checkUser('INITIAL_SESSION');
-        }
-        setupRealtime();
     }
 });
 
@@ -200,7 +194,6 @@ supabase.auth.onAuthStateChange((event, session) => {
     if (isStandaloneMiniAppMode) return;
     if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION') {
         if (session?.user) {
-            state.currentUser = session.user;
             logic.checkUser(event);
             setupRealtime();
         } else if (event === 'INITIAL_SESSION') {
