@@ -262,10 +262,12 @@ async function startCall(isVideo: boolean) {
         const remoteVideo = document.getElementById('remote-video') as HTMLVideoElement;
         const remoteAudio = document.getElementById('remote-audio') as HTMLAudioElement;
         
+        remoteStream = null;
+
         localStream.getTracks().forEach(track => rtcPeerConnection!.addTrack(track, localStream!));
         
         rtcPeerConnection.ontrack = event => {
-            if (event.streams && event.streams[0]) {
+            if (event.streams && event.streams.length > 0) {
                 remoteStream = event.streams[0];
             } else {
                 if (!remoteStream) {
@@ -279,19 +281,20 @@ async function startCall(isVideo: boolean) {
             if (isVideo && remoteVideo) {
                 if (remoteVideo.srcObject !== remoteStream) {
                     remoteVideo.srcObject = remoteStream;
-                    remoteVideo.play().catch(e => {
-                        if (e.name !== 'AbortError') console.warn('video play error:', e);
-                    });
                 }
                 document.getElementById('call-avatar-container')?.classList.add('hidden');
                 remoteVideo.classList.remove('hidden');
+                
+                requestAnimationFrame(() => {
+                    if (remoteVideo.paused) remoteVideo.play().catch(e => console.warn('Video play err', e));
+                });
             } else if (!isVideo && remoteAudio) {
                 if (remoteAudio.srcObject !== remoteStream) {
                     remoteAudio.srcObject = remoteStream;
-                    remoteAudio.play().catch(e => {
-                        if (e.name !== 'AbortError') console.warn('audio play error:', e);
-                    });
                 }
+                requestAnimationFrame(() => {
+                    if (remoteAudio.paused) remoteAudio.play().catch(e => console.warn('Audio play err', e));
+                });
             }
         };
         
@@ -376,10 +379,12 @@ export async function answerCall(callerId: string, offer: any, callerName: strin
         const remoteVideo = document.getElementById('remote-video') as HTMLVideoElement;
         const remoteAudio = document.getElementById('remote-audio') as HTMLAudioElement;
         
+        remoteStream = null;
+
         localStream.getTracks().forEach(track => rtcPeerConnection!.addTrack(track, localStream!));
         
         rtcPeerConnection.ontrack = event => {
-            if (event.streams && event.streams[0]) {
+            if (event.streams && event.streams.length > 0) {
                 remoteStream = event.streams[0];
             } else {
                 if (!remoteStream) {
@@ -393,19 +398,20 @@ export async function answerCall(callerId: string, offer: any, callerName: strin
             if (isVideo && remoteVideo) {
                 if (remoteVideo.srcObject !== remoteStream) {
                     remoteVideo.srcObject = remoteStream;
-                    remoteVideo.play().catch(e => {
-                        if (e.name !== 'AbortError') console.warn('video play error:', e);
-                    });
                 }
                 document.getElementById('call-avatar-container')?.classList.add('hidden');
                 remoteVideo.classList.remove('hidden');
+                
+                requestAnimationFrame(() => {
+                    if (remoteVideo.paused) remoteVideo.play().catch(e => console.warn('Video play err', e));
+                });
             } else if (!isVideo && remoteAudio) {
                 if (remoteAudio.srcObject !== remoteStream) {
                     remoteAudio.srcObject = remoteStream;
-                    remoteAudio.play().catch(e => {
-                        if (e.name !== 'AbortError') console.warn('audio play error:', e);
-                    });
                 }
+                requestAnimationFrame(() => {
+                    if (remoteAudio.paused) remoteAudio.play().catch(e => console.warn('Audio play err', e));
+                });
             }
         };
         
