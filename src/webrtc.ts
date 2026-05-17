@@ -262,39 +262,29 @@ async function startCall(isVideo: boolean) {
         const remoteVideo = document.getElementById('remote-video') as HTMLVideoElement;
         const remoteAudio = document.getElementById('remote-audio') as HTMLAudioElement;
         
-        remoteStream = null;
+        if (!remoteStream) {
+            remoteStream = new MediaStream();
+        }
+        
+        if (isVideo && remoteVideo) {
+            remoteVideo.srcObject = remoteStream;
+            remoteVideo.play().catch(e => { if (e.name !== 'AbortError') console.warn('Video init play err', e); });
+        } else if (!isVideo && remoteAudio) {
+            remoteAudio.srcObject = remoteStream;
+            remoteAudio.play().catch(e => { if (e.name !== 'AbortError') console.warn('Audio init play err', e); });
+        }
 
         localStream.getTracks().forEach(track => rtcPeerConnection!.addTrack(track, localStream!));
         
         rtcPeerConnection.ontrack = event => {
-            if (event.streams && event.streams.length > 0) {
-                remoteStream = event.streams[0];
-            } else {
-                if (!remoteStream) {
-                    remoteStream = new MediaStream();
-                }
-                if (!remoteStream.getTracks().find(t => t.id === event.track.id)) {
-                    remoteStream.addTrack(event.track);
-                }
+            const track = event.track;
+            if (remoteStream && !remoteStream.getTracks().find(t => t.id === track.id)) {
+                remoteStream.addTrack(track);
             }
 
             if (isVideo && remoteVideo) {
-                if (remoteVideo.srcObject !== remoteStream) {
-                    remoteVideo.srcObject = remoteStream;
-                }
                 document.getElementById('call-avatar-container')?.classList.add('hidden');
                 remoteVideo.classList.remove('hidden');
-                
-                requestAnimationFrame(() => {
-                    if (remoteVideo.paused) remoteVideo.play().catch(e => console.warn('Video play err', e));
-                });
-            } else if (!isVideo && remoteAudio) {
-                if (remoteAudio.srcObject !== remoteStream) {
-                    remoteAudio.srcObject = remoteStream;
-                }
-                requestAnimationFrame(() => {
-                    if (remoteAudio.paused) remoteAudio.play().catch(e => console.warn('Audio play err', e));
-                });
             }
         };
         
@@ -379,39 +369,29 @@ export async function answerCall(callerId: string, offer: any, callerName: strin
         const remoteVideo = document.getElementById('remote-video') as HTMLVideoElement;
         const remoteAudio = document.getElementById('remote-audio') as HTMLAudioElement;
         
-        remoteStream = null;
+        if (!remoteStream) {
+            remoteStream = new MediaStream();
+        }
+        
+        if (isVideo && remoteVideo) {
+            remoteVideo.srcObject = remoteStream;
+            remoteVideo.play().catch(e => { if (e.name !== 'AbortError') console.warn('Video init play err', e); });
+        } else if (!isVideo && remoteAudio) {
+            remoteAudio.srcObject = remoteStream;
+            remoteAudio.play().catch(e => { if (e.name !== 'AbortError') console.warn('Audio init play err', e); });
+        }
 
         localStream.getTracks().forEach(track => rtcPeerConnection!.addTrack(track, localStream!));
         
         rtcPeerConnection.ontrack = event => {
-            if (event.streams && event.streams.length > 0) {
-                remoteStream = event.streams[0];
-            } else {
-                if (!remoteStream) {
-                    remoteStream = new MediaStream();
-                }
-                if (!remoteStream.getTracks().find(t => t.id === event.track.id)) {
-                    remoteStream.addTrack(event.track);
-                }
+            const track = event.track;
+            if (remoteStream && !remoteStream.getTracks().find(t => t.id === track.id)) {
+                remoteStream.addTrack(track);
             }
 
             if (isVideo && remoteVideo) {
-                if (remoteVideo.srcObject !== remoteStream) {
-                    remoteVideo.srcObject = remoteStream;
-                }
                 document.getElementById('call-avatar-container')?.classList.add('hidden');
                 remoteVideo.classList.remove('hidden');
-                
-                requestAnimationFrame(() => {
-                    if (remoteVideo.paused) remoteVideo.play().catch(e => console.warn('Video play err', e));
-                });
-            } else if (!isVideo && remoteAudio) {
-                if (remoteAudio.srcObject !== remoteStream) {
-                    remoteAudio.srcObject = remoteStream;
-                }
-                requestAnimationFrame(() => {
-                    if (remoteAudio.paused) remoteAudio.play().catch(e => console.warn('Audio play err', e));
-                });
             }
         };
         
