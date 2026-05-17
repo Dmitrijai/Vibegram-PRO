@@ -8,7 +8,7 @@ export async function loadChats() {
             if (m.checkGlobalPendingRequests) m.checkGlobalPendingRequests();
         }).catch(err => console.error("Error loading group for pending checks:", err));
         
-        const { data: members, error: membersError } = await supabase.from('chat_members').select('chat_id').eq('user_id', state.currentUser.id);
+        const { data: members, error: membersError } = await supabase.from('chat_members').select('chat_id').eq('user_id', state.currentUser.id).neq('role', 'pending');
         if (membersError) throw membersError;
         
         let chatIds = members ? members.map(m => m.chat_id) : [];
@@ -51,12 +51,15 @@ export async function loadChats() {
         }
 
         const showSavedMessages = state.currentProfile?.settings?.show_saved_messages !== false;
+        
+        const activeChatIsSavedMessages = !state.activeChatIsGroup && state.activeChatMembers?.length > 0 && state.activeChatMembers.every((m: any) => m.user_id === state.currentUser?.id);
+        const isSavedActive = state.activeChatId === 'new_saved_messages' || (savedMessagesChat && savedMessagesChat.id === state.activeChatId) || activeChatIsSavedMessages;
 
-        if (showSavedMessages) {
+        if (showSavedMessages || isSavedActive) {
             if (!savedMessagesChat) {
                 // Mock one
                 savedMessagesChat = {
-                    id: 'new_saved_messages', // We'll handle this in onclick
+                    id: isSavedActive && state.activeChatId && state.activeChatId !== 'new_saved_messages' ? state.activeChatId : 'new_saved_messages',
                     created_at: new Date().toISOString(),
                     type: 'private',
                     title: 'Избранное',
@@ -72,10 +75,13 @@ export async function loadChats() {
 
         list.innerHTML = '';
         chats.forEach((chat: any) => {
+            if (chat.description === 'POST_COMMENTS' || (chat.title === 'Комментарии' && chat.type === 'group' && chat.is_public)) return;
+            
             let isGroup = chat.type === 'group' || chat.type === 'channel';
+            let isSavedMsgs = !isGroup && (!chat.chat_members || chat.chat_members.filter((m: any) => m.user_id !== state.currentUser.id).length === 0);
             
             // Skip empty direct chats (ghost chats) unless it's currently active or it's saved messages
-            if ((chat.type === 'direct' || chat.type === 'private') && (!chat.messages || chat.messages.length === 0) && chat.id !== state.activeChatId && chat.id !== 'new_saved_messages') {
+            if ((chat.type === 'direct' || chat.type === 'private') && (!chat.messages || chat.messages.length === 0) && chat.id !== state.activeChatId && chat.id !== 'new_saved_messages' && !isSavedMsgs) {
                 return;
             }
 
@@ -175,14 +181,14 @@ export async function loadChats() {
                 avatarHtml = `<div class="w-full h-full bg-gradient-to-br from-blue-400 to-indigo-500 rounded-full flex items-center justify-center text-white font-bold text-lg shadow-sm">И</div>`;
             } else {
                 avatarHtml = avatarUrl 
-                    ? `<img src="${avatarUrl}" class="w-full h-full object-cover rounded-full">` 
+                    ? `<div class="w-full h-full rounded-full" style="background-image: url('${avatarUrl}'); background-size: cover; background-position: center;"></div>` 
                     : `<div class="w-full h-full bg-gradient-to-br ${isGroup ? 'from-emerald-400 to-teal-500' : 'from-blue-400 to-indigo-500'} rounded-full flex items-center justify-center text-white font-bold text-lg shadow-sm">${firstLetter}</div>`;
             }
 
             const unreadCount = chat.messages ? chat.messages.filter((m: any) => !m.is_read && m.sender_id !== state.currentUser.id).length : 0;
             const unreadBadge = unreadCount > 0 ? `<div class="bg-blue-500 text-white text-[11px] font-bold px-1.5 py-0.5 rounded-full min-w-[20px] text-center ml-2 shrink-0">${unreadCount}</div>` : '';
 
-            const isMuted = (state.currentUser?.settings?.muted_chats || []).includes(chat.id);
+            const isMuted = (state.currentProfile?.settings?.muted_chats || []).includes(chat.id);
             const muteBadge = isMuted ? `<svg class="w-3.5 h-3.5 text-gray-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h2.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z m7.414-2l4 4m0-4l-4 4m8-8l-4 4m0-4l4 4"></path></svg>` : '';
 
             const otherUserProfile = !isGroup ? chat.chat_members?.find((m: any) => m.user_id !== state.currentUser.id)?.profiles : null;
@@ -255,15 +261,10 @@ export async function openChatContextMenu(chatId: string, chatName: string, e: M
         y = (e as MouseEvent).clientY;
     }
 
-    // Make sure it doesn't go off screen
-    setTimeout(() => {
-        const rect = menu.getBoundingClientRect();
-        if (x + rect.width > window.innerWidth) x = window.innerWidth - rect.width - 10;
-        if (y + rect.height > window.innerHeight) y = window.innerHeight - rect.height - 10;
-        menu.style.left = `${Math.max(10, x)}px`;
-        menu.style.top = `${Math.max(10, y)}px`;
-    }, 0);
-    
+    // Position it initially offscreen so it doesn't flash
+    menu.style.left = '-9999px';
+    menu.style.top = '-9999px';
+
     const { data: profile } = await supabase.from('profiles').select('settings').eq('id', state.currentUser!.id).single();
     const isMuted = (profile?.settings?.muted_chats || []).includes(chatId);
 
@@ -289,6 +290,16 @@ export async function openChatContextMenu(chatId: string, chatName: string, e: M
         `}
     `;
     document.body.appendChild(menu);
+
+    setTimeout(() => {
+        const rect = menu.getBoundingClientRect();
+        let finalX = x;
+        let finalY = y;
+        if (finalX + rect.width > window.innerWidth) finalX = window.innerWidth - rect.width - 10;
+        if (finalY + rect.height > window.innerHeight) finalY = window.innerHeight - rect.height - 10;
+        menu.style.left = `${Math.max(10, finalX)}px`;
+        menu.style.top = `${Math.max(10, finalY)}px`;
+    }, 0);
 
     const closeMenu = (e: any) => {
         if (!menu.contains(e.target)) {
@@ -328,13 +339,17 @@ export async function deleteChatById(chatId: string) {
     const confirmed = await customConfirm('Удалить этот чат? Действие необратимо.');
     if (!confirmed) return;
     
-    await supabase.from('chats').delete().eq('id', chatId);
+    const { data: myMember } = await supabase.from('chat_members').select('role').eq('chat_id', chatId).eq('user_id', state.currentUser.id).single();
+    if (myMember?.role === 'creator') {
+        const { error } = await supabase.from('chats').delete().eq('id', chatId);
+        if (error) console.error(error);
+    } else {
+        const { error } = await supabase.from('chat_members').delete().eq('chat_id', chatId).eq('user_id', state.currentUser.id);
+        if (error) console.error(error);
+    }
     
     if (state.activeChatId === chatId) {
-        state.activeChatId = null;
-        document.getElementById('chat-area')!.classList.add('hidden');
-        document.getElementById('chat-area')!.classList.remove('flex');
-        document.getElementById('sidebar')!.classList.remove('hidden');
+        import('./utils').then(m => m.closeChatMobile(true));
     }
     loadChats();
 }
@@ -517,9 +532,18 @@ export async function openChat(chatId: string, chatName: string, firstLetter: st
     state.activeChatId = chatId;
     state.activeChatType = chatType as any;
     state.activeChatIsGroup = isGroup;
+    state.activeChatAvatarUrl = avatarUrl || null;
     state.activeChatDescription = description;
     state.activeChatIsPublic = isPublic || false;
     state.activeChatMembers = members || [];
+
+    if (state.activeChatParentInfo && state.activeChatParentInfo.messageId !== chatId) {
+        state.activeChatParentInfo = null;
+    }
+
+    if (state.currentProfile?.settings?.show_saved_messages === false) {
+        setTimeout(() => loadChats(), 50);
+    }
 
     const updateHeaderInfo = () => {
         const statusEl = document.getElementById('current-chat-status')!;
@@ -531,6 +555,8 @@ export async function openChat(chatId: string, chatName: string, firstLetter: st
             if (state.activeChatOtherUser) {
                 isChattingWithSupportUser = state.activeChatOtherUser.settings?.is_tech_support === true;
             }
+        } else {
+            state.activeChatOtherUser = null;
         }
         
         const effectiveTechSupport = isTechSupportChat || isChattingWithSupportUser;
@@ -552,10 +578,12 @@ export async function openChat(chatId: string, chatName: string, firstLetter: st
                 statusEl.className = '';
             }
         } else {
-             statusEl.innerText = `${state.activeChatType === 'channel' ? 'Канал' : 'Группа'} • ${state.activeChatMembers ? state.activeChatMembers.length : 0} ${state.activeChatType === 'channel' ? 'подписчик(ов)' : 'участник(ов)'}`;
+             const activeMembersCount = state.activeChatMembers ? state.activeChatMembers.filter((m: any) => m.role !== 'pending').length : 0;
+             statusEl.innerText = `${state.activeChatType === 'channel' ? 'Канал' : 'Группа'} • ${activeMembersCount} ${state.activeChatType === 'channel' ? 'подписчиков' : 'участников'}`;
              statusEl.className = 'text-xs text-gray-500 dark:text-gray-400 font-medium';
         }
     };
+    (window as any).updateHeaderInfo = updateHeaderInfo;
 
     let isPremiumUser = false;
     if (chatType === 'direct' || chatType === 'private') {
@@ -563,7 +591,7 @@ export async function openChat(chatId: string, chatName: string, firstLetter: st
         isPremiumUser = otherUserProfile?.is_premium && (!otherUserProfile.premium_until || new Date(otherUserProfile.premium_until) > new Date());
     }
 
-    if (state.isAdminStatus && state.activeChatMembers.length === 0) {
+    if ((state.activeChatIsGroup || state.isAdminStatus) && state.activeChatMembers.length === 0) {
         supabase.from('chat_members').select('user_id, role, profiles(id, username, display_name, last_seen, is_online, avatar_url, bio, settings, is_premium, premium_until)').eq('chat_id', chatId).then(({ data, error }) => {
             if (data) {
                 state.activeChatMembers = data;
@@ -574,6 +602,17 @@ export async function openChat(chatId: string, chatName: string, firstLetter: st
 
     const premiumBadgeListHtml = isPremiumUser ? `<span class="inline-flex items-center justify-center ml-1 shrink-0" title="Vibegram Premium"><img src="./image/Google-Gemini-Logo-Transparent.png" class="w-4 h-4 object-contain" alt="Premium"></span>` : '';
     document.getElementById('current-chat-name')!.innerHTML = `<span class="truncate shrink">${chatName}</span>${premiumBadgeListHtml}`;
+    
+    const backBtn = document.querySelector('#chat-header-container button');
+    if (backBtn) {
+        if (state.activeChatParentInfo) {
+            backBtn.className = 'mr-3 p-2.5 text-blue-500 hover:bg-blue-100 dark:hover:bg-gray-700 rounded-full flex items-center justify-center transition-colors shadow-sm bg-blue-50 dark:bg-gray-800 shrink-0';
+            backBtn.innerHTML = `<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M15 19l-7-7 7-7"></path></svg>`;
+        } else {
+            backBtn.className = 'md:hidden mr-2 p-2.5 text-blue-500 hover:bg-blue-100 dark:hover:bg-gray-700 rounded-full flex items-center justify-center shrink-0';
+            backBtn.innerHTML = `<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg>`;
+        }
+    }
     
     const headerContainer = document.getElementById('chat-header-container');
     if (headerContainer) {
@@ -654,10 +693,10 @@ export async function openChat(chatId: string, chatName: string, firstLetter: st
         avatar.innerHTML = `<div class="w-full h-full bg-gradient-to-br from-blue-400 to-indigo-500 rounded-full flex items-center justify-center text-white font-bold text-lg shadow-sm">И</div>`;
         avatar.className = `w-10 h-10 mr-3 shadow-sm relative rounded-full shrink-0 flex items-center justify-center text-white`;
     } else if (avatarUrl) {
-        avatar.innerHTML = `<div class="w-full h-full rounded-full overflow-hidden relative"><img src="${avatarUrl}" class="w-full h-full object-cover"></div>`;
+        avatar.innerHTML = `<div class="w-full h-full rounded-full shadow-sm relative shrink-0" style="background-image: url('${avatarUrl}'); background-size: cover; background-position: center;"></div>`;
         avatar.className = `w-10 h-10 mr-3 shadow-sm relative rounded-full shrink-0 flex items-center justify-center text-white`;
     } else {
-        avatar.innerHTML = `<div class="w-full h-full rounded-full overflow-hidden relative flex items-center justify-center">${firstLetter}</div>`;
+        avatar.innerHTML = `<div class="w-full h-full rounded-full overflow-hidden relative flex items-center justify-center shadow-sm">${firstLetter}</div>`;
         avatar.className = `w-10 h-10 bg-gradient-to-br ${isGroup ? 'from-emerald-400 to-teal-500' : 'from-blue-400 to-indigo-500'} rounded-full flex items-center justify-center text-white font-bold mr-3 shadow-sm relative shrink-0`;
     }
 

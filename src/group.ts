@@ -424,6 +424,8 @@ export function toggleCirclePlay(element: HTMLElement, url: string) {
 export async function openChatInfo(skipPushState = false) {
     if (!state.activeChatId) return;
 
+    const currentChatId = state.activeChatId;
+
     if (!skipPushState && window.location.hash !== '#info') {
         window.history.pushState({ screen: 'info' }, '', '#info');
     }
@@ -445,7 +447,11 @@ export async function openChatInfo(skipPushState = false) {
     let avatarUrl = state.activeChatIsGroup ? state.activeChatAvatarUrl : state.activeChatOtherUser?.avatar_url;
     if (state.activeChatIsGroup && !avatarUrl) {
         const { data: chatData } = await supabase.from('chats').select('avatar_url').eq('id', state.activeChatId).single();
-        if (chatData?.avatar_url) avatarUrl = chatData.avatar_url;
+        if (state.activeChatId !== currentChatId) return;
+        if (chatData?.avatar_url) {
+             avatarUrl = chatData.avatar_url;
+             state.activeChatAvatarUrl = avatarUrl;
+        }
     }
     let isPremiumUser = false;
     if (!state.activeChatIsGroup && state.activeChatOtherUser) {
@@ -465,22 +471,27 @@ export async function openChatInfo(skipPushState = false) {
     let usernameHtml = '';
     if (state.activeChatIsGroup) {
         const { data: chatData } = await supabase.from('chats').select('username').eq('id', state.activeChatId).single();
+        if (state.activeChatId !== currentChatId) return;
         if (chatData?.username) {
             usernameHtml = `<div class="text-sm text-blue-500 text-center select-all mt-1 cursor-pointer hover:text-blue-600 dark:hover:text-blue-400 transition-colors" onclick="navigator.clipboard.writeText('@${chatData.username}'); const old=this.innerHTML; this.innerHTML='✅ Скопировано'; setTimeout(()=>this.innerHTML=old, 2000);" title="Копировать ID">@${chatData.username}</div>`;
         }
     } else if (!isSavedMessages) {
         const { data: userData } = await supabase.from('profiles').select('username').eq('id', state.activeChatOtherUser?.id).single();
+        if (state.activeChatId !== currentChatId) return;
         if(userData?.username) {
             usernameHtml = `<div class="text-sm text-blue-500 text-center select-all mt-1 cursor-pointer hover:text-blue-600 dark:hover:text-blue-400 transition-colors" onclick="navigator.clipboard.writeText('@${userData.username}'); const old=this.innerHTML; this.innerHTML='✅ Скопировано'; setTimeout(()=>this.innerHTML=old, 2000);" title="Копировать ID">@${userData.username}</div>`;
         }
     }
     
     const { data: profile } = await supabase.from('profiles').select('settings').eq('id', state.currentUser.id).single();
+    if (state.activeChatId !== currentChatId) return;
     const settings = profile?.settings || {};
     const mutedChats = settings.muted_chats || [];
     const isMuted = mutedChats.includes(state.activeChatId);
+    
+    const isCommentChat = state.activeChatParentInfo || state.activeChatDescription === 'Обсуждение поста' || state.activeChatDescription === 'POST_COMMENTS';
 
-    const muteBtnHtml = `
+    const muteBtnHtml = isCommentChat ? '' : `
         <button onclick="toggleMuteChat()" class="w-full text-left px-4 py-3 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 rounded-xl transition-colors flex items-center justify-between font-medium">
             <div class="flex items-center gap-3">
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2"></path></svg>
@@ -518,6 +529,7 @@ export async function openChatInfo(skipPushState = false) {
         `;
     } else if (state.activeChatIsGroup) {
         const { data: members } = await supabase.from('chat_members').select('role, user_id, profiles(id, username, display_name, avatar_url, is_online)').eq('chat_id', state.activeChatId);
+        if (state.activeChatId !== currentChatId) return;
         const myRole = members?.find((m: any) => m.user_id === state.currentUser.id)?.role;
         const canManage = myRole === 'creator' || myRole === 'admin' || state.isAdminStatus;
         const isCreator = myRole === 'creator' || state.isAdminStatus;
@@ -554,14 +566,14 @@ export async function openChatInfo(skipPushState = false) {
                 <h4 class="text-sm font-bold text-orange-500 uppercase tracking-wider mb-3">Заявки на вступление (${pendingMembers.length})</h4>
                 <div class="space-y-3 max-h-40 overflow-y-auto pr-2 mb-4">
                     ${pendingMembers.map((m: any) => `
-                        <div class="flex items-center justify-between p-2 bg-orange-50 dark:bg-orange-900/20 rounded-xl">
+                        <div class="flex items-center justify-between p-2 bg-orange-50 dark:bg-orange-900/20 rounded-xl join-request-item">
                             <div class="flex items-center gap-3 min-w-0">
                                 <div class="w-8 h-8 bg-orange-500 text-white rounded-full flex items-center justify-center font-bold text-xs shrink-0">${(m.profiles?.display_name || m.profiles?.username || 'U')[0].toUpperCase()}</div>
                                 <span class="font-semibold text-gray-800 dark:text-gray-100 text-sm truncate block">${m.profiles?.display_name || m.profiles?.username}</span>
                             </div>
                             <div class="flex gap-2">
-                                <button onclick="approveJoinRequest('${m.user_id}')" class="text-green-500 hover:bg-green-100 p-1.5 rounded-lg"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg></button>
-                                <button onclick="rejectJoinRequest('${m.user_id}')" class="text-red-500 hover:bg-red-100 p-1.5 rounded-lg"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg></button>
+                                <button onclick="approveJoinRequest('${m.user_id}', this)" class="text-green-500 hover:bg-green-100 p-1.5 rounded-lg"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg></button>
+                                <button onclick="rejectJoinRequest('${m.user_id}', this)" class="text-red-500 hover:bg-red-100 p-1.5 rounded-lg"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg></button>
                             </div>
                         </div>
                     `).join('')}
@@ -647,6 +659,18 @@ export async function openChatInfo(skipPushState = false) {
             </div>
             <div class="mt-4 w-full space-y-2">
                 ${muteBtnHtml}
+                ${(!isBlocked && !isSavedMessages) ? `
+                <div class="flex items-center gap-2 mb-2">
+                    <button onclick="closeModal(); startAudioCall()" class="flex-1 py-3 bg-blue-50 hover:bg-blue-100 dark:bg-blue-900/30 dark:hover:bg-blue-900/50 text-blue-600 dark:text-blue-400 rounded-xl font-bold flex items-center justify-center gap-2 transition-colors">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"></path></svg>
+                        Аудиозвонок
+                    </button>
+                    <button onclick="closeModal(); startVideoCall()" class="flex-1 py-3 bg-blue-50 hover:bg-blue-100 dark:bg-blue-900/30 dark:hover:bg-blue-900/50 text-blue-600 dark:text-blue-400 rounded-xl font-bold flex items-center justify-center gap-2 transition-colors">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>
+                        Видеозвонок
+                    </button>
+                </div>
+                ` : ''}
                 <button onclick="toggleBlockUser('${otherUserId}')" class="w-full text-left px-4 py-3 text-sm ${isBlocked ? 'text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700' : 'text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30'} rounded-xl transition-colors flex items-center gap-3 font-medium">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"></path></svg>
                     ${isBlocked ? 'Разблокировать пользователя' : 'Заблокировать пользователя'}
@@ -671,6 +695,8 @@ export async function openChatInfo(skipPushState = false) {
         .not('media', 'is', null)
         .order('created_at', { ascending: false })
         .limit(1000);
+        
+    if (state.activeChatId !== currentChatId) return;
 
     let photosVideos: any[] = [];
     let files: any[] = [];
@@ -939,7 +965,7 @@ export async function uploadGroupAvatar(e: any) {
         
         // Update main UI
         const avatar = document.getElementById('chat-header-avatar')!;
-        avatar.innerHTML = `<img src="${url}" class="w-full h-full object-cover rounded-full">`;
+        avatar.innerHTML = `<div class="w-full h-full rounded-full" style="background-image: url('${url}'); background-size: cover; background-position: center;"></div>`;
         avatar.className = `w-10 h-10 mr-3 shadow-sm relative rounded-full`;
         
         openChatInfo(); // Refresh modal
@@ -986,14 +1012,35 @@ export async function toggleBlockUser(userId: string) {
 }
 (window as any).toggleBlockUser = toggleBlockUser;
 
-export async function approveJoinRequest(userId: string) {
+export async function approveJoinRequest(userId: string, btnElement?: HTMLElement) {
+    if (btnElement) {
+        const item = btnElement.closest('.join-request-item');
+        if (item) item.remove();
+    }
     await supabase.from('chat_members').update({ role: 'member' }).eq('chat_id', state.activeChatId).eq('user_id', userId);
-    openChatInfo();
+    
+    // Update local state
+    const member = state.activeChatMembers.find((m: any) => m.user_id === userId);
+    if (member) member.role = 'member';
+    if ((window as any).updateHeaderInfo) (window as any).updateHeaderInfo();
+    
+    // Don't re-render immediately as we manually removed the item and want to keep modal open smoothly
+    setTimeout(() => { openChatInfo(true) }, 1000);
 }
 
-export async function rejectJoinRequest(userId: string) {
+export async function rejectJoinRequest(userId: string, btnElement?: HTMLElement) {
+    if (btnElement) {
+        const item = btnElement.closest('.join-request-item');
+        if (item) item.remove();
+    }
     await supabase.from('chat_members').delete().eq('chat_id', state.activeChatId).eq('user_id', userId);
-    openChatInfo();
+    
+    // Update local state
+    state.activeChatMembers = state.activeChatMembers.filter((m: any) => m.user_id !== userId);
+    if ((window as any).updateHeaderInfo) (window as any).updateHeaderInfo();
+    
+    // Don't re-render immediately as we manually removed the item
+    setTimeout(() => { openChatInfo(true) }, 1000);
 }
 
 export async function promoteToAdmin(userId: string) {
@@ -1010,18 +1057,6 @@ export async function kickMember(userId: string) {
     const confirmed = await customConfirm('Удалить этого пользователя из группы?');
     if (!confirmed) return;
     await supabase.from('chat_members').delete().eq('chat_id', state.activeChatId).eq('user_id', userId);
-    
-    const { count } = await supabase.from('chat_members').select('*', { count: 'exact', head: true }).eq('chat_id', state.activeChatId);
-    if (count === 0) {
-        await supabase.from('chats').delete().eq('id', state.activeChatId);
-        closeModal();
-        state.activeChatId = null;
-        document.getElementById('chat-area')!.classList.add('hidden');
-        document.getElementById('chat-area')!.classList.remove('flex');
-        document.getElementById('sidebar')!.classList.remove('hidden');
-        if ((window as any).logic?.loadChats) (window as any).logic.loadChats();
-        return;
-    }
     openChatInfo(); // Refresh modal
 }
 
@@ -1346,8 +1381,9 @@ export async function createGroup() {
     if(!username || username.length < 3) return customAlert('Введите корректный ID (от 3 символов)');
     
     // Check if ID is taken
-    const { data: existingChat } = await supabase.from('chats').select('id').eq('username', username).single();
-    if (existingChat) return customAlert('Данный ID уже занят');
+    const { data: existingChats, error } = await supabase.from('chats').select('id').eq('username', username);
+    if (error) console.error("Error checking username:", error);
+    if (existingChats && existingChats.length > 0) return customAlert('Данный ID уже занят');
 
     const isPublic = (document.getElementById('chat-is-public') as HTMLInputElement)?.checked || false;
     const newChatId = crypto.randomUUID();
@@ -1371,8 +1407,9 @@ export async function createChannel() {
     if(!username || username.length < 3) return customAlert('Введите корректный ID (от 3 символов)');
     
     // Check if ID is taken
-    const { data: existingChat } = await supabase.from('chats').select('id').eq('username', username).single();
-    if (existingChat) return customAlert('Данный ID уже занят');
+    const { data: existingChats, error } = await supabase.from('chats').select('id').eq('username', username);
+    if (error) console.error("Error checking channel username:", error);
+    if (existingChats && existingChats.length > 0) return customAlert('Данный ID уже занят');
     
     const isPublic = (document.getElementById('chat-is-public') as HTMLInputElement)?.checked || false;
     const newChatId = crypto.randomUUID();
@@ -1397,10 +1434,7 @@ export async function leaveGroup() {
         await supabase.from('chats').delete().eq('id', state.activeChatId);
         closeModal();
         
-        state.activeChatId = null;
-        document.getElementById('chat-area')!.classList.add('hidden');
-        document.getElementById('chat-area')!.classList.remove('flex');
-        document.getElementById('sidebar')!.classList.remove('hidden');
+        import('./utils').then(m => m.closeChatMobile(true));
         
         loadChats();
         return;
@@ -1411,18 +1445,9 @@ export async function leaveGroup() {
     
     await supabase.from('chat_members').delete().eq('chat_id', state.activeChatId).eq('user_id', state.currentUser.id);
     
-    const { count } = await supabase.from('chat_members').select('*', { count: 'exact', head: true }).eq('chat_id', state.activeChatId);
-    if (count === 0) {
-        await supabase.from('chats').delete().eq('id', state.activeChatId);
-    }
-    
     closeModal();
     
-    // Switch to no chat
-    state.activeChatId = null;
-    document.getElementById('chat-area')!.classList.add('hidden');
-    document.getElementById('chat-area')!.classList.remove('flex');
-    document.getElementById('sidebar')!.classList.remove('hidden');
+    import('./utils').then(m => m.closeChatMobile(true));
     
     loadChats();
 }
@@ -1440,14 +1465,18 @@ export async function deleteChat() {
     const confirmed = await customConfirm('Вы уверены, что хотите удалить этот чат?');
     if (!confirmed) return;
     
-    await supabase.from('chats').delete().eq('id', state.activeChatId);
-    closeModal();
+    const { data: myMember } = await supabase.from('chat_members').select('role').eq('chat_id', state.activeChatId).eq('user_id', state.currentUser.id).single();
+    if (myMember?.role === 'creator') {
+        const { error } = await supabase.from('chats').delete().eq('id', state.activeChatId);
+        if (error) console.error("Error deleting chat:", error);
+    } else {
+        const { error } = await supabase.from('chat_members').delete().eq('chat_id', state.activeChatId).eq('user_id', state.currentUser.id);
+        if (error) console.error("Error leaving chat:", error);
+    }
     
-    // Switch to no chat
-    state.activeChatId = null;
-    document.getElementById('chat-area')!.classList.add('hidden');
-    document.getElementById('chat-area')!.classList.remove('flex');
-    document.getElementById('sidebar')!.classList.remove('hidden');
+    import('./utils').then(m => m.closeModal(undefined, true));
+    
+    import('./utils').then(m => m.closeChatMobile(true));
     
     loadChats();
 }
@@ -1474,7 +1503,9 @@ export async function checkGlobalPendingRequests() {
     const { data: pendingMembers } = await supabase.from('chat_members').select('*, profiles(*), chats(title)').in('chat_id', adminChatIds).eq('role', 'pending');
     
     if (pendingMembers && pendingMembers.length > 0) {
-        showGlobalPendingModal(pendingMembers);
+        if (!(window as any).hasDismissedGlobalPendingModal) {
+            showGlobalPendingModal(pendingMembers);
+        }
     } else {
         const modal = document.getElementById('global-pending-modal');
         if (modal) modal.remove();
@@ -1488,6 +1519,8 @@ export function showGlobalPendingModal(pendingMembers: any[]) {
         modal.id = 'global-pending-modal';
         modal.className = 'fixed inset-0 bg-black/50 z-[1000] flex items-center justify-center p-4 backdrop-blur-sm transition-opacity';
         document.body.appendChild(modal);
+    } else {
+        return; // Already showing, don't overwrite and cause blinking
     }
     
     if (pendingMembers.length === 0) {
@@ -1497,16 +1530,21 @@ export function showGlobalPendingModal(pendingMembers: any[]) {
     
     modal.innerHTML = `
         <div class="bg-white dark:bg-gray-900 rounded-3xl w-full max-w-md overflow-hidden shadow-2xl flex flex-col max-h-[85vh]">
-            <div class="p-6 border-b border-gray-100 dark:border-gray-800 shrink-0 bg-white dark:bg-gray-900 z-10 relative">
-                <h3 class="text-xl font-extrabold text-gray-900 dark:text-white flex items-center gap-2">
-                    <svg class="w-6 h-6 text-orange-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v1m6 11h2m-6 0h-8m0 0H4m4 0h8m-4-6v6"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
-                    Новые заявки
-                </h3>
-                <p class="text-[13px] font-medium text-gray-500 mt-2">Рассмотрите входящие запросы на добавление в ваши группы.</p>
+            <div class="p-6 border-b border-gray-100 dark:border-gray-800 shrink-0 bg-white dark:bg-gray-900 z-10 relative flex items-center justify-between">
+                <div>
+                    <h3 class="text-xl font-extrabold text-gray-900 dark:text-white flex items-center gap-2">
+                        <svg class="w-6 h-6 text-orange-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v1m6 11h2m-6 0h-8m0 0H4m4 0h8m-4-6v6"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+                        Новые заявки
+                    </h3>
+                    <p class="text-[13px] font-medium text-gray-500 mt-2">Рассмотрите входящие запросы на добавление в ваши группы.</p>
+                </div>
+                <button onclick="window.hasDismissedGlobalPendingModal = true; var m = document.getElementById('global-pending-modal'); if (m) m.remove();" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                </button>
             </div>
             <div class="p-4 overflow-y-auto flex-1 bg-gray-50/50 dark:bg-gray-800/20 space-y-3 relative">
                 ${pendingMembers.map((m: any) => `
-                    <div class="bg-white dark:bg-gray-800 p-5 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700">
+                    <div class="bg-white dark:bg-gray-800 p-5 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 pending-request-card">
                         <div class="text-[11px] font-bold text-orange-500 uppercase tracking-widest mb-3 flex items-center gap-1.5"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"></path></svg> ${m.chats?.title || 'Группа'}</div>
                         <div class="flex items-center gap-4">
                             <div class="w-12 h-12 bg-gradient-to-br from-blue-400 to-indigo-500 text-white rounded-full flex items-center justify-center font-bold text-lg shrink-0 uppercase shadow-sm">
@@ -1518,10 +1556,10 @@ export function showGlobalPendingModal(pendingMembers: any[]) {
                             </div>
                         </div>
                         <div class="flex items-center gap-2 mt-5">
-                            <button onclick="handleGlobalJoinRequest('${m.user_id}', '${m.chat_id}', 'accept')" class="flex-1 py-2.5 bg-green-50 text-green-600 dark:bg-green-900/30 dark:text-green-400 rounded-xl font-bold text-sm tracking-wide hover:bg-green-100 dark:hover:bg-green-900/50 transition-colors border border-green-200 dark:border-transparent active:scale-95 duration-150">
+                            <button onclick="handleGlobalJoinRequest('${m.user_id}', '${m.chat_id}', 'accept', this)" class="flex-1 py-2.5 bg-green-50 text-green-600 dark:bg-green-900/30 dark:text-green-400 rounded-xl font-bold text-sm tracking-wide hover:bg-green-100 dark:hover:bg-green-900/50 transition-colors border border-green-200 dark:border-transparent active:scale-95 duration-150">
                                 Принять
                             </button>
-                            <button onclick="handleGlobalJoinRequest('${m.user_id}', '${m.chat_id}', 'reject')" class="flex-1 py-2.5 bg-red-50 text-red-600 dark:bg-red-900/30 dark:text-red-400 rounded-xl font-bold text-sm tracking-wide hover:bg-red-100 dark:hover:bg-red-900/50 transition-colors border border-red-200 dark:border-transparent active:scale-95 duration-150">
+                            <button onclick="handleGlobalJoinRequest('${m.user_id}', '${m.chat_id}', 'reject', this)" class="flex-1 py-2.5 bg-red-50 text-red-600 dark:bg-red-900/30 dark:text-red-400 rounded-xl font-bold text-sm tracking-wide hover:bg-red-100 dark:hover:bg-red-900/50 transition-colors border border-red-200 dark:border-transparent active:scale-95 duration-150">
                                 Отклонить
                             </button>
                         </div>
@@ -1533,16 +1571,38 @@ export function showGlobalPendingModal(pendingMembers: any[]) {
     `;
 }
 
-(window as any).handleGlobalJoinRequest = async (userId: string, chatId: string, action: 'accept' | 'reject') => {
-    if (action === 'accept') {
-        await supabase.from('chat_members').update({ role: 'member' }).eq('chat_id', chatId).eq('user_id', userId);
-    } else {
-        await supabase.from('chat_members').delete().eq('chat_id', chatId).eq('user_id', userId);
+(window as any).handleGlobalJoinRequest = async (userId: string, chatId: string, action: 'accept' | 'reject', btnElement?: HTMLElement) => {
+    if (btnElement) {
+        const card = btnElement.closest('.pending-request-card');
+        if (card) {
+            card.remove();
+            const modal = document.getElementById('global-pending-modal');
+            if (modal) {
+                const remainingCards = modal.querySelectorAll('.pending-request-card');
+                if (remainingCards.length === 0) {
+                    modal.remove();
+                }
+            }
+        }
     }
     
-    checkGlobalPendingRequests();
-    if (state.activeChatId === chatId) {
-        import('./group').then(m => m.openChatInfo());
+    if (action === 'accept') {
+        const { error } = await supabase.from('chat_members').update({ role: 'member' }).eq('chat_id', chatId).eq('user_id', userId);
+        if (error) console.error(error);
+        
+        const modal = document.getElementById('global-pending-modal');
+        if (modal) modal.remove();
+        
+        const { data: chat } = await supabase.from('chats').select('*, chat_members(*, profiles(*))').eq('id', chatId).single();
+        if (chat) {
+            import('./chat').then(m => {
+                m.openChat(chat.id, chat.title || 'Группа', chat.title?.[0]?.toUpperCase() || 'Г', true, chat.type, chat.chat_members, chat.avatar_url, chat.description, chat.is_public, true);
+                setTimeout(() => openChatInfo(false), 300);
+            });
+        }
+    } else {
+        const { error } = await supabase.from('chat_members').delete().eq('chat_id', chatId).eq('user_id', userId);
+        if (error) console.error(error);
     }
 };
 (window as any).checkGlobalPendingRequests = checkGlobalPendingRequests;

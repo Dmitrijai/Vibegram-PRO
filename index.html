@@ -4,17 +4,24 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>Vibegram</title>
+    <link rel="icon" href="data:," />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <script>
         if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
             document.documentElement.classList.add('dark');
         }
+        try {
+            const savedBg = localStorage.getItem('chatBg');
+            if (savedBg && savedBg !== 'default') {
+                window.initialChatBg = savedBg;
+            }
+        } catch(e) {}
     </script>
 </head>
 <body class="h-[100dvh] w-[100dvw] flex overflow-hidden bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100 transition-colors">
     <!-- Standalone Mini App Screen -->
     <div id="standalone-miniapp-screen" class="hidden w-full h-[100dvh] absolute top-0 left-0 bg-white dark:bg-gray-900 z-[10000] flex-col">
-        <iframe id="standalone-miniapp-frame" class="w-full h-full border-0 flex-1" sandbox="allow-scripts allow-forms allow-same-origin allow-popups"></iframe>
+        <iframe id="standalone-miniapp-frame" class="w-full h-full border-0 flex-1" sandbox="allow-scripts allow-forms allow-popups"></iframe>
     </div>
 
     <!-- Initial Loader -->
@@ -100,7 +107,14 @@
             <div id="chats-list" class="flex-1 overflow-y-auto bg-white dark:bg-gray-900"></div>
         </div>
 
-        <div id="chat-area" class="w-full flex-1 flex flex-col bg-slate-50 dark:bg-slate-900 chat-bg hidden md:flex absolute inset-0 md:relative z-10 h-full">
+        <div id="chat-area" class="w-full flex-1 flex flex-col bg-slate-50 dark:bg-slate-900 hidden md:flex absolute inset-0 md:relative z-10 h-full">
+            <script>
+                if (window.initialChatBg) {
+                    document.getElementById('chat-area').classList.add(window.initialChatBg);
+                } else {
+                    document.getElementById('chat-area').classList.add('chat-bg');
+                }
+            </script>
             <div class="h-16 bg-white/95 dark:bg-gray-900/95 backdrop-blur-md border-b border-gray-200 dark:border-gray-800 flex items-center px-4 shadow-sm shrink-0 justify-between z-20">
                 <div id="chat-header-container" class="flex items-center min-w-0 flex-1 p-1.5 rounded-xl transition-colors -ml-1.5" onclick="openChatInfo()">
                     <button onclick="event.stopPropagation(); closeChatMobile()" class="md:hidden mr-2 p-2 text-blue-500 hover:bg-blue-100 rounded-full">
@@ -116,12 +130,9 @@
                     <button id="search-chat-btn" onclick="toggleChatSearch()" class="hidden p-2 text-gray-500 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded-full transition-colors" title="Поиск по чату">
                         <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
                     </button>
-                    <button id="audio-call-btn" onclick="startAudioCall()" class="hidden p-2 text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded-full transition-colors" title="Аудиозвонок">
-                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"></path></svg>
-                    </button>
-                    <button id="video-call-btn" onclick="startVideoCall()" class="hidden p-2 text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded-full transition-colors" title="Видеозвонок">
-                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>
-                    </button>
+                    <!-- Audio and Video calls moved to Chat Info modal -->
+                    <button id="audio-call-btn" style="display: none!important;" class="hidden"></button>
+                    <button id="video-call-btn" style="display: none!important;" class="hidden"></button>
                 </div>
             </div>
 
@@ -681,7 +692,7 @@
                 </div>
             </div>
             <div class="flex-1 w-full relative">
-                <iframe id="mini-app-frame" class="w-full h-full border-0" sandbox="allow-scripts allow-forms allow-same-origin allow-popups"></iframe>
+                <iframe id="mini-app-frame" class="w-full h-full border-0" sandbox="allow-scripts allow-forms allow-popups"></iframe>
             </div>
         </div>
 

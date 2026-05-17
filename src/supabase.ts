@@ -1,9 +1,9 @@
 import { createClient } from '@supabase/supabase-js';
 
 // Используем переменные окружения, если они установлены, иначе падаем с ошибкой, чтобы было понятно
-const rawSupabaseUrl = process.env.SUPABASE_URL || import.meta.env.VITE_SUPABASE_URL || '';
+const rawSupabaseUrl = process.env.SUPABASE_URL || (import.meta as any).env?.VITE_SUPABASE_URL || '';
 const SUPABASE_URL = rawSupabaseUrl.replace(/\/rest\/v[0-9]+\/?$/, '').replace(/\/$/, '');
-const SUPABASE_KEY = process.env.SUPABASE_ANON_KEY || import.meta.env.VITE_SUPABASE_ANON_KEY || '';
+const SUPABASE_KEY = process.env.SUPABASE_ANON_KEY || (import.meta as any).env?.VITE_SUPABASE_ANON_KEY || '';
 
 if (!SUPABASE_URL || !SUPABASE_KEY) {
     console.error('Ключи Supabase не настроены. Добавьте SUPABASE_URL и SUPABASE_ANON_KEY в AI Studio Secrets.');
@@ -22,6 +22,7 @@ export const state = {
     activeChatIsGroup: false,
     activeChatIsPublic: false,
     activeChatAvatarUrl: null as string | null,
+    activeChatParentInfo: null as { parentId: string, parentName: string, messageId?: string } | null,
     activeChatOtherUser: null as any,
     activeChatMembers: [] as any[],
     activeChatDescription: null as string | null | undefined,

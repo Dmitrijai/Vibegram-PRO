@@ -47,7 +47,8 @@ function isQuotaError(error: any) {
     return status === 429 || status === 401 || status === 403 || 
            msg.includes('429') || msg.includes('401') || msg.includes('403') || 
            msg.includes('quota') || msg.includes('exhausted') || 
-           msg.includes('rate limit') || msg.includes('invalid authentication credentials');
+           msg.includes('rate limit') || msg.includes('invalid authentication credentials') ||
+           msg.includes('failed to fetch');
 }
 
 function isTransientError(error: any) {

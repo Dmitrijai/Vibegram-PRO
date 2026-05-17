@@ -219,10 +219,11 @@ export function renderMessages(messages: any[], isInitialLoad = false) {
         let forwardHtml = '';
         const mediaArr = msg.media || [];
         
-        const actualMedia = mediaArr.filter((m: any) => m.type !== 'reply' && m.type !== 'forward' && m.type !== 'admin_mode');
+        const actualMedia = mediaArr.filter((m: any) => m.type !== 'reply' && m.type !== 'forward' && m.type !== 'admin_mode' && m.type !== 'comments_enabled');
         const replyData = mediaArr.find((m: any) => m.type === 'reply');
         const forwardData = mediaArr.find((m: any) => m.type === 'forward');
         const adminModeData = mediaArr.find((m: any) => m.type === 'admin_mode');
+        const isCommentsEnabled = mediaArr.some((m: any) => m.type === 'comments_enabled');
 
         if (replyData) {
             replyHtml = `
@@ -293,8 +294,8 @@ export function renderMessages(messages: any[], isInitialLoad = false) {
                 </div>
             `;
         } else if (msg.message_type === 'voice' && actualMedia.length > 0) {
-            const transcriptionText = actualMedia[0].transcription ? `<div class="mt-1 text-sm text-gray-700 dark:text-gray-200 bg-black/5 dark:bg-white/5 p-2 rounded-lg">${actualMedia[0].transcription}</div>` : '';
-            const transcribeBtn = !actualMedia[0].transcription ? `<button id="transcribe-btn-${msg.id}" onclick="transcribeMedia('${actualMedia[0].url}', '${msg.id}')" class="w-7 h-7 shrink-0 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-600 dark:text-gray-300 rounded-full flex items-center justify-center transition-colors ml-1" title="Расшифровать"><span class="text-[10px] font-bold">Aa</span></button>` : '';
+            const transcriptionText = `<div id="transcription-text-${msg.id}" class="w-full">${actualMedia[0].transcription ? `<div class="mt-1 text-sm text-gray-700 dark:text-gray-200 bg-black/5 dark:bg-white/5 p-2 rounded-lg">${actualMedia[0].transcription}</div>` : ''}</div>`;
+            const transcribeBtn = !actualMedia[0].transcription ? `<button id="transcribe-btn-${msg.id}" onclick="transcribeMedia('${actualMedia[0].url}', '${msg.id}', 'voice')" class="w-7 h-7 shrink-0 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-600 dark:text-gray-300 rounded-full flex items-center justify-center transition-colors ml-1" title="Расшифровать"><span class="text-[10px] font-bold">Aa</span></button>` : '';
             
             fileHtml = `
                 <div class="flex flex-col mb-1">
@@ -315,8 +316,8 @@ export function renderMessages(messages: any[], isInitialLoad = false) {
                 </div>
             `;
         } else if (msg.message_type === 'video_circle' && actualMedia.length > 0) {
-            const transcriptionText = actualMedia[0].transcription ? `<div class="mt-1 text-sm text-gray-700 dark:text-gray-200 bg-black/5 dark:bg-white/5 p-2 rounded-lg max-w-[200px]">${actualMedia[0].transcription}</div>` : '';
-            const transcribeBtn = !actualMedia[0].transcription ? `<button id="transcribe-btn-${msg.id}" onclick="transcribeMedia('${actualMedia[0].url}', '${msg.id}')" class="absolute bottom-0 right-0 w-8 h-8 bg-gray-800/70 hover:bg-gray-800 text-white rounded-full flex items-center justify-center transition-colors z-10 backdrop-blur-sm" title="Расшифровать"><span class="text-[11px] font-bold">Aa</span></button>` : '';
+            const transcriptionText = `<div id="transcription-text-${msg.id}" class="w-full flex justify-end">${actualMedia[0].transcription ? `<div class="mt-1 text-sm text-gray-700 dark:text-gray-200 bg-black/5 dark:bg-white/5 p-2 rounded-lg max-w-[200px]">${actualMedia[0].transcription}</div>` : ''}</div>`;
+            const transcribeBtn = !actualMedia[0].transcription ? `<button id="transcribe-btn-${msg.id}" onclick="transcribeMedia('${actualMedia[0].url}', '${msg.id}', 'video_circle')" class="absolute bottom-0 right-0 w-8 h-8 bg-gray-800/70 hover:bg-gray-800 text-white rounded-full flex items-center justify-center transition-colors z-10 backdrop-blur-sm" title="Расшифровать"><span class="text-[11px] font-bold">Aa</span></button>` : '';
 
             fileHtml = `
                 <div class="flex flex-col mb-1 items-end">
@@ -428,12 +429,31 @@ export function renderMessages(messages: any[], isInitialLoad = false) {
         const isPremium = msg.profiles?.is_premium && (!msg.profiles.premium_until || new Date(msg.profiles.premium_until) > new Date());
         const premiumBadge = isPremium ? `<span class="inline-flex items-center justify-center ml-1" title="Vibegram Premium"><img src="./image/Google-Gemini-Logo-Transparent.png" class="w-3.5 h-3.5 object-contain" alt="Premium"></span>` : '';
 
-        const senderNameHtml = (state.activeChatType === 'group' && (!isMe || isSystemAdmin)) ? `<div class="text-[13px] font-bold text-blue-500 mb-0.5 flex items-center">${displaySenderName}${premiumBadge}</div>` : '';
+        const senderNameHtml = (state.activeChatType === 'group' && (!isMe || isSystemAdmin)) ? `<div onclick="event.stopPropagation(); openUserProfile('${msg.sender_id}')" class="text-[13px] font-bold text-blue-500 mb-0.5 flex items-center cursor-pointer hover:underline w-fit">${displaySenderName}${premiumBadge}</div>` : '';
         
+        let canManageComments = false;
+        if (state.activeChatType === 'channel') {
+            const myRole = state.activeChatMembers?.find((m: any) => m.user_id === state.currentUser.id)?.role;
+            if (myRole === 'creator' || myRole === 'admin' || state.isAdminStatus) {
+                canManageComments = true;
+            }
+        }
+
         const encodedContent = encodeURIComponent(msg.content || '').replace(/'/g, "%27");
         
         // Reactions HTML
         let reactionsHtml = generateReactionsHtml(msg.id, msg.reactions);
+
+        let avatarHtml = '';
+        if (!isMe && state.activeChatType === 'group') {
+            const firstLetter = (displaySenderName[0] || '').toUpperCase();
+            const avatarUrl = msg.profiles?.avatar_url;
+            avatarHtml = `
+                <div class="w-8 h-8 rounded-full bg-gradient-to-br from-blue-400 to-indigo-500 shrink-0 mr-2 self-end mb-1 cursor-pointer flex items-center justify-center text-white font-bold text-sm overflow-hidden shadow-sm" onclick="event.stopPropagation(); window.openUserProfile('${msg.sender_id}')" title="${displaySenderName}">
+                    ${avatarUrl ? `<img src="${avatarUrl}" class="w-full h-full object-cover">` : firstLetter}
+                </div>
+            `;
+        }
 
         const deleteBtnHtml = `
             <div class="relative ml-1 -mr-1 flex items-center">
@@ -475,6 +495,13 @@ export function renderMessages(messages: any[], isInitialLoad = false) {
                         Скачать
                     </button>
                     ` : ''}
+                    ${canManageComments ? `
+                    <div class="h-px bg-gray-200 dark:bg-gray-700 my-1"></div>
+                    <button onclick="event.stopPropagation(); closeAllMessageMenus(); window.toggleCommentsEnabled('${msg.id}');" class="w-full text-left px-4 py-2.5 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors flex items-center gap-3">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"></path></svg>
+                        ${isCommentsEnabled ? 'Отключить комм.' : 'Добавить комм.'}
+                    </button>
+                    ` : ''}
                     ${isMe && !state.isAdminStatus ? `
                     <div class="h-px bg-gray-200 dark:bg-gray-700 my-1"></div>
                     ${!(msg.media || []).some((m: any) => m.type === 'forward') ? `
@@ -498,17 +525,29 @@ export function renderMessages(messages: any[], isInitialLoad = false) {
         `;
 
         const innerHTML = `
-            <div class="relative group select-none ${isMe ? 'bg-[#e3f2fd] dark:bg-blue-900/40 text-gray-900 dark:text-gray-100 rounded-[18px] rounded-br-[4px]' : 'bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 rounded-[18px] rounded-bl-[4px]'} p-2 px-3 shadow-sm border border-gray-200/60 dark:border-gray-700/60 max-w-full" id="msg-${msg.id}" ontouchstart="handleMessageTouchStart(event, '${msg.id}')" ontouchend="handleMessageTouchEnd(event)" ontouchmove="handleMessageTouchMove(event)" onmousedown="handleMessageTouchStart(event, '${msg.id}')" onmouseup="handleMessageTouchEnd(event)" onmousemove="handleMessageTouchMove(event)" onmouseleave="handleMessageTouchEnd(event)">
-                ${forwardHtml}
-                ${replyHtml}
-                ${senderNameHtml} ${fileHtml}
-                ${renderContent(msg.content)}
-                <div id="reactions-container-${msg.id}">${reactionsHtml}</div>
-                <div class="text-[11px] font-medium ${isMe ? 'text-blue-500 dark:text-blue-400' : 'text-gray-400 dark:text-gray-500'} mt-1 flex justify-end items-center float-right ml-4 pt-1">
-                    ${time} ${ticks}
-                    ${deleteBtnHtml}
+            <div class="flex items-end max-w-full">
+                ${avatarHtml}
+                <div class="relative group select-none ${isMe ? 'bg-[#e3f2fd] dark:bg-blue-900/40 text-gray-900 dark:text-gray-100 rounded-[18px] rounded-br-[4px]' : 'bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 rounded-[18px] rounded-bl-[4px]'} p-2 px-3 shadow-sm border border-gray-200/60 dark:border-gray-700/60 max-w-full flex-1 min-w-0" id="msg-${msg.id}" ontouchstart="handleMessageTouchStart(event, '${msg.id}')" ontouchend="handleMessageTouchEnd(event)" ontouchmove="handleMessageTouchMove(event)" onmousedown="handleMessageTouchStart(event, '${msg.id}')" onmouseup="handleMessageTouchEnd(event)" onmousemove="handleMessageTouchMove(event)" onmouseleave="handleMessageTouchEnd(event)">
+                    ${forwardHtml}
+                    ${replyHtml}
+                    ${senderNameHtml} ${fileHtml}
+                    ${renderContent(msg.content)}
+                    <div id="reactions-container-${msg.id}">${reactionsHtml}</div>
+                    <div class="text-[11px] font-medium ${isMe ? 'text-blue-500 dark:text-blue-400' : 'text-gray-400 dark:text-gray-500'} mt-1 flex justify-end items-center float-right ml-4 pt-1">
+                        ${time} ${ticks}
+                        ${deleteBtnHtml}
+                    </div>
+                    <div class="clear-both"></div>
+                    ${isCommentsEnabled ? `
+                    <div class="mt-2 pt-2 border-t border-gray-200/50 dark:border-gray-700/50 flex w-full">
+                        <button onclick="event.stopPropagation(); window.openComments('${msg.id}')" class="flex-1 flex items-center justify-center gap-2 text-[13px] font-medium text-blue-500/90 dark:text-blue-400/90 hover:bg-blue-50/50 dark:hover:bg-blue-900/20 rounded-md transition-colors py-1 relative">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"></path></svg>
+                            Комментарии
+                            <span class="comment-count-badge hidden ml-1 bg-blue-100 dark:bg-blue-900/50 text-blue-600 dark:text-blue-400 text-[11px] font-bold px-1.5 py-0.5 rounded-full" data-post-id="${msg.id}">0</span>
+                        </button>
+                    </div>
+                    ` : ''}
                 </div>
-                <div class="clear-both"></div>
             </div>
         `;
 
@@ -633,6 +672,36 @@ export function renderMessages(messages: any[], isInitialLoad = false) {
     if (isSelectionMode) {
         updateSelectionUI();
     }
+    
+    // Fetch comment counts
+    setTimeout(async () => {
+        const commentBadges = Array.from(document.querySelectorAll('.comment-count-badge')) as HTMLElement[];
+        const postIds = commentBadges.map(b => b.dataset.postId).filter(Boolean);
+        if (postIds.length > 0) {
+            try {
+                // To fetch counts, we can select chat_members? No, messages.
+                // Since this could be up to 50 posts, we use a single query to get the number of messages for each.
+                const { data } = await supabase.from('messages').select('chat_id').in('chat_id', postIds);
+                if (data) {
+                    const counts: Record<string, number> = {};
+                    data.forEach(m => {
+                        counts[m.chat_id] = (counts[m.chat_id] || 0) + 1;
+                    });
+                    for (const badge of commentBadges) {
+                        const count = counts[badge.dataset.postId!] || 0;
+                        if (count > 0) {
+                            badge.innerText = String(count);
+                            badge.classList.remove('hidden');
+                        } else {
+                            badge.classList.add('hidden');
+                        }
+                    }
+                }
+            } catch (e) {
+                console.error('Error fetching comment counts:', e);
+            }
+        }
+    }, 100);
 }
 function updateUnreadFloatingCounter(messages: any[]) {
     let counter = document.getElementById('unread-floating-counter');
@@ -874,13 +943,29 @@ async function actuallySend(text: string, files: File[], input: HTMLTextAreaElem
             else messageType = 'document';
         }
 
-        const { data: insertedMsg, error } = await supabase.from('messages').insert({
+        let insertedMsg: any;
+        let dbError: any;
+        
+        const { data: msg1, error: err1 } = await supabase.from('messages').insert({
             chat_id: state.activeChatId, sender_id: state.currentUser.id, content: text, media: mediaArr,
             message_type: messageType,
             parent_id: state.replyingTo ? state.replyingTo.id : null
-        }).select('*, profiles:sender_id(*)').single();
+        }).select('*, profiles(*)').single();
+
+        if (err1 && err1.message && err1.message.includes('messages_message_type_check')) {
+            const { data: msg2, error: err2 } = await supabase.from('messages').insert({
+                chat_id: state.activeChatId, sender_id: state.currentUser.id, content: text, media: mediaArr,
+                message_type: 'text',
+                parent_id: state.replyingTo ? state.replyingTo.id : null
+            }).select('*, profiles(*)').single();
+            insertedMsg = msg2;
+            dbError = err2;
+        } else {
+            insertedMsg = msg1;
+            dbError = err1;
+        }
         
-        if (error) throw error;
+        if (dbError) throw dbError;
 
         cancelReply();
         delete (window as any).pendingUploads[tempId];
@@ -904,7 +989,7 @@ async function actuallySend(text: string, files: File[], input: HTMLTextAreaElem
         } else {
             console.error('Error sending message:', err);
             document.getElementById(tempId)?.remove();
-            customAlert('Ошибка при отправке сообщения');
+            customAlert('Ошибка при отправке: ' + (err.message || JSON.stringify(err)));
         }
     }
     

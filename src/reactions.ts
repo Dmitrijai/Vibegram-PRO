@@ -74,6 +74,10 @@ export async function toggleReaction(msgId: string, emoji: string) {
         const { error: updateError } = await supabase.from('messages').update({ reactions }).eq('id', msgId);
         if (updateError) {
             console.error('Error updating reactions:', updateError);
+        } else {
+            if (state.activeChatId) {
+                import('./supabase').then(s => s.broadcastUpdate(state.activeChatId!, 'reaction'));
+            }
         }
     } catch (e) {
         console.error('toggleReaction exception:', e);

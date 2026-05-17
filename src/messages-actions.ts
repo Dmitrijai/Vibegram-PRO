@@ -260,7 +260,7 @@ export async function deleteMessage(messageId: string) {
     if (msg?.media && Array.isArray(msg.media)) {
         const utils = await import('./utils');
         for (const file of msg.media) {
-            if (file.url && file.url.includes('cloudinary.com')) {
+            if (file.url) {
                 await utils.softDeleteCloudinaryFile(file.url);
             }
         }
@@ -279,4 +279,59 @@ export function copyMessageText(content: string) {
     navigator.clipboard.writeText(content);
     closeAllMessageMenus();
     customToast('Текст скопирован');
+}
+
+export async function toggleCommentsEnabled(messageId: string) {
+    const { data: msg } = await supabase.from('messages').select('media').eq('id', messageId).single();
+    if (!msg) return;
+    
+    let media = msg.media || [];
+    const hasComments = media.some((m: any) => m.type === 'comments_enabled');
+    
+    if (hasComments) {
+        media = media.filter((m: any) => m.type !== 'comments_enabled');
+    } else {
+        media.push({ type: 'comments_enabled' });
+        // Make sure the chat exists
+        const { data: existingChat } = await supabase.from('chats').select('id').eq('id', messageId).single();
+        if (!existingChat) {
+            await supabase.from('chats').insert({ id: messageId, type: 'group', title: 'Комментарии', is_public: true, description: 'POST_COMMENTS' });
+            await supabase.from('chat_members').insert({ chat_id: messageId, user_id: state.currentUser.id, role: 'creator' });
+        }
+    }
+    
+    await supabase.from('messages').update({ media }).eq('id', messageId);
+}
+
+export async function openComments(messageId: string) {
+    const { data: msg } = await supabase.from('messages').select('chat_id').eq('id', messageId).single();
+    if (msg) {
+        const { data: parentChat } = await supabase.from('chats').select('title, type, chat_members(user_id, profiles(display_name, username))').eq('id', msg.chat_id).single();
+        if (parentChat) {
+            let parentName = parentChat.title;
+            if (!parentName && parentChat.type !== 'group' && parentChat.type !== 'channel') {
+                const other = parentChat.chat_members?.find((m: any) => m.user_id !== state.currentUser.id);
+                const prof = Array.isArray(other?.profiles) ? other?.profiles[0] : other?.profiles;
+                parentName = prof?.display_name || prof?.username || 'Чат';
+            }
+            state.activeChatParentInfo = { parentId: msg.chat_id, parentName: parentName || 'Основной чат', messageId: messageId };
+        }
+    }
+    const { data: mem } = await supabase.from('chat_members').select('*').eq('chat_id', messageId).eq('user_id', state.currentUser.id).maybeSingle();
+    if (!mem) {
+        const { data: existingChat } = await supabase.from('chats').select('id').eq('id', messageId).maybeSingle();
+        if (!existingChat) {
+            const { error: chatErr } = await supabase.from('chats').insert({
+                id: messageId,
+                type: 'group',
+                title: 'Комментарии',
+                description: 'POST_COMMENTS',
+                is_public: true
+            });
+            if (chatErr) console.error("Error creating comment chat:", chatErr);
+        }
+        const { error: memErr } = await supabase.from('chat_members').insert({ chat_id: messageId, user_id: state.currentUser.id, role: 'member' });
+        if (memErr) console.error("Error joining comment chat: ", memErr);
+    }
+    import('./chat').then(m => m.openChat(messageId, 'Комментарии к посту', 'К', true, 'group', [], null, 'Обсуждение поста', true));
 }
