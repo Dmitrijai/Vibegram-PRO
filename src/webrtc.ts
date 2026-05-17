@@ -7,6 +7,8 @@ let callChannel: any = null;
 let currentRingtone: HTMLAudioElement | null = null;
 let currentCallPeerId: string | null = null;
 
+let playRingtonePromise: Promise<void> | null = null;
+
 function playRingtone() {
     stopRingtone();
     if (navigator.vibrate) {
@@ -16,22 +18,33 @@ function playRingtone() {
     const basePath = (import.meta as any).env.BASE_URL || '/';
     currentRingtone = new Audio(basePath + 'sound/skype_call.mp3');
     currentRingtone.loop = true;
-    currentRingtone.play().catch(e => {
-        console.error('Audio play failed:', e);
-        // If autoplay is blocked, we can't do much without user interaction
-        // We can show a toast to the user
-        if ((window as any).customToast) {
-            (window as any).customToast('Входящий звонок! (Звук заблокирован браузером)');
-        }
-    });
+    playRingtonePromise = currentRingtone.play();
+    if (playRingtonePromise !== undefined) {
+        playRingtonePromise.catch(e => {
+            console.error('Audio play failed:', e);
+            // If autoplay is blocked, we can't do much without user interaction
+            // We can show a toast to the user
+            if ((window as any).customToast) {
+                (window as any).customToast('Входящий звонок! (Звук заблокирован браузером)');
+            }
+        });
+    }
 }
 
 function stopRingtone() {
     if (navigator.vibrate) navigator.vibrate(0);
     if (currentRingtone) {
-        currentRingtone.pause();
-        currentRingtone.currentTime = 0;
+        const ringtone = currentRingtone;
         currentRingtone = null;
+        if (playRingtonePromise !== undefined && playRingtonePromise !== null) {
+            playRingtonePromise.then(() => {
+                ringtone.pause();
+                ringtone.currentTime = 0;
+            }).catch(() => {});
+        } else {
+            ringtone.pause();
+            ringtone.currentTime = 0;
+        }
     }
 }
 
@@ -245,24 +258,27 @@ async function startCall(isVideo: boolean) {
         
         rtcPeerConnection = new RTCPeerConnection(rtcConfig);
         
-        remoteStream = new MediaStream();
         const remoteVideo = document.getElementById('remote-video') as HTMLVideoElement;
         const remoteAudio = document.getElementById('remote-audio') as HTMLAudioElement;
-        
-        if (isVideo && remoteVideo) remoteVideo.srcObject = remoteStream;
-        if (!isVideo && remoteAudio) remoteAudio.srcObject = remoteStream;
         
         localStream.getTracks().forEach(track => rtcPeerConnection!.addTrack(track, localStream!));
         
         rtcPeerConnection.ontrack = event => {
-            const track = event.track;
-            if (!remoteStream.getTracks().find(t => t.id === track.id)) {
-                remoteStream.addTrack(track);
+            if (event.streams && event.streams[0]) {
+                remoteStream = event.streams[0];
+            } else {
+                if (!remoteStream) remoteStream = new MediaStream();
+                if (!remoteStream.getTracks().find(t => t.id === event.track.id)) {
+                    remoteStream.addTrack(event.track);
+                }
             }
 
             if (isVideo && remoteVideo) {
+                if (remoteVideo.srcObject !== remoteStream) remoteVideo.srcObject = remoteStream;
                 document.getElementById('call-avatar-container')?.classList.add('hidden');
                 remoteVideo.classList.remove('hidden');
+            } else if (!isVideo && remoteAudio) {
+                if (remoteAudio.srcObject !== remoteStream) remoteAudio.srcObject = remoteStream;
             }
         };
         
@@ -344,24 +360,27 @@ export async function answerCall(callerId: string, offer: any, callerName: strin
         
         rtcPeerConnection = new RTCPeerConnection(rtcConfig);
         
-        remoteStream = new MediaStream();
         const remoteVideo = document.getElementById('remote-video') as HTMLVideoElement;
         const remoteAudio = document.getElementById('remote-audio') as HTMLAudioElement;
-        
-        if (isVideo && remoteVideo) remoteVideo.srcObject = remoteStream;
-        if (!isVideo && remoteAudio) remoteAudio.srcObject = remoteStream;
         
         localStream.getTracks().forEach(track => rtcPeerConnection!.addTrack(track, localStream!));
         
         rtcPeerConnection.ontrack = event => {
-            const track = event.track;
-            if (!remoteStream.getTracks().find(t => t.id === track.id)) {
-                remoteStream.addTrack(track);
+            if (event.streams && event.streams[0]) {
+                remoteStream = event.streams[0];
+            } else {
+                if (!remoteStream) remoteStream = new MediaStream();
+                if (!remoteStream.getTracks().find(t => t.id === event.track.id)) {
+                    remoteStream.addTrack(event.track);
+                }
             }
 
             if (isVideo && remoteVideo) {
+                if (remoteVideo.srcObject !== remoteStream) remoteVideo.srcObject = remoteStream;
                 document.getElementById('call-avatar-container')?.classList.add('hidden');
                 remoteVideo.classList.remove('hidden');
+            } else if (!isVideo && remoteAudio) {
+                if (remoteAudio.srcObject !== remoteStream) remoteAudio.srcObject = remoteStream;
             }
         };
         
