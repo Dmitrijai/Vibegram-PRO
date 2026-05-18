@@ -262,29 +262,36 @@ async function startCall(isVideo: boolean) {
         const remoteVideo = document.getElementById('remote-video') as HTMLVideoElement;
         const remoteAudio = document.getElementById('remote-audio') as HTMLAudioElement;
         
-        if (!remoteStream) {
-            remoteStream = new MediaStream();
-        }
+        remoteStream = new MediaStream();
         
         if (isVideo && remoteVideo) {
             remoteVideo.srcObject = remoteStream;
-            remoteVideo.play().catch(e => { if (e.name !== 'AbortError') console.warn('Video init play err', e); });
         } else if (!isVideo && remoteAudio) {
             remoteAudio.srcObject = remoteStream;
-            remoteAudio.play().catch(e => { if (e.name !== 'AbortError') console.warn('Audio init play err', e); });
         }
 
         localStream.getTracks().forEach(track => rtcPeerConnection!.addTrack(track, localStream!));
         
         rtcPeerConnection.ontrack = event => {
-            const track = event.track;
-            if (remoteStream && !remoteStream.getTracks().find(t => t.id === track.id)) {
-                remoteStream.addTrack(track);
+            if (event.streams && event.streams[0]) {
+                remoteStream = event.streams[0];
+                if (isVideo && remoteVideo && remoteVideo.srcObject !== remoteStream) {
+                    remoteVideo.srcObject = remoteStream;
+                } else if (!isVideo && remoteAudio && remoteAudio.srcObject !== remoteStream) {
+                    remoteAudio.srcObject = remoteStream;
+                }
+            } else {
+                if (!remoteStream.getTracks().find(t => t.id === event.track.id)) {
+                    remoteStream.addTrack(event.track);
+                }
             }
 
             if (isVideo && remoteVideo) {
                 document.getElementById('call-avatar-container')?.classList.add('hidden');
                 remoteVideo.classList.remove('hidden');
+                remoteVideo.play().catch(e => { if (e.name !== 'AbortError') console.warn('Video ontrack play err', e); });
+            } else if (!isVideo && remoteAudio) {
+                remoteAudio.play().catch(e => { if (e.name !== 'AbortError') console.warn('Audio ontrack play err', e); });
             }
         };
         
@@ -369,29 +376,36 @@ export async function answerCall(callerId: string, offer: any, callerName: strin
         const remoteVideo = document.getElementById('remote-video') as HTMLVideoElement;
         const remoteAudio = document.getElementById('remote-audio') as HTMLAudioElement;
         
-        if (!remoteStream) {
-            remoteStream = new MediaStream();
-        }
+        remoteStream = new MediaStream();
         
         if (isVideo && remoteVideo) {
             remoteVideo.srcObject = remoteStream;
-            remoteVideo.play().catch(e => { if (e.name !== 'AbortError') console.warn('Video init play err', e); });
         } else if (!isVideo && remoteAudio) {
             remoteAudio.srcObject = remoteStream;
-            remoteAudio.play().catch(e => { if (e.name !== 'AbortError') console.warn('Audio init play err', e); });
         }
 
         localStream.getTracks().forEach(track => rtcPeerConnection!.addTrack(track, localStream!));
         
         rtcPeerConnection.ontrack = event => {
-            const track = event.track;
-            if (remoteStream && !remoteStream.getTracks().find(t => t.id === track.id)) {
-                remoteStream.addTrack(track);
+            if (event.streams && event.streams[0]) {
+                remoteStream = event.streams[0];
+                if (isVideo && remoteVideo && remoteVideo.srcObject !== remoteStream) {
+                    remoteVideo.srcObject = remoteStream;
+                } else if (!isVideo && remoteAudio && remoteAudio.srcObject !== remoteStream) {
+                    remoteAudio.srcObject = remoteStream;
+                }
+            } else {
+                if (!remoteStream.getTracks().find(t => t.id === event.track.id)) {
+                    remoteStream.addTrack(event.track);
+                }
             }
 
             if (isVideo && remoteVideo) {
                 document.getElementById('call-avatar-container')?.classList.add('hidden');
                 remoteVideo.classList.remove('hidden');
+                remoteVideo.play().catch(e => { if (e.name !== 'AbortError') console.warn('Video ontrack play err', e); });
+            } else if (!isVideo && remoteAudio) {
+                remoteAudio.play().catch(e => { if (e.name !== 'AbortError') console.warn('Audio ontrack play err', e); });
             }
         };
         
