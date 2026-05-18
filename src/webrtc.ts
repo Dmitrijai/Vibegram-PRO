@@ -57,7 +57,10 @@ const rtcConfig: RTCConfiguration = {
             'stun:stun1.l.google.com:19302',
             'stun:stun2.l.google.com:19302',
             'stun:global.stun.twilio.com:3478'
-        ]}
+        ]},
+        { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
+        { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
+        { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' }
     ]
 };
 
@@ -260,34 +263,23 @@ async function startCall(isVideo: boolean) {
         const remoteVideo = document.getElementById('remote-video') as HTMLVideoElement;
         const remoteAudio = document.getElementById('remote-audio') as HTMLAudioElement;
         
-        remoteStream = new MediaStream();
-        
-        if (isVideo && remoteVideo) {
-            remoteVideo.srcObject = remoteStream;
-            remoteVideo.onloadedmetadata = () => {
-                remoteVideo.play().catch(e => console.warn('Video onloadedmetadata play error:', e));
-            };
-        } else if (!isVideo && remoteAudio) {
-            remoteAudio.srcObject = remoteStream;
-            remoteAudio.onloadedmetadata = () => {
-                remoteAudio.play().catch(e => console.warn('Audio onloadedmetadata play error:', e));
-            };
-        }
-
+        // Remove old remoteStream initialization, rely on ontrack event.streams
         localStream.getTracks().forEach(track => rtcPeerConnection!.addTrack(track, localStream!));
         
         rtcPeerConnection.ontrack = event => {
-            console.log('Received remote track 1:', event.track.kind);
-            if (remoteStream && !remoteStream.getTracks().find(t => t.id === event.track.id)) {
-                remoteStream.addTrack(event.track);
-            }
-
+            console.log('Caller received remote track:', event.track.kind, event.streams.length);
+            const stream = (event.streams && event.streams.length > 0) ? event.streams[0] : new MediaStream([event.track]);
+            
             if (isVideo && remoteVideo) {
+                if (remoteVideo.srcObject !== stream) {
+                    remoteVideo.srcObject = stream;
+                }
                 document.getElementById('call-avatar-container')?.classList.add('hidden');
                 remoteVideo.classList.remove('hidden');
-                remoteVideo.play().catch(e => { if (e.name !== 'AbortError') console.warn('Video ontrack play err', e); });
             } else if (!isVideo && remoteAudio) {
-                remoteAudio.play().catch(e => { if (e.name !== 'AbortError') console.warn('Audio ontrack play err', e); });
+                if (remoteAudio.srcObject !== stream) {
+                    remoteAudio.srcObject = stream;
+                }
             }
         };
         
@@ -372,34 +364,23 @@ export async function answerCall(callerId: string, offer: any, callerName: strin
         const remoteVideo = document.getElementById('remote-video') as HTMLVideoElement;
         const remoteAudio = document.getElementById('remote-audio') as HTMLAudioElement;
         
-        remoteStream = new MediaStream();
-        
-        if (isVideo && remoteVideo) {
-            remoteVideo.srcObject = remoteStream;
-            remoteVideo.onloadedmetadata = () => {
-                remoteVideo.play().catch(e => console.warn('Video onloadedmetadata play error:', e));
-            };
-        } else if (!isVideo && remoteAudio) {
-            remoteAudio.srcObject = remoteStream;
-            remoteAudio.onloadedmetadata = () => {
-                remoteAudio.play().catch(e => console.warn('Audio onloadedmetadata play error:', e));
-            };
-        }
-
+        // Remove old remoteStream initialization, rely on ontrack event.streams
         localStream.getTracks().forEach(track => rtcPeerConnection!.addTrack(track, localStream!));
         
         rtcPeerConnection.ontrack = event => {
-            console.log('Received remote track 2:', event.track.kind);
-            if (remoteStream && !remoteStream.getTracks().find(t => t.id === event.track.id)) {
-                remoteStream.addTrack(event.track);
-            }
-
+            console.log('Callee received remote track:', event.track.kind, event.streams.length);
+            const stream = (event.streams && event.streams.length > 0) ? event.streams[0] : new MediaStream([event.track]);
+            
             if (isVideo && remoteVideo) {
+                if (remoteVideo.srcObject !== stream) {
+                    remoteVideo.srcObject = stream;
+                }
                 document.getElementById('call-avatar-container')?.classList.add('hidden');
                 remoteVideo.classList.remove('hidden');
-                remoteVideo.play().catch(e => { if (e.name !== 'AbortError') console.warn('Video ontrack play err', e); });
             } else if (!isVideo && remoteAudio) {
-                remoteAudio.play().catch(e => { if (e.name !== 'AbortError') console.warn('Audio ontrack play err', e); });
+                if (remoteAudio.srcObject !== stream) {
+                    remoteAudio.srcObject = stream;
+                }
             }
         };
         
