@@ -54,12 +54,10 @@ const rtcConfig: RTCConfiguration = {
     iceServers: [
         { urls: [
             'stun:stun.l.google.com:19302',
-            'stun:stun.cloudflare.com:3478'
-        ]},
-        { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
-        { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
-        { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' },
-        { urls: 'turn:turn.bistri.com:80', username: 'homeo', credential: 'homeo' }
+            'stun:stun1.l.google.com:19302',
+            'stun:stun2.l.google.com:19302',
+            'stun:global.stun.twilio.com:3478'
+        ]}
     ]
 };
 
@@ -266,24 +264,22 @@ async function startCall(isVideo: boolean) {
         
         if (isVideo && remoteVideo) {
             remoteVideo.srcObject = remoteStream;
+            remoteVideo.onloadedmetadata = () => {
+                remoteVideo.play().catch(e => console.warn('Video onloadedmetadata play error:', e));
+            };
         } else if (!isVideo && remoteAudio) {
             remoteAudio.srcObject = remoteStream;
+            remoteAudio.onloadedmetadata = () => {
+                remoteAudio.play().catch(e => console.warn('Audio onloadedmetadata play error:', e));
+            };
         }
 
         localStream.getTracks().forEach(track => rtcPeerConnection!.addTrack(track, localStream!));
         
         rtcPeerConnection.ontrack = event => {
-            if (event.streams && event.streams[0]) {
-                remoteStream = event.streams[0];
-                if (isVideo && remoteVideo && remoteVideo.srcObject !== remoteStream) {
-                    remoteVideo.srcObject = remoteStream;
-                } else if (!isVideo && remoteAudio && remoteAudio.srcObject !== remoteStream) {
-                    remoteAudio.srcObject = remoteStream;
-                }
-            } else {
-                if (!remoteStream.getTracks().find(t => t.id === event.track.id)) {
-                    remoteStream.addTrack(event.track);
-                }
+            console.log('Received remote track 1:', event.track.kind);
+            if (remoteStream && !remoteStream.getTracks().find(t => t.id === event.track.id)) {
+                remoteStream.addTrack(event.track);
             }
 
             if (isVideo && remoteVideo) {
@@ -380,24 +376,22 @@ export async function answerCall(callerId: string, offer: any, callerName: strin
         
         if (isVideo && remoteVideo) {
             remoteVideo.srcObject = remoteStream;
+            remoteVideo.onloadedmetadata = () => {
+                remoteVideo.play().catch(e => console.warn('Video onloadedmetadata play error:', e));
+            };
         } else if (!isVideo && remoteAudio) {
             remoteAudio.srcObject = remoteStream;
+            remoteAudio.onloadedmetadata = () => {
+                remoteAudio.play().catch(e => console.warn('Audio onloadedmetadata play error:', e));
+            };
         }
 
         localStream.getTracks().forEach(track => rtcPeerConnection!.addTrack(track, localStream!));
         
         rtcPeerConnection.ontrack = event => {
-            if (event.streams && event.streams[0]) {
-                remoteStream = event.streams[0];
-                if (isVideo && remoteVideo && remoteVideo.srcObject !== remoteStream) {
-                    remoteVideo.srcObject = remoteStream;
-                } else if (!isVideo && remoteAudio && remoteAudio.srcObject !== remoteStream) {
-                    remoteAudio.srcObject = remoteStream;
-                }
-            } else {
-                if (!remoteStream.getTracks().find(t => t.id === event.track.id)) {
-                    remoteStream.addTrack(event.track);
-                }
+            console.log('Received remote track 2:', event.track.kind);
+            if (remoteStream && !remoteStream.getTracks().find(t => t.id === event.track.id)) {
+                remoteStream.addTrack(event.track);
             }
 
             if (isVideo && remoteVideo) {
