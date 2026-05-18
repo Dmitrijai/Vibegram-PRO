@@ -272,33 +272,28 @@ async function startCall(isVideo: boolean) {
             
             if (isVideo) {
                 if (stream) {
-                    if (remoteVideo.srcObject !== stream) {
+                    if (!remoteVideo.srcObject || (remoteVideo.srcObject as MediaStream).id !== stream.id) {
                         remoteVideo.srcObject = stream;
                     }
                 } else {
                     if (!remoteVideo.srcObject) remoteVideo.srcObject = new MediaStream();
-                    (remoteVideo.srcObject as MediaStream).addTrack(event.track);
+                    if (!(remoteVideo.srcObject as MediaStream).getTracks().includes(event.track)) {
+                        (remoteVideo.srcObject as MediaStream).addTrack(event.track);
+                    }
                 }
                 
                 document.getElementById('call-avatar-container')?.classList.add('hidden');
                 remoteVideo.classList.remove('hidden');
-                
-                // Play only if it is paused or hasn't started
-                if (remoteVideo.paused) {
-                    remoteVideo.play().catch(e => console.error('Video play error:', e));
-                }
             } else {
                 if (stream) {
-                    if (remoteAudio.srcObject !== stream) {
+                    if (!remoteAudio.srcObject || (remoteAudio.srcObject as MediaStream).id !== stream.id) {
                         remoteAudio.srcObject = stream;
                     }
                 } else {
                     if (!remoteAudio.srcObject) remoteAudio.srcObject = new MediaStream();
-                    (remoteAudio.srcObject as MediaStream).addTrack(event.track);
-                }
-                
-                if (remoteAudio.paused) {
-                    remoteAudio.play().catch(e => console.error('Audio play error:', e));
+                    if (!(remoteAudio.srcObject as MediaStream).getTracks().includes(event.track)) {
+                        (remoteAudio.srcObject as MediaStream).addTrack(event.track);
+                    }
                 }
             }
         };
@@ -393,33 +388,28 @@ export async function answerCall(callerId: string, offer: any, callerName: strin
             
             if (isVideo) {
                 if (stream) {
-                    if (remoteVideo.srcObject !== stream) {
+                    if (!remoteVideo.srcObject || (remoteVideo.srcObject as MediaStream).id !== stream.id) {
                         remoteVideo.srcObject = stream;
                     }
                 } else {
                     if (!remoteVideo.srcObject) remoteVideo.srcObject = new MediaStream();
-                    (remoteVideo.srcObject as MediaStream).addTrack(event.track);
+                    if (!(remoteVideo.srcObject as MediaStream).getTracks().includes(event.track)) {
+                        (remoteVideo.srcObject as MediaStream).addTrack(event.track);
+                    }
                 }
                 
                 document.getElementById('call-avatar-container')?.classList.add('hidden');
                 remoteVideo.classList.remove('hidden');
-                
-                // Play only if it is paused or hasn't started
-                if (remoteVideo.paused) {
-                    remoteVideo.play().catch(e => console.error('Video play error:', e));
-                }
             } else {
                 if (stream) {
-                    if (remoteAudio.srcObject !== stream) {
+                    if (!remoteAudio.srcObject || (remoteAudio.srcObject as MediaStream).id !== stream.id) {
                         remoteAudio.srcObject = stream;
                     }
                 } else {
                     if (!remoteAudio.srcObject) remoteAudio.srcObject = new MediaStream();
-                    (remoteAudio.srcObject as MediaStream).addTrack(event.track);
-                }
-                
-                if (remoteAudio.paused) {
-                    remoteAudio.play().catch(e => console.error('Audio play error:', e));
+                    if (!(remoteAudio.srcObject as MediaStream).getTracks().includes(event.track)) {
+                        (remoteAudio.srcObject as MediaStream).addTrack(event.track);
+                    }
                 }
             }
         };
