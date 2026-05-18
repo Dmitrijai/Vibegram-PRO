@@ -268,44 +268,28 @@ async function startCall(isVideo: boolean) {
         rtcPeerConnection.ontrack = event => {
             console.log('Caller received remote track:', event.track.kind);
             
-            const mediaElement = isVideo ? remoteVideo : remoteAudio;
-            
-            if (event.streams && event.streams.length > 0) {
-                if (mediaElement.srcObject !== event.streams[0]) {
-                    mediaElement.srcObject = event.streams[0];
+            if (event.track.kind === 'audio') {
+                if (!remoteAudio.srcObject) remoteAudio.srcObject = new MediaStream();
+                const audioStream = remoteAudio.srcObject as MediaStream;
+                if (!audioStream.getTracks().includes(event.track)) {
+                    audioStream.addTrack(event.track);
                 }
-            } else {
-                let ms = mediaElement.srcObject as MediaStream;
-                if (!ms) {
-                    ms = new MediaStream();
-                    mediaElement.srcObject = ms;
-                }
-                if (!ms.getTracks().includes(event.track)) {
-                    ms.addTrack(event.track);
-                }
+                
+                remoteAudio.play().catch(e => console.warn('Audio play error:', e));
             }
             
-            if (isVideo) {
+            if (event.track.kind === 'video' && isVideo) {
+                if (!remoteVideo.srcObject) remoteVideo.srcObject = new MediaStream();
+                const videoStream = remoteVideo.srcObject as MediaStream;
+                if (!videoStream.getTracks().includes(event.track)) {
+                    videoStream.addTrack(event.track);
+                }
+                
                 document.getElementById('call-avatar-container')?.classList.add('hidden');
                 remoteVideo.classList.remove('hidden');
+                
+                remoteVideo.play().catch(e => console.warn('Video play error:', e));
             }
-            
-            const attemptPlay = () => {
-                if (mediaElement.paused) {
-                    const playPromise = mediaElement.play();
-                    if (playPromise !== undefined) {
-                        playPromise.catch(e => {
-                            if (e.name === 'AbortError') {
-                                setTimeout(attemptPlay, 100);
-                            } else {
-                                console.warn('Play error:', e);
-                            }
-                        });
-                    }
-                }
-            };
-            
-            setTimeout(attemptPlay, 50);
         };
         
         rtcPeerConnection.onicecandidate = event => {
@@ -394,44 +378,28 @@ export async function answerCall(callerId: string, offer: any, callerName: strin
         rtcPeerConnection.ontrack = event => {
             console.log('Callee received remote track:', event.track.kind);
             
-            const mediaElement = isVideo ? remoteVideo : remoteAudio;
-            
-            if (event.streams && event.streams.length > 0) {
-                if (mediaElement.srcObject !== event.streams[0]) {
-                    mediaElement.srcObject = event.streams[0];
+            if (event.track.kind === 'audio') {
+                if (!remoteAudio.srcObject) remoteAudio.srcObject = new MediaStream();
+                const audioStream = remoteAudio.srcObject as MediaStream;
+                if (!audioStream.getTracks().includes(event.track)) {
+                    audioStream.addTrack(event.track);
                 }
-            } else {
-                let ms = mediaElement.srcObject as MediaStream;
-                if (!ms) {
-                    ms = new MediaStream();
-                    mediaElement.srcObject = ms;
-                }
-                if (!ms.getTracks().includes(event.track)) {
-                    ms.addTrack(event.track);
-                }
+                
+                remoteAudio.play().catch(e => console.warn('Audio play error:', e));
             }
             
-            if (isVideo) {
+            if (event.track.kind === 'video' && isVideo) {
+                if (!remoteVideo.srcObject) remoteVideo.srcObject = new MediaStream();
+                const videoStream = remoteVideo.srcObject as MediaStream;
+                if (!videoStream.getTracks().includes(event.track)) {
+                    videoStream.addTrack(event.track);
+                }
+                
                 document.getElementById('call-avatar-container')?.classList.add('hidden');
                 remoteVideo.classList.remove('hidden');
+                
+                remoteVideo.play().catch(e => console.warn('Video play error:', e));
             }
-            
-            const attemptPlay = () => {
-                if (mediaElement.paused) {
-                    const playPromise = mediaElement.play();
-                    if (playPromise !== undefined) {
-                        playPromise.catch(e => {
-                            if (e.name === 'AbortError') {
-                                setTimeout(attemptPlay, 100);
-                            } else {
-                                console.warn('Play error:', e);
-                            }
-                        });
-                    }
-                }
-            };
-            
-            setTimeout(attemptPlay, 50);
         };
         
         rtcPeerConnection.onicecandidate = event => {
