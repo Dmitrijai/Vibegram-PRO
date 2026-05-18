@@ -261,12 +261,9 @@ async function startCall(isVideo: boolean) {
         rtcPeerConnection = new RTCPeerConnection(rtcConfig);
         
         const remoteVideo = document.getElementById('remote-video') as HTMLVideoElement;
-        const remoteAudio = document.getElementById('remote-audio') as HTMLAudioElement;
         
         remoteVideo.autoplay = true;
         remoteVideo.playsInline = true;
-        remoteAudio.autoplay = true;
-        remoteAudio.playsInline = true;
         
         localStream.getTracks().forEach(track => rtcPeerConnection!.addTrack(track, localStream!));
         
@@ -276,12 +273,9 @@ async function startCall(isVideo: boolean) {
             const stream = (event.streams && event.streams[0]) || null;
             if (stream) {
                 if (remoteVideo.srcObject !== stream) remoteVideo.srcObject = stream;
-                if (remoteAudio.srcObject !== stream) remoteAudio.srcObject = stream;
             } else {
                 if (!remoteVideo.srcObject) {
-                    const ms = new MediaStream();
-                    remoteVideo.srcObject = ms;
-                    remoteAudio.srcObject = ms;
+                    remoteVideo.srcObject = new MediaStream();
                 }
                 const ms = remoteVideo.srcObject as MediaStream;
                 if (!ms.getTracks().includes(event.track)) ms.addTrack(event.track);
@@ -295,13 +289,10 @@ async function startCall(isVideo: boolean) {
             setTimeout(() => {
                 const vp = remoteVideo.play();
                 if (vp !== undefined) vp.catch(e => console.error('video play err:', e));
-                const ap = remoteAudio.play();
-                if (ap !== undefined) ap.catch(e => console.error('audio play err:', e));
-            }, 150);
+            }, 100);
         };
         
         remoteVideo.onloadedmetadata = () => remoteVideo.play().catch(e => console.error('v loaded err:', e));
-        remoteAudio.onloadedmetadata = () => remoteAudio.play().catch(e => console.error('a loaded err:', e));
         
         rtcPeerConnection.onicecandidate = event => {
             if (event.candidate) {
@@ -382,12 +373,9 @@ export async function answerCall(callerId: string, offer: any, callerName: strin
         rtcPeerConnection = new RTCPeerConnection(rtcConfig);
         
         const remoteVideo = document.getElementById('remote-video') as HTMLVideoElement;
-        const remoteAudio = document.getElementById('remote-audio') as HTMLAudioElement;
         
         remoteVideo.autoplay = true;
         remoteVideo.playsInline = true;
-        remoteAudio.autoplay = true;
-        remoteAudio.playsInline = true;
         
         localStream.getTracks().forEach(track => rtcPeerConnection!.addTrack(track, localStream!));
         
@@ -397,12 +385,9 @@ export async function answerCall(callerId: string, offer: any, callerName: strin
             const stream = (event.streams && event.streams[0]) || null;
             if (stream) {
                 if (remoteVideo.srcObject !== stream) remoteVideo.srcObject = stream;
-                if (remoteAudio.srcObject !== stream) remoteAudio.srcObject = stream;
             } else {
                 if (!remoteVideo.srcObject) {
-                    const ms = new MediaStream();
-                    remoteVideo.srcObject = ms;
-                    remoteAudio.srcObject = ms;
+                    remoteVideo.srcObject = new MediaStream();
                 }
                 const ms = remoteVideo.srcObject as MediaStream;
                 if (!ms.getTracks().includes(event.track)) ms.addTrack(event.track);
@@ -416,13 +401,10 @@ export async function answerCall(callerId: string, offer: any, callerName: strin
             setTimeout(() => {
                 const vp = remoteVideo.play();
                 if (vp !== undefined) vp.catch(e => console.error('video play err:', e));
-                const ap = remoteAudio.play();
-                if (ap !== undefined) ap.catch(e => console.error('audio play err:', e));
-            }, 150);
+            }, 100);
         };
         
         remoteVideo.onloadedmetadata = () => remoteVideo.play().catch(e => console.error('v loaded err:', e));
-        remoteAudio.onloadedmetadata = () => remoteAudio.play().catch(e => console.error('a loaded err:', e));
         
         rtcPeerConnection.onicecandidate = event => {
             if (event.candidate) {
@@ -501,13 +483,9 @@ export async function endVideoCall(broadcast = true) {
     document.getElementById('call-avatar-container')?.classList.remove('hidden');
     
     const remoteVideo = document.getElementById('remote-video') as HTMLVideoElement;
-    const remoteAudio = document.getElementById('remote-audio') as HTMLAudioElement;
     if (remoteVideo) {
         remoteVideo.srcObject = null;
         remoteVideo.classList.add('hidden');
-    }
-    if (remoteAudio) {
-        remoteAudio.srcObject = null;
     }
     const localVideo = document.getElementById('local-video') as HTMLVideoElement;
     const localVideoContainer = document.getElementById('local-video-container');
