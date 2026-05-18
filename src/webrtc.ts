@@ -284,6 +284,7 @@ async function startCall(isVideo: boolean) {
                 
                 document.getElementById('call-avatar-container')?.classList.add('hidden');
                 remoteVideo.classList.remove('hidden');
+                remoteVideo.play().catch(e => console.warn('remoteVideo play (caller):', e));
             } else {
                 if (stream) {
                     if (!remoteAudio.srcObject || (remoteAudio.srcObject as MediaStream).id !== stream.id) {
@@ -295,6 +296,7 @@ async function startCall(isVideo: boolean) {
                         (remoteAudio.srcObject as MediaStream).addTrack(event.track);
                     }
                 }
+                remoteAudio.play().catch(e => console.warn('remoteAudio play (caller):', e));
             }
         };
         
@@ -400,6 +402,7 @@ export async function answerCall(callerId: string, offer: any, callerName: strin
                 
                 document.getElementById('call-avatar-container')?.classList.add('hidden');
                 remoteVideo.classList.remove('hidden');
+                remoteVideo.play().catch(e => console.warn('remoteVideo play (callee):', e));
             } else {
                 if (stream) {
                     if (!remoteAudio.srcObject || (remoteAudio.srcObject as MediaStream).id !== stream.id) {
@@ -411,6 +414,7 @@ export async function answerCall(callerId: string, offer: any, callerName: strin
                         (remoteAudio.srcObject as MediaStream).addTrack(event.track);
                     }
                 }
+                remoteAudio.play().catch(e => console.warn('remoteAudio play (callee):', e));
             }
         };
         

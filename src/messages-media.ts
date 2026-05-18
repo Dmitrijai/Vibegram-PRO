@@ -333,7 +333,7 @@ export function pauseAllMedia(exceptMediaElement?: HTMLAudioElement | HTMLVideoE
     });
 
     // Videos
-    document.querySelectorAll('video').forEach(v => {
+    document.querySelectorAll('video:not(#remote-video):not(#local-video):not(#video-preview)').forEach(v => {
         try {
             if (v !== exceptMediaElement) {
                 if (!v.paused) v.pause();
