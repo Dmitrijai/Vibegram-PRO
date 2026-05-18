@@ -268,13 +268,11 @@ async function startCall(isVideo: boolean) {
         rtcPeerConnection.ontrack = event => {
             console.log('Caller received remote track:', event.track.kind);
             
-            const stream = event.streams && event.streams[0];
             const mediaElement = isVideo ? remoteVideo : remoteAudio;
             
-            if (stream) {
-                const currentStream = mediaElement.srcObject as MediaStream;
-                if (!currentStream || currentStream.id !== stream.id) {
-                    mediaElement.srcObject = stream;
+            if (event.streams && event.streams.length > 0) {
+                if (mediaElement.srcObject !== event.streams[0]) {
+                    mediaElement.srcObject = event.streams[0];
                 }
             } else {
                 let ms = mediaElement.srcObject as MediaStream;
@@ -287,16 +285,27 @@ async function startCall(isVideo: boolean) {
                 }
             }
             
-            setTimeout(() => {
-                if (mediaElement.paused) {
-                    mediaElement.play().catch(e => console.warn('Play error:', e));
-                }
-            }, 100);
-            
             if (isVideo) {
                 document.getElementById('call-avatar-container')?.classList.add('hidden');
                 remoteVideo.classList.remove('hidden');
             }
+            
+            const attemptPlay = () => {
+                if (mediaElement.paused) {
+                    const playPromise = mediaElement.play();
+                    if (playPromise !== undefined) {
+                        playPromise.catch(e => {
+                            if (e.name === 'AbortError') {
+                                setTimeout(attemptPlay, 100);
+                            } else {
+                                console.warn('Play error:', e);
+                            }
+                        });
+                    }
+                }
+            };
+            
+            setTimeout(attemptPlay, 50);
         };
         
         rtcPeerConnection.onicecandidate = event => {
@@ -385,13 +394,11 @@ export async function answerCall(callerId: string, offer: any, callerName: strin
         rtcPeerConnection.ontrack = event => {
             console.log('Callee received remote track:', event.track.kind);
             
-            const stream = event.streams && event.streams[0];
             const mediaElement = isVideo ? remoteVideo : remoteAudio;
             
-            if (stream) {
-                const currentStream = mediaElement.srcObject as MediaStream;
-                if (!currentStream || currentStream.id !== stream.id) {
-                    mediaElement.srcObject = stream;
+            if (event.streams && event.streams.length > 0) {
+                if (mediaElement.srcObject !== event.streams[0]) {
+                    mediaElement.srcObject = event.streams[0];
                 }
             } else {
                 let ms = mediaElement.srcObject as MediaStream;
@@ -404,16 +411,27 @@ export async function answerCall(callerId: string, offer: any, callerName: strin
                 }
             }
             
-            setTimeout(() => {
-                if (mediaElement.paused) {
-                    mediaElement.play().catch(e => console.warn('Play error:', e));
-                }
-            }, 100);
-            
             if (isVideo) {
                 document.getElementById('call-avatar-container')?.classList.add('hidden');
                 remoteVideo.classList.remove('hidden');
             }
+            
+            const attemptPlay = () => {
+                if (mediaElement.paused) {
+                    const playPromise = mediaElement.play();
+                    if (playPromise !== undefined) {
+                        playPromise.catch(e => {
+                            if (e.name === 'AbortError') {
+                                setTimeout(attemptPlay, 100);
+                            } else {
+                                console.warn('Play error:', e);
+                            }
+                        });
+                    }
+                }
+            };
+            
+            setTimeout(attemptPlay, 50);
         };
         
         rtcPeerConnection.onicecandidate = event => {
