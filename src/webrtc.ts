@@ -269,34 +269,29 @@ async function startCall(isVideo: boolean) {
             console.log('Caller received remote track:', event.track.kind);
             
             const stream = event.streams && event.streams[0];
+            const mediaElement = isVideo ? remoteVideo : remoteAudio;
+            
+            if (stream) {
+                const currentStream = mediaElement.srcObject as MediaStream;
+                if (!currentStream || currentStream.id !== stream.id) {
+                    mediaElement.srcObject = stream;
+                    // Intentionally NOT calling .play() here, relying on HTML autoplay attribute
+                    // to prevent "interrupted by a new load request" AbortErrors.
+                }
+            } else {
+                let ms = mediaElement.srcObject as MediaStream;
+                if (!ms) {
+                    ms = new MediaStream();
+                    mediaElement.srcObject = ms;
+                }
+                if (!ms.getTracks().includes(event.track)) {
+                    ms.addTrack(event.track);
+                }
+            }
             
             if (isVideo) {
-                if (stream) {
-                    if (!remoteVideo.srcObject || (remoteVideo.srcObject as MediaStream).id !== stream.id) {
-                        remoteVideo.srcObject = stream;
-                    }
-                } else {
-                    if (!remoteVideo.srcObject) remoteVideo.srcObject = new MediaStream();
-                    if (!(remoteVideo.srcObject as MediaStream).getTracks().includes(event.track)) {
-                        (remoteVideo.srcObject as MediaStream).addTrack(event.track);
-                    }
-                }
-                
                 document.getElementById('call-avatar-container')?.classList.add('hidden');
                 remoteVideo.classList.remove('hidden');
-                remoteVideo.play().catch(e => console.warn('remoteVideo play (caller):', e));
-            } else {
-                if (stream) {
-                    if (!remoteAudio.srcObject || (remoteAudio.srcObject as MediaStream).id !== stream.id) {
-                        remoteAudio.srcObject = stream;
-                    }
-                } else {
-                    if (!remoteAudio.srcObject) remoteAudio.srcObject = new MediaStream();
-                    if (!(remoteAudio.srcObject as MediaStream).getTracks().includes(event.track)) {
-                        (remoteAudio.srcObject as MediaStream).addTrack(event.track);
-                    }
-                }
-                remoteAudio.play().catch(e => console.warn('remoteAudio play (caller):', e));
             }
         };
         
@@ -387,34 +382,29 @@ export async function answerCall(callerId: string, offer: any, callerName: strin
             console.log('Callee received remote track:', event.track.kind);
             
             const stream = event.streams && event.streams[0];
+            const mediaElement = isVideo ? remoteVideo : remoteAudio;
+            
+            if (stream) {
+                const currentStream = mediaElement.srcObject as MediaStream;
+                if (!currentStream || currentStream.id !== stream.id) {
+                    mediaElement.srcObject = stream;
+                    // Intentionally NOT calling .play() here, relying on HTML autoplay attribute
+                    // to prevent "interrupted by a new load request" AbortErrors.
+                }
+            } else {
+                let ms = mediaElement.srcObject as MediaStream;
+                if (!ms) {
+                    ms = new MediaStream();
+                    mediaElement.srcObject = ms;
+                }
+                if (!ms.getTracks().includes(event.track)) {
+                    ms.addTrack(event.track);
+                }
+            }
             
             if (isVideo) {
-                if (stream) {
-                    if (!remoteVideo.srcObject || (remoteVideo.srcObject as MediaStream).id !== stream.id) {
-                        remoteVideo.srcObject = stream;
-                    }
-                } else {
-                    if (!remoteVideo.srcObject) remoteVideo.srcObject = new MediaStream();
-                    if (!(remoteVideo.srcObject as MediaStream).getTracks().includes(event.track)) {
-                        (remoteVideo.srcObject as MediaStream).addTrack(event.track);
-                    }
-                }
-                
                 document.getElementById('call-avatar-container')?.classList.add('hidden');
                 remoteVideo.classList.remove('hidden');
-                remoteVideo.play().catch(e => console.warn('remoteVideo play (callee):', e));
-            } else {
-                if (stream) {
-                    if (!remoteAudio.srcObject || (remoteAudio.srcObject as MediaStream).id !== stream.id) {
-                        remoteAudio.srcObject = stream;
-                    }
-                } else {
-                    if (!remoteAudio.srcObject) remoteAudio.srcObject = new MediaStream();
-                    if (!(remoteAudio.srcObject as MediaStream).getTracks().includes(event.track)) {
-                        (remoteAudio.srcObject as MediaStream).addTrack(event.track);
-                    }
-                }
-                remoteAudio.play().catch(e => console.warn('remoteAudio play (callee):', e));
             }
         };
         
