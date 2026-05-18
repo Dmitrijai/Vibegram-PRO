@@ -275,8 +275,6 @@ async function startCall(isVideo: boolean) {
                 const currentStream = mediaElement.srcObject as MediaStream;
                 if (!currentStream || currentStream.id !== stream.id) {
                     mediaElement.srcObject = stream;
-                    // Intentionally NOT calling .play() here, relying on HTML autoplay attribute
-                    // to prevent "interrupted by a new load request" AbortErrors.
                 }
             } else {
                 let ms = mediaElement.srcObject as MediaStream;
@@ -288,6 +286,12 @@ async function startCall(isVideo: boolean) {
                     ms.addTrack(event.track);
                 }
             }
+            
+            setTimeout(() => {
+                if (mediaElement.paused) {
+                    mediaElement.play().catch(e => console.warn('Play error:', e));
+                }
+            }, 100);
             
             if (isVideo) {
                 document.getElementById('call-avatar-container')?.classList.add('hidden');
@@ -388,8 +392,6 @@ export async function answerCall(callerId: string, offer: any, callerName: strin
                 const currentStream = mediaElement.srcObject as MediaStream;
                 if (!currentStream || currentStream.id !== stream.id) {
                     mediaElement.srcObject = stream;
-                    // Intentionally NOT calling .play() here, relying on HTML autoplay attribute
-                    // to prevent "interrupted by a new load request" AbortErrors.
                 }
             } else {
                 let ms = mediaElement.srcObject as MediaStream;
@@ -401,6 +403,12 @@ export async function answerCall(callerId: string, offer: any, callerName: strin
                     ms.addTrack(event.track);
                 }
             }
+            
+            setTimeout(() => {
+                if (mediaElement.paused) {
+                    mediaElement.play().catch(e => console.warn('Play error:', e));
+                }
+            }, 100);
             
             if (isVideo) {
                 document.getElementById('call-avatar-container')?.classList.add('hidden');
