@@ -294,14 +294,14 @@ async function startCall(isVideo: boolean) {
             
             setTimeout(() => {
                 const vp = remoteVideo.play();
-                if (vp !== undefined) vp.catch(() => {});
+                if (vp !== undefined) vp.catch(e => console.error('video play err:', e));
                 const ap = remoteAudio.play();
-                if (ap !== undefined) ap.catch(() => {});
-            }, 100);
+                if (ap !== undefined) ap.catch(e => console.error('audio play err:', e));
+            }, 150);
         };
         
-        remoteVideo.onloadedmetadata = () => remoteVideo.play().catch(() => {});
-        remoteAudio.onloadedmetadata = () => remoteAudio.play().catch(() => {});
+        remoteVideo.onloadedmetadata = () => remoteVideo.play().catch(e => console.error('v loaded err:', e));
+        remoteAudio.onloadedmetadata = () => remoteAudio.play().catch(e => console.error('a loaded err:', e));
         
         rtcPeerConnection.onicecandidate = event => {
             if (event.candidate) {
@@ -415,14 +415,14 @@ export async function answerCall(callerId: string, offer: any, callerName: strin
             
             setTimeout(() => {
                 const vp = remoteVideo.play();
-                if (vp !== undefined) vp.catch(() => {});
+                if (vp !== undefined) vp.catch(e => console.error('video play err:', e));
                 const ap = remoteAudio.play();
-                if (ap !== undefined) ap.catch(() => {});
-            }, 100);
+                if (ap !== undefined) ap.catch(e => console.error('audio play err:', e));
+            }, 150);
         };
         
-        remoteVideo.onloadedmetadata = () => remoteVideo.play().catch(() => {});
-        remoteAudio.onloadedmetadata = () => remoteAudio.play().catch(() => {});
+        remoteVideo.onloadedmetadata = () => remoteVideo.play().catch(e => console.error('v loaded err:', e));
+        remoteAudio.onloadedmetadata = () => remoteAudio.play().catch(e => console.error('a loaded err:', e));
         
         rtcPeerConnection.onicecandidate = event => {
             if (event.candidate) {
