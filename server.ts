@@ -3,6 +3,7 @@ import { createServer as createViteServer } from "vite";
 import path from "path";
 import { fileURLToPath } from "url";
 import { v2 as cloudinary } from "cloudinary";
+import { createProxyMiddleware } from "http-proxy-middleware";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -48,6 +49,17 @@ function extractPublicId(fileUrl: string) {
 async function startServer() {
   const app = express();
   const PORT = 3000;
+
+  let supabaseProxy: any = null;
+  if (process.env.SUPABASE_URL) {
+    supabaseProxy = createProxyMiddleware({
+      target: process.env.SUPABASE_URL,
+      changeOrigin: true,
+      pathRewrite: { "^/api/supabase-proxy": "" },
+      ws: true,
+    });
+    app.use("/api/supabase-proxy", supabaseProxy);
+  }
 
   app.use(express.json());
 
@@ -149,9 +161,18 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, "0.0.0.0", () => {
+  const server = app.listen(PORT, "0.0.0.0", () => {
     console.log(`Server running on http://localhost:${PORT}`);
   });
+
+  // Attach websocket proxy upgrade handler if supabase proxy is enabled
+  if (process.env.SUPABASE_URL && supabaseProxy) {
+      server.on('upgrade', (req, socket, head) => {
+          if (req.url && req.url.startsWith('/api/supabase-proxy')) {
+              supabaseProxy.upgrade(req, socket, head);
+          }
+      });
+  }
 }
 
 startServer();
