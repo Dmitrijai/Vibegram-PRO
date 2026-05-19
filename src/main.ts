@@ -187,12 +187,6 @@ supabase.auth.getSession().then(({ data: { session } }) => {
             setTimeout(() => loader.remove(), 300);
         }
         document.getElementById('auth-screen')!.classList.remove('hidden');
-    } else {
-        if (!state.currentUser) {
-            state.currentUser = session.user;
-            logic.checkUser('INITIAL_SESSION');
-        }
-        setupRealtime();
     }
 });
 

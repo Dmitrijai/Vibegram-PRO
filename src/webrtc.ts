@@ -7,8 +7,6 @@ let callChannel: any = null;
 let currentRingtone: HTMLAudioElement | null = null;
 let currentCallPeerId: string | null = null;
 
-let playRingtonePromise: Promise<void> | null = null;
-
 function playRingtone() {
     stopRingtone();
     if (navigator.vibrate) {
@@ -18,34 +16,22 @@ function playRingtone() {
     const basePath = (import.meta as any).env.BASE_URL || '/';
     currentRingtone = new Audio(basePath + 'sound/skype_call.mp3');
     currentRingtone.loop = true;
-    playRingtonePromise = currentRingtone.play();
-    if (playRingtonePromise !== undefined) {
-        playRingtonePromise.catch(e => {
-            if (e.name === 'AbortError') return; // Ignore expected interruptions
-            console.error('Audio play failed:', e);
-            // If autoplay is blocked, we can't do much without user interaction
-            // We can show a toast to the user
-            if ((window as any).customToast) {
-                (window as any).customToast('Входящий звонок! (Звук заблокирован браузером)');
-            }
-        });
-    }
+    currentRingtone.play().catch(e => {
+        console.error('Audio play failed:', e);
+        // If autoplay is blocked, we can't do much without user interaction
+        // We can show a toast to the user
+        if ((window as any).customToast) {
+            (window as any).customToast('Входящий звонок! (Звук заблокирован браузером)');
+        }
+    });
 }
 
 function stopRingtone() {
     if (navigator.vibrate) navigator.vibrate(0);
     if (currentRingtone) {
-        const ringtone = currentRingtone;
+        currentRingtone.pause();
+        currentRingtone.currentTime = 0;
         currentRingtone = null;
-        if (playRingtonePromise !== undefined && playRingtonePromise !== null) {
-            playRingtonePromise.then(() => {
-                ringtone.pause();
-                ringtone.currentTime = 0;
-            }).catch(() => {});
-        } else {
-            ringtone.pause();
-            ringtone.currentTime = 0;
-        }
     }
 }
 
@@ -54,13 +40,12 @@ const rtcConfig: RTCConfiguration = {
     iceServers: [
         { urls: [
             'stun:stun.l.google.com:19302',
-            'stun:stun1.l.google.com:19302',
-            'stun:stun2.l.google.com:19302',
-            'stun:global.stun.twilio.com:3478'
+            'stun:stun.cloudflare.com:3478'
         ]},
         { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
         { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
-        { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' }
+        { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' },
+        { urls: 'turn:turn.bistri.com:80', username: 'homeo', credential: 'homeo' }
     ]
 };
 
@@ -133,7 +118,7 @@ export async function initWebRTC() {
         if (data.targetUserId === state.currentUser.id && rtcPeerConnection) {
             stopRingtone();
             await rtcPeerConnection.setRemoteDescription(new RTCSessionDescription(data.answer));
-            document.getElementById('call-status')!.innerText = 'Соединение...';
+            document.getElementById('call-status')!.innerText = 'Соединение установлено';
             
             // Process any queued ICE candidates safely against race conditions
             while (pendingIceCandidates.length > 0) {
@@ -260,27 +245,47 @@ async function startCall(isVideo: boolean) {
         
         rtcPeerConnection = new RTCPeerConnection(rtcConfig);
         
+        remoteStream = new MediaStream();
         const remoteVideo = document.getElementById('remote-video') as HTMLVideoElement;
-        const remoteStream = new MediaStream();
-        remoteVideo.srcObject = remoteStream;
-        remoteVideo.autoplay = true;
-        remoteVideo.playsInline = true;
-        remoteVideo.play().catch(()=>{});
+        const remoteAudio = document.getElementById('remote-audio') as HTMLAudioElement;
+        if (remoteVideo && isVideo) {
+            remoteVideo.srcObject = remoteStream;
+            remoteVideo.play().catch(e => console.warn('Error playing remote video:', e));
+        }
+        if (remoteAudio && !isVideo) {
+            remoteAudio.srcObject = remoteStream;
+            remoteAudio.play().catch(e => console.warn('Error playing remote audio:', e));
+        }
         
         localStream.getTracks().forEach(track => rtcPeerConnection!.addTrack(track, localStream!));
         
         rtcPeerConnection.ontrack = event => {
-            console.log('Caller received remote track:', event.track.kind);
-            if (!remoteStream.getTracks().includes(event.track)) {
-                remoteStream.addTrack(event.track);
+            if (event.streams && event.streams[0]) {
+                remoteStream = event.streams[0];
+            } else if (!remoteStream!.getTracks().find(t => t.id === event.track.id)) {
+                remoteStream!.addTrack(event.track);
             }
-            if (event.track.kind === 'video') {
-                document.getElementById('call-avatar-container')?.classList.add('hidden');
-                remoteVideo.classList.remove('hidden');
+
+            const attemptPlay = () => {
+                if (isVideo && remoteVideo) {
+                    if (remoteVideo.srcObject !== remoteStream) remoteVideo.srcObject = remoteStream;
+                    const p = remoteVideo.play();
+                    if (p) p.catch(e => console.warn('Error playing remote video:', e));
+                    document.getElementById('call-avatar-container')?.classList.add('hidden');
+                    remoteVideo.classList.remove('hidden');
+                } else if (!isVideo && remoteAudio) {
+                    if (remoteAudio.srcObject !== remoteStream) remoteAudio.srcObject = remoteStream;
+                    const p = remoteAudio.play();
+                    if (p) p.catch(e => console.warn('Error playing remote audio:', e));
+                }
+            };
+            
+            if (event.track.muted) {
+                event.track.onunmute = attemptPlay;
+            } else {
+                attemptPlay();
             }
         };
-        
-        remoteVideo.onloadedmetadata = () => remoteVideo.play().catch(e => console.error('v loaded err:', e.name));
         
         rtcPeerConnection.onicecandidate = event => {
             if (event.candidate) {
@@ -290,16 +295,8 @@ async function startCall(isVideo: boolean) {
         
         rtcPeerConnection.oniceconnectionstatechange = () => {
              console.log('ICE Connection state:', rtcPeerConnection?.iceConnectionState);
-             const statusEl = document.getElementById('call-status');
-             if (statusEl) {
-                 if (rtcPeerConnection?.iceConnectionState === 'connected' || rtcPeerConnection?.iceConnectionState === 'completed') {
-                     statusEl.innerText = '';
-                     statusEl.classList.add('hidden');
-                 } else if (rtcPeerConnection?.iceConnectionState === 'disconnected' || rtcPeerConnection?.iceConnectionState === 'failed') {
-                     statusEl.classList.remove('hidden');
-                     statusEl.innerText = 'Сбой соединения';
-                     setTimeout(() => endVideoCall(false), 2000);
-                 }
+             if (rtcPeerConnection?.iceConnectionState === 'failed') {
+                 endVideoCall(false);
              }
         };
 
@@ -368,27 +365,47 @@ export async function answerCall(callerId: string, offer: any, callerName: strin
         
         rtcPeerConnection = new RTCPeerConnection(rtcConfig);
         
+        remoteStream = new MediaStream();
         const remoteVideo = document.getElementById('remote-video') as HTMLVideoElement;
-        const remoteStream = new MediaStream();
-        remoteVideo.srcObject = remoteStream;
-        remoteVideo.autoplay = true;
-        remoteVideo.playsInline = true;
-        remoteVideo.play().catch(()=>{});
+        const remoteAudio = document.getElementById('remote-audio') as HTMLAudioElement;
+        if (remoteVideo && isVideo) {
+            remoteVideo.srcObject = remoteStream;
+            remoteVideo.play().catch(e => console.warn('Error playing remote video:', e));
+        }
+        if (remoteAudio && !isVideo) {
+            remoteAudio.srcObject = remoteStream;
+            remoteAudio.play().catch(e => console.warn('Error playing remote audio:', e));
+        }
         
         localStream.getTracks().forEach(track => rtcPeerConnection!.addTrack(track, localStream!));
         
         rtcPeerConnection.ontrack = event => {
-            console.log('Callee received remote track:', event.track.kind);
-            if (!remoteStream.getTracks().includes(event.track)) {
-                remoteStream.addTrack(event.track);
+            if (event.streams && event.streams[0]) {
+                remoteStream = event.streams[0];
+            } else if (!remoteStream!.getTracks().find(t => t.id === event.track.id)) {
+                remoteStream!.addTrack(event.track);
             }
-            if (event.track.kind === 'video') {
-                document.getElementById('call-avatar-container')?.classList.add('hidden');
-                remoteVideo.classList.remove('hidden');
+
+            const attemptPlay = () => {
+                if (isVideo && remoteVideo) {
+                    if (remoteVideo.srcObject !== remoteStream) remoteVideo.srcObject = remoteStream;
+                    const p = remoteVideo.play();
+                    if (p) p.catch(e => console.warn('Error playing remote video:', e));
+                    document.getElementById('call-avatar-container')?.classList.add('hidden');
+                    remoteVideo.classList.remove('hidden');
+                } else if (!isVideo && remoteAudio) {
+                    if (remoteAudio.srcObject !== remoteStream) remoteAudio.srcObject = remoteStream;
+                    const p = remoteAudio.play();
+                    if (p) p.catch(e => console.warn('Error playing remote audio:', e));
+                }
+            };
+            
+            if (event.track.muted) {
+                event.track.onunmute = attemptPlay;
+            } else {
+                attemptPlay();
             }
         };
-        
-        remoteVideo.onloadedmetadata = () => remoteVideo.play().catch(e => console.error('v loaded err:', e.name));
         
         rtcPeerConnection.onicecandidate = event => {
             if (event.candidate) {
@@ -398,16 +415,8 @@ export async function answerCall(callerId: string, offer: any, callerName: strin
         
         rtcPeerConnection.oniceconnectionstatechange = () => {
              console.log('ICE Connection state:', rtcPeerConnection?.iceConnectionState);
-             const statusEl = document.getElementById('call-status');
-             if (statusEl) {
-                 if (rtcPeerConnection?.iceConnectionState === 'connected' || rtcPeerConnection?.iceConnectionState === 'completed') {
-                     statusEl.innerText = '';
-                     statusEl.classList.add('hidden');
-                 } else if (rtcPeerConnection?.iceConnectionState === 'disconnected' || rtcPeerConnection?.iceConnectionState === 'failed') {
-                     statusEl.classList.remove('hidden');
-                     statusEl.innerText = 'Сбой соединения';
-                     setTimeout(() => endVideoCall(false), 2000);
-                 }
+             if (rtcPeerConnection?.iceConnectionState === 'failed') {
+                 endVideoCall(false);
              }
         };
 
@@ -425,7 +434,7 @@ export async function answerCall(callerId: string, offer: any, callerName: strin
             payload: { targetUserId: callerId, answer }
         });
         
-        document.getElementById('call-status')!.innerText = 'Соединение...';
+        document.getElementById('call-status')!.innerText = 'Соединение установлено';
         
     } catch (err) {
         console.error('Error answering call:', err);
@@ -475,9 +484,13 @@ export async function endVideoCall(broadcast = true) {
     document.getElementById('call-avatar-container')?.classList.remove('hidden');
     
     const remoteVideo = document.getElementById('remote-video') as HTMLVideoElement;
+    const remoteAudio = document.getElementById('remote-audio') as HTMLAudioElement;
     if (remoteVideo) {
         remoteVideo.srcObject = null;
         remoteVideo.classList.add('hidden');
+    }
+    if (remoteAudio) {
+        remoteAudio.srcObject = null;
     }
     const localVideo = document.getElementById('local-video') as HTMLVideoElement;
     const localVideoContainer = document.getElementById('local-video-container');

@@ -402,7 +402,7 @@ export function toggleCirclePlay(element: HTMLElement, url: string) {
     
     if (video.paused) {
         // Pause all other media
-        document.querySelectorAll('audio:not(#remote-audio), video:not(#remote-video):not(#local-video):not(#video-preview)').forEach(media => {
+        document.querySelectorAll('audio, video').forEach(media => {
             if (media !== video) (media as HTMLMediaElement).pause();
         });
         document.querySelectorAll('.play-icon').forEach(icon => icon.classList.remove('hidden'));
