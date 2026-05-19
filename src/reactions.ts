@@ -17,7 +17,7 @@ export function toggleReactionMenu(e: Event, msgId: string) {
             if (menu.innerHTML.trim() === '<!-- Emojis will be loaded dynamically on click -->' || menu.innerHTML.trim() === '') {
                  menu.innerHTML = ['👍', '👎', '❤️', '😂', '😮', '😢', '😡', '🤬', '🔥', '💯', '🤡', '💩', '🤔', '🎉'].map(emoji => `
                     <button onclick="toggleReaction('${msgId}', '${emoji}'); closeAllMessageMenus();" class="w-10 h-10 hover:scale-125 transition-transform p-1 flex items-center justify-center shrink-0">
-                        <img src="${getNotoEmojiUrl(emoji)}" alt="${emoji}" loading="lazy" class="w-full h-full object-contain" onerror="this.onerror=null; this.outerHTML='<span class=\\'text-xl\\'>${emoji}</span>';">
+                        <img src="${getNotoEmojiUrl(emoji)}" alt="${emoji}" loading="lazy" class="w-full h-full object-contain" onerror="this.onerror=null; if(this.parentNode) this.outerHTML='<span class=\\'text-xl\\'>${emoji}</span>';">
                     </button>
                 `).join('');
             }
@@ -217,13 +217,13 @@ function renderExpandableReactions(title: string, items: {emoji: string, name: s
     
     html += `<div class="flex flex-col gap-1 text-xs">`;
     displayItems.forEach(item => {
-        html += `<div class="flex items-center gap-2 truncate text-gray-800 dark:text-gray-200"><img src="${getNotoEmojiUrl(item.emoji)}" class="w-3 h-3" onerror="this.onerror=null; this.outerHTML='<span>${item.emoji}</span>';"> <span>${item.name}</span></div>`;
+        html += `<div class="flex items-center gap-2 truncate text-gray-800 dark:text-gray-200"><img src="${getNotoEmojiUrl(item.emoji)}" class="w-3 h-3" onerror="this.onerror=null; if(this.parentNode) this.outerHTML='<span>${item.emoji}</span>';"> <span>${item.name}</span></div>`;
     });
     
     if (hasMore) {
         html += `
             <div id="${idPrefix}-hidden" class="hidden flex-col gap-1 mt-1 max-h-32 overflow-y-auto custom-scrollbar pr-1">
-                ${hiddenItems.map(item => `<div class="flex items-center gap-2 truncate text-gray-800 dark:text-gray-200"><img src="${getNotoEmojiUrl(item.emoji)}" class="w-3 h-3" onerror="this.onerror=null; this.outerHTML='<span>${item.emoji}</span>';"> <span>${item.name}</span></div>`).join('')}
+                ${hiddenItems.map(item => `<div class="flex items-center gap-2 truncate text-gray-800 dark:text-gray-200"><img src="${getNotoEmojiUrl(item.emoji)}" class="w-3 h-3" onerror="this.onerror=null; if(this.parentNode) this.outerHTML='<span>${item.emoji}</span>';"> <span>${item.name}</span></div>`).join('')}
             </div>
             <button onclick="event.stopPropagation(); const el = document.getElementById('${idPrefix}-hidden'); el.classList.toggle('hidden'); el.classList.toggle('flex'); this.textContent = this.textContent === 'Развернуть' ? 'Свернуть' : 'Развернуть'; setTimeout(() => { if(window.adjustMenuPosition) window.adjustMenuPosition(this.closest('.msg-menu-dropdown')); }, 10);" class="text-blue-500 hover:text-blue-600 text-[11px] text-left mt-1 font-medium transition-colors">Развернуть</button>
         `;
@@ -245,7 +245,7 @@ export function toggleEmojiMenu(e: Event) {
             if (menu.children[0].innerHTML.trim() === '') {
                 menu.children[0].innerHTML = EMOJIS.map(emoji => `
                     <button type="button" onclick="sendEmojiMessage('${emoji}')" class="w-12 h-12 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-xl p-2 transition-colors flex items-center justify-center">
-                        <img src="${getNotoEmojiUrl(emoji)}" alt="${emoji}" loading="lazy" class="w-full h-full object-contain hover:scale-110 transition-transform" onerror="this.onerror=null; this.outerHTML='<span class=\\'text-2xl\\'>${emoji}</span>';">
+                        <img src="${getNotoEmojiUrl(emoji)}" alt="${emoji}" loading="lazy" class="w-full h-full object-contain hover:scale-110 transition-transform" onerror="this.onerror=null; if(this.parentNode) this.outerHTML='<span class=\\'text-2xl\\'>${emoji}</span>';">
                     </button>
                 `).join('');
             }
@@ -344,7 +344,7 @@ export function generateReactionsHtml(msgId: string, reactions: any) {
                 const hasMyReaction = userArray.includes(state.currentUser?.id);
                 reactionsHtml += `
                     <button onclick="toggleReaction('${msgId}', '${emoji}')" class="reaction-btn flex items-center gap-1.5 text-[11px] px-2 py-1 rounded-full border ${hasMyReaction ? 'bg-blue-50 border-blue-200 text-blue-600 dark:bg-blue-900/30 dark:border-blue-800 dark:text-blue-400' : 'bg-gray-50 border-gray-200 text-gray-600 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-400'} hover:bg-gray-100 dark:hover:bg-gray-700 transition-all">
-                        <img src="${getNotoEmojiUrl(emoji)}" alt="${emoji}" loading="lazy" class="w-4 h-4 object-contain" onerror="this.onerror=null; this.outerHTML='<span>${emoji}</span>';">
+                        <img src="${getNotoEmojiUrl(emoji)}" alt="${emoji}" loading="lazy" class="w-4 h-4 object-contain" onerror="this.onerror=null; if(this.parentNode) this.outerHTML='<span>${emoji}</span>';">
                         <span class="font-medium">${userArray.length}</span>
                     </button>
                 `;
