@@ -1,5 +1,4 @@
 import { supabase, state } from './supabase';
-import { getProxiedMediaUrl } from './utils';
 
 let shortsList: any[] = [];
 let currentShortIdForComments: string | null = null;
@@ -522,7 +521,7 @@ async function fetchShortsBatch(initialShortId?: string, authorFilterId?: string
         
         let newBatch = [...allShorts].map(s => ({
             ...s,
-            video_url: s.video_url ? getProxiedMediaUrl(s.video_url) : s.video_url
+            video_url: s.video_url
         }));
 
         if (initialShortId && !loadedShortIds.has(initialShortId)) {

@@ -1,5 +1,5 @@
 import { supabase, state } from './supabase';
-import { scrollToBottom, customAlert, customConfirm, customPrompt, closeModal, customToast, confirmPaidMessageModal, getProxiedMediaUrl } from './utils';
+import { scrollToBottom, customAlert, customConfirm, customPrompt, closeModal, customToast, confirmPaidMessageModal } from './utils';
 import { isSelectionMode, toggleSelectionMode, toggleMessageSelection, deleteSelectedMessages, forwardSelectedMessages, confirmForwardMultiple, selectedMessages, updateSelectionUI } from './selection';
 import { openLightbox, closeLightbox, lightboxNext, lightboxPrev } from './lightbox';
 import { toggleReactionMenu, toggleReaction, toggleMessageMenu, toggleEmojiMenu, sendEmojiMessage, getNotoEmojiUrl, closeAllMessageMenus, adjustMenuPosition, generateReactionsHtml } from './reactions';
@@ -219,7 +219,7 @@ export function renderMessages(messages: any[], isInitialLoad = false) {
         let forwardHtml = '';
         const mediaArr = msg.media || [];
         
-        const actualMedia = mediaArr.filter((m: any) => m.type !== 'reply' && m.type !== 'forward' && m.type !== 'admin_mode' && m.type !== 'comments_enabled').map((m: any) => ({ ...m, url: m.url ? getProxiedMediaUrl(m.url) : m.url }));
+        const actualMedia = mediaArr.filter((m: any) => m.type !== 'reply' && m.type !== 'forward' && m.type !== 'admin_mode' && m.type !== 'comments_enabled');
         const replyData = mediaArr.find((m: any) => m.type === 'reply');
         const forwardData = mediaArr.find((m: any) => m.type === 'forward');
         const adminModeData = mediaArr.find((m: any) => m.type === 'admin_mode');

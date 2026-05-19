@@ -1,4 +1,3 @@
-import { getProxiedMediaUrl } from './utils';
 import { supabase, state } from './supabase';
 import { closeModal, customAlert, customConfirm, customToast } from './utils';
 import { loadChats, openChat } from './chat';
@@ -705,7 +704,7 @@ export async function openChatInfo(skipPushState = false) {
 
     messagesWithMedia?.forEach(msg => {
         if (!msg.media) return;
-        const actualMedia = msg.media.filter((m: any) => m.type !== 'reply' && m.type !== 'forward').map((m: any) => ({ ...m, url: m.url ? getProxiedMediaUrl(m.url) : m.url }));
+        const actualMedia = msg.media.filter((m: any) => m.type !== 'reply' && m.type !== 'forward');
         if (actualMedia.length === 0) return;
 
         if (msg.message_type === 'voice') {

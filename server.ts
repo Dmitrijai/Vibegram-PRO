@@ -134,39 +134,7 @@ async function startServer() {
     }
   });
 
-  app.get("/api/proxy", async (req, res) => {
-    try {
-      const targetUrl = req.query.url as string;
-      if (!targetUrl) {
-         res.status(400).send("Missing target url");
-         return;
-      }
-      
-      const headers: Record<string, string> = {};
-      if (req.headers.range) {
-         headers.range = req.headers.range;
-      }
-      
-      const targetFetchRes = await fetch(targetUrl, { headers });
-      
-      targetFetchRes.headers.forEach((value, key) => {
-          res.setHeader(key, value);
-      });
-      res.status(targetFetchRes.status);
-      
-      if (targetFetchRes.body) {
-         const { Readable } = await import("stream");
-         Readable.fromWeb(targetFetchRes.body as any).pipe(res);
-      } else {
-         res.end();
-      }
-    } catch (e: any) {
-        console.error("Proxy error:", e);
-        res.status(500).json({ error: e.message });
-    }
-  });
-
-  if (process.env.NODE_ENV !== "production") {
+    if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa",

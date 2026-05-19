@@ -1,21 +1,5 @@
 import { state, supabase } from './supabase';
 
-export function getProxiedMediaUrl(url: string) {
-    if (!url) return url;
-    let proxyUrl = url;
-    if (proxyUrl.includes('res.cloudinary.com')) {
-         proxyUrl = proxyUrl.replace(/ /g, '%20')
-                            .replace(/f%20auto/gi, 'f_auto')
-                            .replace(/q%20auto/gi, 'q_auto')
-                            .replace(/w%20/gi, 'w_')
-                            .replace(/h%20/gi, 'h_')
-                            .replace(/c%20limit/gi, 'c_limit')
-                            .replace(/c%20fill/gi, 'c_fill')
-                            .replace(/g%20face/gi, 'g_face');
-    }
-    return proxyUrl;
-}
-
 export const getFakeEmail = (nick: string) => `${nick.toLowerCase().trim().replace(/[^a-z0-9]/g, '')}@vibegram.local`;
 
 export const formatBytes = (bytes: number) => {

@@ -1,5 +1,5 @@
 import { supabase, state } from './supabase';
-import { closeModal, getProxiedMediaUrl } from './utils';
+import { closeModal } from './utils';
 import { loadChats } from './chat';
 import { logout } from './auth';
 
@@ -21,7 +21,7 @@ export function openSettings(modeOrSkip: 'full' | 'profile' | boolean = 'full', 
     }
     const modal = document.getElementById('modal-content')!;
     const nickname = state.currentProfile?.display_name || state.currentProfile?.username || 'User';
-    const avatarUrl = state.currentProfile?.avatar_url ? getProxiedMediaUrl(state.currentProfile.avatar_url) : '';
+    const avatarUrl = state.currentProfile?.avatar_url ? state.currentProfile?.avatar_url || '' : '';
     const bio = state.currentProfile?.bio || '';
     const settings = state.currentProfile?.settings || { notifications: true, privacy: 'everyone', theme: 'light', textSize: 15, chatBg: '#ffffff' };
     const isDark = document.documentElement.classList.contains('dark');
