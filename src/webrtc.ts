@@ -270,9 +270,10 @@ async function startCall(isVideo: boolean) {
         rtcPeerConnection.ontrack = event => {
             console.log('Caller received remote track:', event.track.kind);
             
-            const stream = (event.streams && event.streams[0]) || null;
-            if (stream) {
-                if (remoteVideo.srcObject !== stream) remoteVideo.srcObject = stream;
+            if (event.streams && event.streams[0]) {
+                if (remoteVideo.srcObject !== event.streams[0]) {
+                    remoteVideo.srcObject = event.streams[0];
+                }
             } else {
                 if (!remoteVideo.srcObject) {
                     remoteVideo.srcObject = new MediaStream();
@@ -286,10 +287,10 @@ async function startCall(isVideo: boolean) {
                 remoteVideo.classList.remove('hidden');
             }
             
-            setTimeout(() => {
-                const vp = remoteVideo.play();
-                if (vp !== undefined) vp.catch(e => console.error('video play err:', e));
-            }, 100);
+            // Try to play again safely
+            if (remoteVideo.paused || remoteVideo.readyState === 0) {
+                remoteVideo.play().catch(e => console.error('Safe play error:', e.name));
+            }
         };
         
         remoteVideo.onloadedmetadata = () => remoteVideo.play().catch(e => console.error('v loaded err:', e));
@@ -382,9 +383,10 @@ export async function answerCall(callerId: string, offer: any, callerName: strin
         rtcPeerConnection.ontrack = event => {
             console.log('Callee received remote track:', event.track.kind);
             
-            const stream = (event.streams && event.streams[0]) || null;
-            if (stream) {
-                if (remoteVideo.srcObject !== stream) remoteVideo.srcObject = stream;
+            if (event.streams && event.streams[0]) {
+                if (remoteVideo.srcObject !== event.streams[0]) {
+                    remoteVideo.srcObject = event.streams[0];
+                }
             } else {
                 if (!remoteVideo.srcObject) {
                     remoteVideo.srcObject = new MediaStream();
@@ -398,10 +400,10 @@ export async function answerCall(callerId: string, offer: any, callerName: strin
                 remoteVideo.classList.remove('hidden');
             }
             
-            setTimeout(() => {
-                const vp = remoteVideo.play();
-                if (vp !== undefined) vp.catch(e => console.error('video play err:', e));
-            }, 100);
+            // Try to play again safely
+            if (remoteVideo.paused || remoteVideo.readyState === 0) {
+                remoteVideo.play().catch(e => console.error('Safe play error:', e.name));
+            }
         };
         
         remoteVideo.onloadedmetadata = () => remoteVideo.play().catch(e => console.error('v loaded err:', e));
