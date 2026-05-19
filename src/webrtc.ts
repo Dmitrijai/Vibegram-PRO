@@ -133,7 +133,7 @@ export async function initWebRTC() {
         if (data.targetUserId === state.currentUser.id && rtcPeerConnection) {
             stopRingtone();
             await rtcPeerConnection.setRemoteDescription(new RTCSessionDescription(data.answer));
-            document.getElementById('call-status')!.innerText = 'Соединение установлено';
+            document.getElementById('call-status')!.innerText = 'Соединение...';
             
             // Process any queued ICE candidates safely against race conditions
             while (pendingIceCandidates.length > 0) {
@@ -261,39 +261,26 @@ async function startCall(isVideo: boolean) {
         rtcPeerConnection = new RTCPeerConnection(rtcConfig);
         
         const remoteVideo = document.getElementById('remote-video') as HTMLVideoElement;
-        
+        const remoteStream = new MediaStream();
+        remoteVideo.srcObject = remoteStream;
         remoteVideo.autoplay = true;
         remoteVideo.playsInline = true;
+        remoteVideo.play().catch(()=>{});
         
         localStream.getTracks().forEach(track => rtcPeerConnection!.addTrack(track, localStream!));
         
         rtcPeerConnection.ontrack = event => {
             console.log('Caller received remote track:', event.track.kind);
-            
-            if (event.streams && event.streams[0]) {
-                if (remoteVideo.srcObject !== event.streams[0]) {
-                    remoteVideo.srcObject = event.streams[0];
-                }
-            } else {
-                if (!remoteVideo.srcObject) {
-                    remoteVideo.srcObject = new MediaStream();
-                }
-                const ms = remoteVideo.srcObject as MediaStream;
-                if (!ms.getTracks().includes(event.track)) ms.addTrack(event.track);
+            if (!remoteStream.getTracks().includes(event.track)) {
+                remoteStream.addTrack(event.track);
             }
-            
             if (event.track.kind === 'video') {
                 document.getElementById('call-avatar-container')?.classList.add('hidden');
                 remoteVideo.classList.remove('hidden');
             }
-            
-            // Try to play again safely
-            if (remoteVideo.paused || remoteVideo.readyState === 0) {
-                remoteVideo.play().catch(e => console.error('Safe play error:', e.name));
-            }
         };
         
-        remoteVideo.onloadedmetadata = () => remoteVideo.play().catch(e => console.error('v loaded err:', e));
+        remoteVideo.onloadedmetadata = () => remoteVideo.play().catch(e => console.error('v loaded err:', e.name));
         
         rtcPeerConnection.onicecandidate = event => {
             if (event.candidate) {
@@ -303,8 +290,16 @@ async function startCall(isVideo: boolean) {
         
         rtcPeerConnection.oniceconnectionstatechange = () => {
              console.log('ICE Connection state:', rtcPeerConnection?.iceConnectionState);
-             if (rtcPeerConnection?.iceConnectionState === 'failed') {
-                 endVideoCall(false);
+             const statusEl = document.getElementById('call-status');
+             if (statusEl) {
+                 if (rtcPeerConnection?.iceConnectionState === 'connected' || rtcPeerConnection?.iceConnectionState === 'completed') {
+                     statusEl.innerText = '';
+                     statusEl.classList.add('hidden');
+                 } else if (rtcPeerConnection?.iceConnectionState === 'disconnected' || rtcPeerConnection?.iceConnectionState === 'failed') {
+                     statusEl.classList.remove('hidden');
+                     statusEl.innerText = 'Сбой соединения';
+                     setTimeout(() => endVideoCall(false), 2000);
+                 }
              }
         };
 
@@ -374,39 +369,26 @@ export async function answerCall(callerId: string, offer: any, callerName: strin
         rtcPeerConnection = new RTCPeerConnection(rtcConfig);
         
         const remoteVideo = document.getElementById('remote-video') as HTMLVideoElement;
-        
+        const remoteStream = new MediaStream();
+        remoteVideo.srcObject = remoteStream;
         remoteVideo.autoplay = true;
         remoteVideo.playsInline = true;
+        remoteVideo.play().catch(()=>{});
         
         localStream.getTracks().forEach(track => rtcPeerConnection!.addTrack(track, localStream!));
         
         rtcPeerConnection.ontrack = event => {
             console.log('Callee received remote track:', event.track.kind);
-            
-            if (event.streams && event.streams[0]) {
-                if (remoteVideo.srcObject !== event.streams[0]) {
-                    remoteVideo.srcObject = event.streams[0];
-                }
-            } else {
-                if (!remoteVideo.srcObject) {
-                    remoteVideo.srcObject = new MediaStream();
-                }
-                const ms = remoteVideo.srcObject as MediaStream;
-                if (!ms.getTracks().includes(event.track)) ms.addTrack(event.track);
+            if (!remoteStream.getTracks().includes(event.track)) {
+                remoteStream.addTrack(event.track);
             }
-            
             if (event.track.kind === 'video') {
                 document.getElementById('call-avatar-container')?.classList.add('hidden');
                 remoteVideo.classList.remove('hidden');
             }
-            
-            // Try to play again safely
-            if (remoteVideo.paused || remoteVideo.readyState === 0) {
-                remoteVideo.play().catch(e => console.error('Safe play error:', e.name));
-            }
         };
         
-        remoteVideo.onloadedmetadata = () => remoteVideo.play().catch(e => console.error('v loaded err:', e));
+        remoteVideo.onloadedmetadata = () => remoteVideo.play().catch(e => console.error('v loaded err:', e.name));
         
         rtcPeerConnection.onicecandidate = event => {
             if (event.candidate) {
@@ -416,8 +398,16 @@ export async function answerCall(callerId: string, offer: any, callerName: strin
         
         rtcPeerConnection.oniceconnectionstatechange = () => {
              console.log('ICE Connection state:', rtcPeerConnection?.iceConnectionState);
-             if (rtcPeerConnection?.iceConnectionState === 'failed') {
-                 endVideoCall(false);
+             const statusEl = document.getElementById('call-status');
+             if (statusEl) {
+                 if (rtcPeerConnection?.iceConnectionState === 'connected' || rtcPeerConnection?.iceConnectionState === 'completed') {
+                     statusEl.innerText = '';
+                     statusEl.classList.add('hidden');
+                 } else if (rtcPeerConnection?.iceConnectionState === 'disconnected' || rtcPeerConnection?.iceConnectionState === 'failed') {
+                     statusEl.classList.remove('hidden');
+                     statusEl.innerText = 'Сбой соединения';
+                     setTimeout(() => endVideoCall(false), 2000);
+                 }
              }
         };
 
@@ -435,7 +425,7 @@ export async function answerCall(callerId: string, offer: any, callerName: strin
             payload: { targetUserId: callerId, answer }
         });
         
-        document.getElementById('call-status')!.innerText = 'Соединение установлено';
+        document.getElementById('call-status')!.innerText = 'Соединение...';
         
     } catch (err) {
         console.error('Error answering call:', err);
