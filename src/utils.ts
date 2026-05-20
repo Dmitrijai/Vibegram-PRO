@@ -558,15 +558,9 @@ export async function uploadToCloudinary(file: File | Blob, isAvatar = false, ab
             let url = data.secure_url;
             
             if (data.resource_type === 'image' || data.resource_type === 'video') {
-                 let transformations = 'f_auto,q_auto';
                  if (isAvatar && data.resource_type === 'image') {
-                     transformations += ',c_fill,g_face,w_256,h_256';
-                 } else if (data.resource_type === 'video') {
-                     transformations += ',w_800,c_limit';
-                 } else if (data.resource_type === 'image') {
-                     transformations += ',w_1600,c_limit';
+                     url = url.replace('/upload/', `/upload/f_auto,q_auto,c_fill,g_face,w_256,h_256/`);
                  }
-                 url = url.replace('/upload/', `/upload/${transformations}/`);
             }
             
             return url;

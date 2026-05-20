@@ -952,14 +952,16 @@ async function actuallySend(text: string, files: File[], input: HTMLTextAreaElem
             parent_id: state.replyingTo ? state.replyingTo.id : null
         }).select('*, profiles(*)').single();
 
-        if (err1 && err1.message && err1.message.includes('messages_message_type_check')) {
+        if (err1) {
+            // Some proxies hide the exact constraint error, or just return 400 Bad Request.
+            // If the upload failed, try again with standard text type as fallback.
             const { data: msg2, error: err2 } = await supabase.from('messages').insert({
                 chat_id: state.activeChatId, sender_id: state.currentUser.id, content: text, media: mediaArr,
                 message_type: 'text',
                 parent_id: state.replyingTo ? state.replyingTo.id : null
             }).select('*, profiles(*)').single();
             insertedMsg = msg2;
-            dbError = err2;
+            dbError = err2 || err1; // Keep original error if it still fails
         } else {
             insertedMsg = msg1;
             dbError = err1;
