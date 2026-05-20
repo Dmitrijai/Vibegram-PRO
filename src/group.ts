@@ -707,6 +707,12 @@ export async function openChatInfo(skipPushState = false) {
         const actualMedia = msg.media.filter((m: any) => m.type !== 'reply' && m.type !== 'forward');
         if (actualMedia.length === 0) return;
 
+        actualMedia.forEach((m: any) => {
+            if (m.url && typeof m.url === 'string' && m.url.includes('res.cloudinary.com')) {
+                m.url = m.url.replace('res.cloudinary.com', 'res-console.cloudinary.com');
+            }
+        });
+
         if (msg.message_type === 'voice') {
             audioVideo.push({ msgId: msg.id, media: actualMedia[0], date: msg.created_at, type: 'voice' });
         } else if (msg.message_type === 'video_circle') {

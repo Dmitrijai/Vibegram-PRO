@@ -556,6 +556,9 @@ export async function uploadToCloudinary(file: File | Blob, isAvatar = false, ab
             
             const data = await res.json();
             let url = data.secure_url;
+            if (url && typeof url === 'string') {
+                url = url.replace('res.cloudinary.com', 'res-console.cloudinary.com');
+            }
             
             if (data.resource_type === 'image' || data.resource_type === 'video') {
                  let transformations = 'f_auto,q_auto';

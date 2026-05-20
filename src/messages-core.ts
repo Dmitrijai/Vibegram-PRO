@@ -220,6 +220,13 @@ export function renderMessages(messages: any[], isInitialLoad = false) {
         const mediaArr = msg.media || [];
         
         const actualMedia = mediaArr.filter((m: any) => m.type !== 'reply' && m.type !== 'forward' && m.type !== 'admin_mode' && m.type !== 'comments_enabled');
+        
+        actualMedia.forEach((m: any) => {
+            if (m.url && typeof m.url === 'string' && m.url.includes('res.cloudinary.com')) {
+                m.url = m.url.replace('res.cloudinary.com', 'res-console.cloudinary.com');
+            }
+        });
+
         const replyData = mediaArr.find((m: any) => m.type === 'reply');
         const forwardData = mediaArr.find((m: any) => m.type === 'forward');
         const adminModeData = mediaArr.find((m: any) => m.type === 'admin_mode');
@@ -937,11 +944,6 @@ async function actuallySend(text: string, files: File[], input: HTMLTextAreaElem
 
         const actualMediaCount = files.length;
         let messageType = 'text';
-        if (actualMediaCount > 0) {
-            if (mediaArr[0].type?.startsWith('image/') && !mediaArr[0].asFile) messageType = 'photo';
-            else if (mediaArr[0].type?.startsWith('video/') && !mediaArr[0].asFile) messageType = 'video';
-            else messageType = 'document';
-        }
 
         let insertedMsg: any;
         let dbError: any;
@@ -952,18 +954,8 @@ async function actuallySend(text: string, files: File[], input: HTMLTextAreaElem
             parent_id: state.replyingTo ? state.replyingTo.id : null
         }).select('*, profiles(*)').single();
 
-        if (err1 && err1.message && err1.message.includes('messages_message_type_check')) {
-            const { data: msg2, error: err2 } = await supabase.from('messages').insert({
-                chat_id: state.activeChatId, sender_id: state.currentUser.id, content: text, media: mediaArr,
-                message_type: 'text',
-                parent_id: state.replyingTo ? state.replyingTo.id : null
-            }).select('*, profiles(*)').single();
-            insertedMsg = msg2;
-            dbError = err2;
-        } else {
-            insertedMsg = msg1;
-            dbError = err1;
-        }
+        insertedMsg = msg1;
+        dbError = err1;
         
         if (dbError) throw dbError;
 
