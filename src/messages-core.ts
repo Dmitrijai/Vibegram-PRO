@@ -961,7 +961,7 @@ async function actuallySend(text: string, files: File[], input: HTMLTextAreaElem
                 parent_id: state.replyingTo ? state.replyingTo.id : null
             }).select('*, profiles(*)').single();
             insertedMsg = msg2;
-            dbError = err2 || err1; // Keep original error if it still fails
+            dbError = err2;
         } else {
             insertedMsg = msg1;
             dbError = err1;
