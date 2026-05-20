@@ -433,8 +433,18 @@ const getCloudinaryConfig = () => {
     return {
         cloudName: metaEnv.VITE_CLOUDINARY_CLOUD_NAME || process.env.CLOUDINARY_CLOUD_NAME,
         apiKey: metaEnv.VITE_CLOUDINARY_API_KEY || process.env.CLOUDINARY_API_KEY,
+        apiSecret: metaEnv.VITE_CLOUDINARY_API_SECRET || process.env.CLOUDINARY_API_SECRET
     };
 };
+
+async function generateCloudinarySignature(paramsToSign: Record<string, string>, apiSecret: string): Promise<string> {
+    const keys = Object.keys(paramsToSign).sort();
+    const stringToSign = keys.map(k => `${k}=${paramsToSign[k]}`).join('&') + apiSecret;
+    const msgBuffer = new TextEncoder().encode(stringToSign);
+    const hashBuffer = await crypto.subtle.digest('SHA-1', msgBuffer);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+}
 
 function extractPublicId(fileUrl: string) {
   try {
@@ -456,13 +466,47 @@ function extractPublicId(fileUrl: string) {
 export async function softDeleteCloudinaryFile(fileUrl: string): Promise<boolean> {
     try {
         if (fileUrl.includes('res.cloudinary.com')) {
-            const res = await fetch('/api/cloudinary/soft-delete', {
+            const { cloudName, apiKey, apiSecret } = getCloudinaryConfig();
+            const publicId = extractPublicId(fileUrl);
+            
+            if (!publicId || !cloudName || !apiKey || !apiSecret) {
+                // Keep Cloudinary endpoint for backward compatibility on localhost
+                const res = await fetch('/api/cloudinary/soft-delete', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ fileUrl })
+                });
+                const data = await res.json();
+                return data.success === true;
+            }
+
+            const timestamp = Math.round((new Date()).getTime() / 1000).toString();
+            let resourceType = 'image';
+            if (fileUrl.includes('/video/')) resourceType = 'video';
+            else if (fileUrl.includes('/raw/')) resourceType = 'raw';
+            
+            const paramsToSign = {
+               invalidate: 'true',
+               public_id: publicId,
+               timestamp: timestamp
+            };
+            
+            const signature = await generateCloudinarySignature(paramsToSign, apiSecret);
+            
+            const formData = new FormData();
+            formData.append('public_id', publicId);
+            formData.append('invalidate', 'true');
+            formData.append('api_key', apiKey);
+            formData.append('timestamp', timestamp);
+            formData.append('signature', signature);
+            
+            const res = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/${resourceType}/destroy`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ fileUrl })
+                body: formData
             });
+
             const data = await res.json();
-            return data.success === true;
+            return data.result === 'ok';
         }
 
         const urlObj = new URL(fileUrl);
@@ -488,26 +532,21 @@ export async function softDeleteCloudinaryFile(fileUrl: string): Promise<boolean
 }
 
 export async function uploadToCloudinary(file: File | Blob, isAvatar = false, abortSignal?: AbortSignal, targetBucket?: string): Promise<string> {
-    // We fetch signature and config from the backend to keep it secure
-    let signData;
-    try {
-        const signRes = await fetch('/api/cloudinary/sign', { method: 'POST' });
-        if (signRes.ok) {
-            signData = await signRes.json();
-        }
-    } catch (e) {
-        console.warn("Backend signature failed, will try fallback", e);
-    }
+    const { cloudName, apiKey, apiSecret } = getCloudinaryConfig();
     
-    if (signData && signData.signature && signData.cloudName && signData.apiKey) {
+    if (cloudName && apiKey && apiSecret) {
         try {
+            const timestamp = Math.round((new Date()).getTime() / 1000).toString();
+            const paramsToSign = { timestamp };
+            const signature = await generateCloudinarySignature(paramsToSign, apiSecret);
+
             const formData = new FormData();
             formData.append('file', file);
-            formData.append('api_key', signData.apiKey);
-            formData.append('timestamp', signData.timestamp);
-            formData.append('signature', signData.signature);
+            formData.append('api_key', apiKey);
+            formData.append('timestamp', timestamp);
+            formData.append('signature', signature);
             
-            const res = await fetch(`https://api.cloudinary.com/v1_1/${signData.cloudName}/auto/upload`, {
+            const res = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/auto/upload`, {
                 method: 'POST',
                 body: formData,
                 signal: abortSignal
@@ -540,9 +579,37 @@ export async function uploadToCloudinary(file: File | Blob, isAvatar = false, ab
     }
     
     // Explicit error if Cloudinary is not configured correctly on the backend
-    console.error("Cloudinary is not configured correctly. Upload aborted.");
-    customToast("Cloudinary не настроен. Загрузка медиа недоступна.");
-    throw new Error("Cloudinary not configured on backend");
+    // Try fallback to Supabase if Cloudinary is not configured
+    try {
+        let bucket = 'vibegram_media';
+        if (targetBucket) {
+             bucket = targetBucket;
+        } else if (isAvatar) {
+             bucket = 'vibegram_avatars';
+        } else if (file.type.startsWith('video/') || file.type.startsWith('audio/')) {
+             bucket = 'vibegram_voice_video';
+        }
+
+        const ext = file instanceof File ? (file.name.split('.').pop() || '') : (file.type.split('/')[1] || 'bin');
+        const userId = state?.currentUser?.id || 'public';
+        const fileName = `${Date.now()}_${Math.random().toString(36).substring(2)}.${ext}`;
+        const filePath = `${userId}/${fileName}`;
+
+        const { error } = await supabase.storage.from(bucket).upload(filePath, file, {
+            upsert: false
+        });
+
+        if (error) {
+            throw new Error(`Supabase upload error: ${error.message}`);
+        }
+
+        const { data: publicUrlData } = supabase.storage.from(bucket).getPublicUrl(filePath);
+        return publicUrlData.publicUrl;
+    } catch (err: any) {
+        if (err.name === 'AbortError') throw err;
+        console.error("Upload failed:", err);
+        throw err;
+    }
 }
 
 (window as any).handleMediaError = function(el: HTMLElement, url: string) {

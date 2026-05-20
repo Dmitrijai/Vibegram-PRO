@@ -19,6 +19,7 @@ export default defineConfig(({mode}) => {
   
   const cloudinaryCloudName = process.env.CLOUDINARY_CLOUD_NAME || env.CLOUDINARY_CLOUD_NAME || '';
   const cloudinaryApiKey = process.env.CLOUDINARY_API_KEY || env.CLOUDINARY_API_KEY || '';
+  const cloudinaryApiSecret = process.env.CLOUDINARY_API_SECRET || env.CLOUDINARY_API_SECRET || '';
   
   return {
     base: repoName,
@@ -30,6 +31,7 @@ export default defineConfig(({mode}) => {
       'process.env.SUPABASE_ANON_KEY': JSON.stringify(supabaseAnonKey),
       'process.env.CLOUDINARY_CLOUD_NAME': JSON.stringify(cloudinaryCloudName),
       'process.env.CLOUDINARY_API_KEY': JSON.stringify(cloudinaryApiKey),
+      'process.env.CLOUDINARY_API_SECRET': JSON.stringify(cloudinaryApiSecret),
     },
     resolve: {
       alias: {
