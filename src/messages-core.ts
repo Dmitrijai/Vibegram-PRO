@@ -80,7 +80,7 @@ function renderContent(content: string) {
         for (const seg of segments) {
             if (!seg) continue;
             if (seg.match(/[\p{Emoji}]/gu)) {
-                html += `<img src="${getNotoEmojiUrl(seg)}" alt="${seg}" loading="lazy" class="w-24 h-24 sm:w-32 sm:h-32 object-contain drop-shadow-xl hover:scale-110 transition-transform" onerror="this.onerror=null; if(this.parentNode) this.outerHTML='<span class=\\'text-6xl\\'>${seg}</span>';">`;
+                html += `<img src="${getNotoEmojiUrl(seg)}" alt="${seg}" loading="lazy" class="w-24 h-24 sm:w-32 sm:h-32 object-contain drop-shadow-xl hover:scale-110 transition-transform" onerror="this.onerror=null; this.outerHTML='<span class=\\'text-6xl\\'>${seg}</span>';">`;
             } else {
                 html += seg;
             }
@@ -220,13 +220,6 @@ export function renderMessages(messages: any[], isInitialLoad = false) {
         const mediaArr = msg.media || [];
         
         const actualMedia = mediaArr.filter((m: any) => m.type !== 'reply' && m.type !== 'forward' && m.type !== 'admin_mode' && m.type !== 'comments_enabled');
-        
-        actualMedia.forEach((m: any) => {
-            if (m.url && typeof m.url === 'string' && m.url.includes('res.cloudinary.com')) {
-                m.url = m.url.replace('res.cloudinary.com', 'res-console.cloudinary.com');
-            }
-        });
-
         const replyData = mediaArr.find((m: any) => m.type === 'reply');
         const forwardData = mediaArr.find((m: any) => m.type === 'forward');
         const adminModeData = mediaArr.find((m: any) => m.type === 'admin_mode');
@@ -330,7 +323,7 @@ export function renderMessages(messages: any[], isInitialLoad = false) {
                 <div class="flex flex-col mb-1 items-end">
                     <div class="relative">
                         <div class="video-circle-container uninteracted" onclick="handleVideoCircleClick(event, this)">
-                            <video src="${actualMedia[0].url}" loop muted playsinline data-autoplay="true" ontimeupdate="updateVideoProgress(this)" onerror="this.onerror=null; if(this.parentElement) this.parentElement.outerHTML='<div class=\\'w-[200px] h-[200px] rounded-full bg-gray-100 dark:bg-gray-800 flex flex-col items-center justify-center text-gray-400 text-xs p-4 text-center border border-gray-200 dark:border-gray-700\\'><svg class=\\'w-8 h-8 mb-2 text-red-400\\' fill=\\'none\\' stroke=\\'currentColor\\' viewBox=\\'0 0 24 24\\'><path stroke-linecap=\\'round\\' stroke-linejoin=\\'round\\' stroke-width=\\'2\\' d=\\'M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z\\'></path></svg>Кружок поврежден</div>';"></video>
+                            <video src="${actualMedia[0].url}" loop muted playsinline data-autoplay="true" ontimeupdate="updateVideoProgress(this)" onerror="this.onerror=null; window.handleMediaError(this, '${actualMedia[0].url}');"></video>
                             <svg class="video-progress-ring" viewBox="0 0 100 100">
                                 <circle cx="50" cy="50" r="48" stroke-linecap="round"></circle>
                             </svg>
@@ -372,11 +365,11 @@ export function renderMessages(messages: any[], isInitialLoad = false) {
                 else if (file.ratio === '1/1') aspectCls = 'aspect-square max-w-[180px] sm:max-w-[220px]';
 
                 if(file.type?.startsWith('image/') && !file.asFile) {
-                    fileHtml += `<img data-src="${file.url}" loading="lazy" class="${aspectCls} w-full rounded-xl object-cover cursor-pointer hover:opacity-95 shadow-sm border border-black/5 chat-media-item bg-gray-200 dark:bg-gray-800" onclick="openLightbox('${file.url}')" onload="const l=this.closest('#messages-list'); if(l && l.scrollHeight - l.scrollTop - l.clientHeight < 250) l.scrollTop = l.scrollHeight;" onerror="this.onerror=null; if(this.parentNode) this.outerHTML='<div class=\\'${aspectCls} w-full bg-gray-100 dark:bg-gray-800 rounded-xl flex flex-col items-center justify-center text-gray-400 text-xs p-4 text-center border border-gray-200 dark:border-gray-700\\'><svg class=\\'w-8 h-8 mb-2 text-red-400\\' fill=\\'none\\' stroke=\\'currentColor\\' viewBox=\\'0 0 24 24\\'><path stroke-linecap=\\'round\\' stroke-linejoin=\\'round\\' stroke-width=\\'2\\' d=\\'M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z\\'></path></svg>Файл поврежден</div>';">`;
+                    fileHtml += `<img data-src="${file.url}" class="${aspectCls} w-full rounded-xl object-cover cursor-pointer hover:opacity-95 shadow-sm border border-black/5 chat-media-item bg-gray-200 dark:bg-gray-800" onclick="openLightbox('${file.url}')" onload="const l=this.closest('#messages-list'); if(l && l.scrollHeight - l.scrollTop - l.clientHeight < 250) l.scrollTop = l.scrollHeight;" onerror="this.onerror=null; window.handleMediaError(this, '${file.url}');">`;
                 } else if(file.type?.startsWith('video/') && !file.asFile) {
                     fileHtml += `
                         <div class="relative ${aspectCls} w-full rounded-xl overflow-hidden shadow-sm border border-black/5 group chat-media-item-container mb-1 bg-gray-800">
-                            <video src="${file.url}" preload="metadata" class="w-full h-full object-cover chat-media-item cursor-pointer" onclick="toggleInlineVideo(this)" onloadeddata="const l=this.closest('#messages-list'); if(l && l.scrollHeight - l.scrollTop - l.clientHeight < 250) l.scrollTop = l.scrollHeight;" onloadedmetadata="this.parentElement.querySelector('.video-time').textContent = Math.floor(this.duration / 60) + ':' + Math.floor(this.duration % 60).toString().padStart(2, '0')" onerror="this.onerror=null; if(this.parentElement) this.parentElement.outerHTML='<div class=\\'${aspectCls} w-full bg-gray-100 dark:bg-gray-800 rounded-xl flex flex-col items-center justify-center text-gray-400 text-xs p-4 text-center border border-gray-200 dark:border-gray-700\\'><svg class=\\'w-8 h-8 mb-2 text-red-400\\' fill=\\'none\\' stroke=\\'currentColor\\' viewBox=\\'0 0 24 24\\'><path stroke-linecap=\\'round\\' stroke-linejoin=\\'round\\' stroke-width=\\'2\\' d=\\'M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z\\'></path></svg>Видео повреждено</div>';"></video>
+                            <video src="${file.url}" preload="metadata" class="w-full h-full object-cover chat-media-item cursor-pointer" onclick="toggleInlineVideo(this)" onloadeddata="const l=this.closest('#messages-list'); if(l && l.scrollHeight - l.scrollTop - l.clientHeight < 250) l.scrollTop = l.scrollHeight;" onloadedmetadata="this.parentElement.querySelector('.video-time').textContent = Math.floor(this.duration / 60) + ':' + Math.floor(this.duration % 60).toString().padStart(2, '0')" onerror="this.onerror=null; window.handleMediaError(this, '${file.url}');"></video>
                             <div class="absolute inset-0 bg-black/20 group-hover:bg-black/30 transition-colors flex items-center justify-center pointer-events-none video-overlay">
                                 <div class="w-12 h-12 bg-black/50 rounded-full flex items-center justify-center text-white backdrop-blur-sm">
                                     <svg class="w-6 h-6 ml-0.5 play-icon" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
@@ -944,6 +937,11 @@ async function actuallySend(text: string, files: File[], input: HTMLTextAreaElem
 
         const actualMediaCount = files.length;
         let messageType = 'text';
+        if (actualMediaCount > 0) {
+            if (mediaArr[0].type?.startsWith('image/') && !mediaArr[0].asFile) messageType = 'photo';
+            else if (mediaArr[0].type?.startsWith('video/') && !mediaArr[0].asFile) messageType = 'video';
+            else messageType = 'document';
+        }
 
         let insertedMsg: any;
         let dbError: any;
@@ -954,8 +952,18 @@ async function actuallySend(text: string, files: File[], input: HTMLTextAreaElem
             parent_id: state.replyingTo ? state.replyingTo.id : null
         }).select('*, profiles(*)').single();
 
-        insertedMsg = msg1;
-        dbError = err1;
+        if (err1 && err1.message && err1.message.includes('messages_message_type_check')) {
+            const { data: msg2, error: err2 } = await supabase.from('messages').insert({
+                chat_id: state.activeChatId, sender_id: state.currentUser.id, content: text, media: mediaArr,
+                message_type: 'text',
+                parent_id: state.replyingTo ? state.replyingTo.id : null
+            }).select('*, profiles(*)').single();
+            insertedMsg = msg2;
+            dbError = err2;
+        } else {
+            insertedMsg = msg1;
+            dbError = err1;
+        }
         
         if (dbError) throw dbError;
 
