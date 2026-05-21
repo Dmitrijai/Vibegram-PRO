@@ -178,8 +178,32 @@ if (standaloneMiniAppId) {
 }
 
 // Initialize app
-supabase.auth.getSession().then(({ data: { session } }) => {
+const hashParams = new URLSearchParams(window.location.hash.substring(1));
+const queryParams = new URLSearchParams(window.location.search);
+const hashError = hashParams.get('error_description') || hashParams.get('error') || queryParams.get('error_description') || queryParams.get('error');
+
+if (hashError) {
+    import('./utils').then(m => m.showError('Auth Error: ' + decodeURIComponent(hashError.replace(/\+/g, ' '))));
+    window.history.replaceState({}, document.title, window.location.pathname);
+} else if (queryParams.get('code')) {
+    // We have a code, let's see if it exchanges it successfully
+    supabase.auth.onAuthStateChange((event) => {
+        if (event === 'SIGNED_OUT') {
+            const hasAuthError = localStorage.getItem('supabase-auth-error');
+            if (!hasAuthError) {
+                // If we get signed out immediately after a code exchange attempt, something failed
+                console.warn('OAuth code exchange might have failed');
+            }
+        }
+    });
+}
+
+
+supabase.auth.getSession().then(({ data: { session }, error }) => {
     if (isStandaloneMiniAppMode) return;
+    if (error) {
+        import('./utils').then(m => m.showError('Session error: ' + error.message));
+    }
     if (!session) {
         const loader = document.getElementById('initial-loader');
         if (loader) {
@@ -191,6 +215,7 @@ supabase.auth.getSession().then(({ data: { session } }) => {
 });
 
 supabase.auth.onAuthStateChange((event, session) => {
+    console.log("Auth State Changed:", event, "Session exists?", !!session);
     if (isStandaloneMiniAppMode) return;
     if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION') {
         if (session?.user) {
