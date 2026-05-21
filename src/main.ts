@@ -183,7 +183,10 @@ const queryParams = new URLSearchParams(window.location.search);
 const hashError = hashParams.get('error_description') || hashParams.get('error') || queryParams.get('error_description') || queryParams.get('error');
 const idToken = hashParams.get('id_token') || queryParams.get('id_token');
 
+let isHandlingIdToken = false;
+
 if (idToken) {
+    isHandlingIdToken = true;
     const nonce = localStorage.getItem('supabase-auth-nonce') || undefined;
     window.history.replaceState({}, document.title, window.location.pathname);
     supabase.auth.signInWithIdToken({
@@ -191,8 +194,17 @@ if (idToken) {
         token: idToken,
         nonce: nonce
     }).then(({ data, error }) => {
+        isHandlingIdToken = false;
         if (error) {
             import('./utils').then(m => m.showError('Login Error: ' + error.message));
+            
+            // On error we need to show the auth screen manually since we skipped it
+            document.getElementById('auth-screen')!.classList.remove('hidden');
+            const loader = document.getElementById('initial-loader');
+            if (loader) {
+                loader.classList.add('opacity-0', 'pointer-events-none');
+                setTimeout(() => loader.remove(), 300);
+            }
         }
     });
 } else if (hashError) {
@@ -209,7 +221,7 @@ supabase.auth.getSession().then(({ data: { session }, error }) => {
     if (error) {
         import('./utils').then(m => m.showError('Session error: ' + error.message));
     }
-    if (!session) {
+    if (!session && !isHandlingIdToken) {
         const loader = document.getElementById('initial-loader');
         if (loader) {
             loader.classList.add('opacity-0', 'pointer-events-none');
@@ -227,7 +239,7 @@ supabase.auth.onAuthStateChange((event, session) => {
             state.currentUser = session.user;
             logic.checkUser(event);
             setupRealtime();
-        } else if (event === 'INITIAL_SESSION') {
+        } else if (event === 'INITIAL_SESSION' && !isHandlingIdToken) {
             document.getElementById('auth-screen')!.classList.remove('hidden');
             const loader = document.getElementById('initial-loader');
             if (loader) {
