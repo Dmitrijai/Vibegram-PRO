@@ -7,18 +7,13 @@ export async function loginWithGoogle() {
     const btn = event?.currentTarget as HTMLButtonElement | undefined;
     if (btn) btn.disabled = true;
     try {
-        const exactRedirectUrl = window.location.origin + window.location.pathname + (window.location.pathname.endsWith('/') ? '' : '/');
-        const { data, error } = await supabase.auth.signInWithOAuth({
-            provider: 'google',
-            options: {
-                redirectTo: exactRedirectUrl,
-                skipBrowserRedirect: true
-            }
-        });
-        if (error) throw error;
-        if (data?.url) {
-            window.location.href = data.url;
-        }
+        const clientId = '362424832513-mdflqja6lr0jq81es5frq66vqic6i1n9.apps.googleusercontent.com';
+        const exactRedirectUrl = window.location.origin + window.location.pathname;
+        const nonce = btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(16)))).replace(/=/g, '');
+        localStorage.setItem('supabase-auth-nonce', nonce);
+        
+        const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${clientId}&redirect_uri=${encodeURIComponent(exactRedirectUrl)}&response_type=id_token&scope=${encodeURIComponent('openid email profile')}&nonce=${nonce}&prompt=select_account`;
+        window.location.href = authUrl;
     } catch (err: any) {
         if (btn) btn.disabled = false;
         import('./utils').then(m => m.showError('Ошибка входа через Google: ' + err.message));

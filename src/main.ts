@@ -181,8 +181,21 @@ if (standaloneMiniAppId) {
 const hashParams = new URLSearchParams(window.location.hash.substring(1));
 const queryParams = new URLSearchParams(window.location.search);
 const hashError = hashParams.get('error_description') || hashParams.get('error') || queryParams.get('error_description') || queryParams.get('error');
+const idToken = hashParams.get('id_token') || queryParams.get('id_token');
 
-if (hashError) {
+if (idToken) {
+    const nonce = localStorage.getItem('supabase-auth-nonce') || undefined;
+    window.history.replaceState({}, document.title, window.location.pathname);
+    supabase.auth.signInWithIdToken({
+        provider: 'google',
+        token: idToken,
+        nonce: nonce
+    }).then(({ data, error }) => {
+        if (error) {
+            import('./utils').then(m => m.showError('Login Error: ' + error.message));
+        }
+    });
+} else if (hashError) {
     let errorMsg = decodeURIComponent(hashError.replace(/\+/g, ' '));
     if (errorMsg.includes('OAuth state not found') || errorMsg.includes('expired')) {
          errorMsg += ' (Подсказка: если ошибка повторяется, попробуйте открыть сайт в обычном браузере)';
