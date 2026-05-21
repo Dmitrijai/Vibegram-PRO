@@ -135,6 +135,7 @@ export async function loadMessagesUntil(chatId: string, targetMsgId: string) {
 }
 export async function loadMessages(chatId: string, isInitialLoad = false) {
     if (isInitialLoad) {
+        import('./messages-recording').then(m => m.cancelRecording());
         currentMessageLimit = 50;
         hasMoreMessages = true;
         setupMessageScrollListener();

@@ -176,6 +176,7 @@ export function playNotificationSound() {
 }
 
 export function closeChatMobile(skipHistoryBack = false) {
+    import('./messages-recording').then(m => m.cancelRecording());
     if (state.activeChatParentInfo && Object.keys(state.activeChatParentInfo).length > 0) {
         const parentId = state.activeChatParentInfo.parentId;
         const targetMsgId = state.activeChatParentInfo.messageId;
