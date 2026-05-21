@@ -9,10 +9,17 @@ export async function loginWithGoogle() {
     try {
         const clientId = '362424832513-mdflqja6lr0jq81es5frq66vqic6i1n9.apps.googleusercontent.com';
         const exactRedirectUrl = window.location.origin + window.location.pathname;
-        const nonce = btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(16)))).replace(/=/g, '');
-        localStorage.setItem('supabase-auth-nonce', nonce);
         
-        const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${clientId}&redirect_uri=${encodeURIComponent(exactRedirectUrl)}&response_type=id_token&scope=${encodeURIComponent('openid email profile')}&nonce=${nonce}&prompt=select_account`;
+        const rawNonce = btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(31)))).replace(/=/g, '');
+        const encoder = new TextEncoder();
+        const encodedNonce = encoder.encode(rawNonce);
+        const hashBuffer = await crypto.subtle.digest('SHA-256', encodedNonce);
+        const hashArray = Array.from(new Uint8Array(hashBuffer));
+        const hashedNonce = hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
+        
+        localStorage.setItem('supabase-auth-nonce', rawNonce);
+        
+        const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${clientId}&redirect_uri=${encodeURIComponent(exactRedirectUrl)}&response_type=id_token&scope=${encodeURIComponent('openid email profile')}&nonce=${hashedNonce}&prompt=select_account`;
         window.location.href = authUrl;
     } catch (err: any) {
         if (btn) btn.disabled = false;
