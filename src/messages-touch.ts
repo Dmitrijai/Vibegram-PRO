@@ -32,7 +32,7 @@ document.addEventListener('click', (e) => {
         if (touchTarget === msgId) {
             ignoreNextClick = true;
             (window as any).toggleReactionMenu(e, msgId);
-            if (navigator.vibrate && navigator.userActivation?.hasBeenActive) {
+            if (navigator.vibrate) {
                 try { navigator.vibrate(50); } catch(e){}
             }
             touchTarget = null;

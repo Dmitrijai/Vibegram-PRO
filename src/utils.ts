@@ -142,7 +142,7 @@ document.addEventListener('touchstart', () => {
 
 export function playNotificationSound() {
     try {
-        if (navigator.vibrate && navigator.userActivation?.hasBeenActive) {
+        if (navigator.vibrate) {
             try { navigator.vibrate([100, 50, 100]); } catch (e) {}
         }
         const ctx = getAudioContext();
