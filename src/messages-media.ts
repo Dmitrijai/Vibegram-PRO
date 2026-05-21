@@ -406,11 +406,13 @@ export function handleVideoCircleClick(event: MouseEvent, container: HTMLElement
     if (video.paused) {
         pauseAllMedia(video);
         video.play().catch(e => {
-            console.warn('Error playing video circle:', e);
-            customToast('Не удалось воспроизвести видео. Возможно, формат не поддерживается вашим браузером.');
-            container.classList.add('paused');
-            playIcon.classList.remove('hidden');
-            pauseIcon.classList.add('hidden');
+            if (e.name !== 'AbortError') {
+                console.warn('Error playing video circle:', e);
+                customToast('Не удалось воспроизвести видео. Возможно, формат не поддерживается вашим браузером.');
+                container.classList.add('paused');
+                playIcon.classList.remove('hidden');
+                pauseIcon.classList.add('hidden');
+            }
         });
         container.classList.remove('paused');
         playIcon.classList.add('hidden');
@@ -456,11 +458,13 @@ export function toggleInlineVideo(video: HTMLVideoElement) {
         pauseAllMedia(video);
         
         video.play().catch(e => {
-            console.warn('Error playing inline video:', e);
-            customToast('Не удалось воспроизвести видео. Возможно, формат не поддерживается вашим браузером.');
-            if (playIcon) playIcon.classList.remove('hidden');
-            if (pauseIcon) pauseIcon.classList.add('hidden');
-            if (overlay) overlay.classList.remove('opacity-0');
+            if (e.name !== 'AbortError') {
+                console.warn('Error playing inline video:', e);
+                customToast('Не удалось воспроизвести видео. Возможно, формат не поддерживается вашим браузером.');
+                if (playIcon) playIcon.classList.remove('hidden');
+                if (pauseIcon) pauseIcon.classList.add('hidden');
+                if (overlay) overlay.classList.remove('opacity-0');
+            }
         });
         if (playIcon) playIcon.classList.add('hidden');
         if (pauseIcon) pauseIcon.classList.remove('hidden');
@@ -555,8 +559,10 @@ export function toggleAudio(btn: HTMLElement, url: string) {
         pauseAllMedia(player);
         
         player.play().catch(e => {
-            console.warn('Error playing audio:', e);
-            customToast('Не удалось воспроизвести аудио. Возможно, формат не поддерживается вашим браузером.');
+            if (e.name !== 'AbortError') {
+                console.warn('Error playing audio:', e);
+                customToast('Не удалось воспроизвести аудио. Возможно, формат не поддерживается вашим браузером.');
+            }
         });
     } else {
         player.pause();

@@ -9,9 +9,9 @@ let currentCallPeerId: string | null = null;
 
 function playRingtone() {
     stopRingtone();
-    if (navigator.vibrate) {
+    if (navigator.vibrate && navigator.userActivation?.hasBeenActive) {
         // Vibrate in a repeating pattern for incoming calls for up to ~30 seconds
-        navigator.vibrate(Array.from({ length: 30 }).flatMap(() => [500, 500]));
+        try { navigator.vibrate(Array.from({ length: 30 }).flatMap(() => [500, 500])); } catch(e){}
     }
     const basePath = (import.meta as any).env.BASE_URL || '/';
     currentRingtone = new Audio(basePath + 'sound/skype_call.mp3');
@@ -27,7 +27,9 @@ function playRingtone() {
 }
 
 function stopRingtone() {
-    if (navigator.vibrate) navigator.vibrate(0);
+    if (navigator.vibrate && navigator.userActivation?.hasBeenActive) {
+        try { navigator.vibrate(0); } catch(e){}
+    }
     if (currentRingtone) {
         currentRingtone.pause();
         currentRingtone.currentTime = 0;
