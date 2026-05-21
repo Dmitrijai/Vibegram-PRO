@@ -9,7 +9,7 @@ let currentCallPeerId: string | null = null;
 
 function playRingtone() {
     stopRingtone();
-    if (navigator.vibrate && navigator.userActivation?.hasBeenActive) {
+    if (navigator.vibrate) {
         // Vibrate in a repeating pattern for incoming calls for up to ~30 seconds
         try { navigator.vibrate(Array.from({ length: 30 }).flatMap(() => [500, 500])); } catch(e){}
     }
@@ -27,7 +27,7 @@ function playRingtone() {
 }
 
 function stopRingtone() {
-    if (navigator.vibrate && navigator.userActivation?.hasBeenActive) {
+    if (navigator.vibrate) {
         try { navigator.vibrate(0); } catch(e){}
     }
     if (currentRingtone) {
@@ -42,12 +42,15 @@ const rtcConfig: RTCConfiguration = {
     iceServers: [
         { urls: [
             'stun:stun.l.google.com:19302',
+            'stun:stun1.l.google.com:19302',
             'stun:stun.cloudflare.com:3478'
         ]},
-        { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
-        { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
-        { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' },
-        { urls: 'turn:turn.bistri.com:80', username: 'homeo', credential: 'homeo' }
+        { urls: [
+            'turn:openrelay.metered.ca:80',
+            'turn:openrelay.metered.ca:443',
+            'turn:openrelay.metered.ca:443?transport=tcp',
+            'turns:openrelay.metered.ca:443?transport=tcp'
+        ], username: 'openrelayproject', credential: 'openrelayproject' }
     ]
 };
 
@@ -252,11 +255,11 @@ async function startCall(isVideo: boolean) {
         const remoteAudio = document.getElementById('remote-audio') as HTMLAudioElement;
         if (remoteVideo && isVideo) {
             remoteVideo.srcObject = remoteStream;
-            remoteVideo.play().catch(e => console.warn('Error playing remote video:', e));
+            remoteVideo.play().catch(e => { if (e.name !== 'AbortError') console.warn('Error playing remote video:', e); });
         }
         if (remoteAudio && !isVideo) {
             remoteAudio.srcObject = remoteStream;
-            remoteAudio.play().catch(e => console.warn('Error playing remote audio:', e));
+            remoteAudio.play().catch(e => { if (e.name !== 'AbortError') console.warn('Error playing remote audio:', e); });
         }
         
         localStream.getTracks().forEach(track => rtcPeerConnection!.addTrack(track, localStream!));
@@ -272,13 +275,13 @@ async function startCall(isVideo: boolean) {
                 if (isVideo && remoteVideo) {
                     if (remoteVideo.srcObject !== remoteStream) remoteVideo.srcObject = remoteStream;
                     const p = remoteVideo.play();
-                    if (p) p.catch(e => console.warn('Error playing remote video:', e));
+                    if (p) p.catch(e => { if (e.name !== 'AbortError') console.warn('Error playing remote video:', e); });
                     document.getElementById('call-avatar-container')?.classList.add('hidden');
                     remoteVideo.classList.remove('hidden');
                 } else if (!isVideo && remoteAudio) {
                     if (remoteAudio.srcObject !== remoteStream) remoteAudio.srcObject = remoteStream;
                     const p = remoteAudio.play();
-                    if (p) p.catch(e => console.warn('Error playing remote audio:', e));
+                    if (p) p.catch(e => { if (e.name !== 'AbortError') console.warn('Error playing remote audio:', e); });
                 }
             };
             
@@ -351,7 +354,7 @@ export async function answerCall(callerId: string, offer: any, callerName: strin
         const callSwitchCameraBtn = document.getElementById('call-switch-camera-btn');
         if (localVideo) {
             localVideo.srcObject = localStream;
-            localVideo.play().catch(e => console.warn('Error playing local video:', e));
+            localVideo.play().catch(e => { if (e.name !== 'AbortError') console.warn('Error playing local video:', e); });
             if (!isVideo) {
                 localVideo.classList.add('hidden');
                 if (localVideoContainer) localVideoContainer.classList.add('hidden');
@@ -372,11 +375,11 @@ export async function answerCall(callerId: string, offer: any, callerName: strin
         const remoteAudio = document.getElementById('remote-audio') as HTMLAudioElement;
         if (remoteVideo && isVideo) {
             remoteVideo.srcObject = remoteStream;
-            remoteVideo.play().catch(e => console.warn('Error playing remote video:', e));
+            remoteVideo.play().catch(e => { if (e.name !== 'AbortError') console.warn('Error playing remote video:', e); });
         }
         if (remoteAudio && !isVideo) {
             remoteAudio.srcObject = remoteStream;
-            remoteAudio.play().catch(e => console.warn('Error playing remote audio:', e));
+            remoteAudio.play().catch(e => { if (e.name !== 'AbortError') console.warn('Error playing remote audio:', e); });
         }
         
         localStream.getTracks().forEach(track => rtcPeerConnection!.addTrack(track, localStream!));
@@ -392,13 +395,13 @@ export async function answerCall(callerId: string, offer: any, callerName: strin
                 if (isVideo && remoteVideo) {
                     if (remoteVideo.srcObject !== remoteStream) remoteVideo.srcObject = remoteStream;
                     const p = remoteVideo.play();
-                    if (p) p.catch(e => console.warn('Error playing remote video:', e));
+                    if (p) p.catch(e => { if (e.name !== 'AbortError') console.warn('Error playing remote video:', e); });
                     document.getElementById('call-avatar-container')?.classList.add('hidden');
                     remoteVideo.classList.remove('hidden');
                 } else if (!isVideo && remoteAudio) {
                     if (remoteAudio.srcObject !== remoteStream) remoteAudio.srcObject = remoteStream;
                     const p = remoteAudio.play();
-                    if (p) p.catch(e => console.warn('Error playing remote audio:', e));
+                    if (p) p.catch(e => { if (e.name !== 'AbortError') console.warn('Error playing remote audio:', e); });
                 }
             };
             
