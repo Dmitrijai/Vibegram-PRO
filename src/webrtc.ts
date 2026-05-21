@@ -312,7 +312,7 @@ async function startCall(isVideo: boolean) {
         
         rtcPeerConnection.onicecandidate = event => {
             if (event.candidate) {
-                queueIceCandidate(targetUserId, event.candidate);
+                queueIceCandidate(targetUser.id, event.candidate);
             }
         };
         

@@ -292,38 +292,28 @@ export function showInAppNotification(chatId: string, title: string, text: strin
     let clickTimer: any;
 
     notif.onclick = (e) => {
-        clickCount++;
-        if (clickCount === 1) {
-            clickTimer = setTimeout(() => {
-                clickCount = 0;
-            }, 400);
-        } else if (clickCount === 2) {
-            clearTimeout(clickTimer);
-            clickCount = 0;
-            
-            const chatElement = document.querySelector(`div[data-chat-id="${chatId}"]`) as HTMLElement;
-            if (chatElement) {
-                chatElement.click();
-            } else {
-                // Fallback load chat if it's not rendered in the list yet
-                if ((window as any).logic?.loadChats) {
-                    (window as any).logic.loadChats().then(() => {
-                        const el = document.querySelector(`div[data-chat-id="${chatId}"]`) as HTMLElement;
-                        if (el) el.click();
-                    });
-                }
+        const chatElement = document.querySelector(`div[data-chat-id="${chatId}"]`) as HTMLElement;
+        if (chatElement) {
+            chatElement.click();
+        } else {
+            // Fallback load chat if it's not rendered in the list yet
+            if ((window as any).logic?.loadChats) {
+                (window as any).logic.loadChats().then(() => {
+                    const el = document.querySelector(`div[data-chat-id="${chatId}"]`) as HTMLElement;
+                    if (el) el.click();
+                });
             }
-            notif.remove();
         }
+        notif.remove();
     };
 
     container.appendChild(notif);
 
     // Animate in
-    requestAnimationFrame(() => {
+    setTimeout(() => {
         notif.classList.remove('-translate-y-4', 'opacity-0');
         notif.classList.add('translate-y-0', 'opacity-100');
-    });
+    }, 10);
 
     // Auto remove after 5 seconds
     setTimeout(() => {
