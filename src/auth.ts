@@ -7,13 +7,18 @@ export async function loginWithGoogle() {
     const btn = event?.currentTarget as HTMLButtonElement | undefined;
     if (btn) btn.disabled = true;
     try {
-        const { error } = await supabase.auth.signInWithOAuth({
+        const exactRedirectUrl = window.location.origin + window.location.pathname + (window.location.pathname.endsWith('/') ? '' : '/');
+        const { data, error } = await supabase.auth.signInWithOAuth({
             provider: 'google',
             options: {
-                redirectTo: window.location.origin + window.location.pathname,
+                redirectTo: exactRedirectUrl,
+                skipBrowserRedirect: true
             }
         });
         if (error) throw error;
+        if (data?.url) {
+            window.location.href = data.url;
+        }
     } catch (err: any) {
         if (btn) btn.disabled = false;
         import('./utils').then(m => m.showError('Ошибка входа через Google: ' + err.message));

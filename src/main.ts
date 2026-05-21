@@ -183,21 +183,13 @@ const queryParams = new URLSearchParams(window.location.search);
 const hashError = hashParams.get('error_description') || hashParams.get('error') || queryParams.get('error_description') || queryParams.get('error');
 
 if (hashError) {
-    import('./utils').then(m => m.showError('Auth Error: ' + decodeURIComponent(hashError.replace(/\+/g, ' '))));
+    let errorMsg = decodeURIComponent(hashError.replace(/\+/g, ' '));
+    if (errorMsg.includes('OAuth state not found') || errorMsg.includes('expired')) {
+         errorMsg += ' (Подсказка: если ошибка повторяется, попробуйте открыть сайт в обычном браузере)';
+    }
+    import('./utils').then(m => m.showError('Auth Error: ' + errorMsg));
     window.history.replaceState({}, document.title, window.location.pathname);
-} else if (queryParams.get('code')) {
-    // We have a code, let's see if it exchanges it successfully
-    supabase.auth.onAuthStateChange((event) => {
-        if (event === 'SIGNED_OUT') {
-            const hasAuthError = localStorage.getItem('supabase-auth-error');
-            if (!hasAuthError) {
-                // If we get signed out immediately after a code exchange attempt, something failed
-                console.warn('OAuth code exchange might have failed');
-            }
-        }
-    });
 }
-
 
 supabase.auth.getSession().then(({ data: { session }, error }) => {
     if (isStandaloneMiniAppMode) return;

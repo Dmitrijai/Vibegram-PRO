@@ -9,7 +9,11 @@ if (!SUPABASE_URL || !SUPABASE_KEY) {
     console.error('Ключи Supabase не настроены. Добавьте SUPABASE_URL и SUPABASE_ANON_KEY в AI Studio Secrets.');
 }
 
-export const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
+export const supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
+    auth: {
+        flowType: 'implicit'
+    }
+});
 
 // Глобальное состояние приложения
 export const state = {
