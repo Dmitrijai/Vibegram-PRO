@@ -314,7 +314,7 @@ function setupRealtime() {
                                 new Notification(`Новое сообщение от ${senderName}`, { body: text });
                             }
                             
-                            if (!document.hidden && state.activeChatId !== payload.new.chat_id) {
+                            if (state.activeChatId !== payload.new.chat_id) {
                                 if ((window as any).logic?.showInAppNotification) {
                                     (window as any).logic.showInAppNotification(payload.new.chat_id, senderName, text, sender?.avatar_url || null);
                                 }
@@ -553,6 +553,19 @@ document.addEventListener('DOMContentLoaded', () => {
     };
     document.body.addEventListener('click', handleFirstInteraction);
     document.body.addEventListener('touchstart', handleFirstInteraction);
+    
+    document.addEventListener('fullscreenchange', () => {
+        const isFullscreen = !!document.fullscreenElement;
+        if (isFullscreen) {
+            localStorage.setItem('vibegram_fullscreen', 'true');
+        } else {
+            localStorage.removeItem('vibegram_fullscreen');
+        }
+        const toggle = document.getElementById('settings-fullscreen') as HTMLInputElement;
+        if (toggle) {
+            toggle.checked = isFullscreen;
+        }
+    });
 });
 
 setupMiniApps();

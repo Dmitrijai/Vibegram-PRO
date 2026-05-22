@@ -25,118 +25,115 @@ body { font-family: 'Inter', sans-serif; background-color: #f3f4f6; -webkit-tap-
 
 /* Custom Backgrounds */
 .bg-anim-1 {
-    background: linear-gradient(120deg, #fdfbfb 0%, #ebedee 100%);
+    background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
 }
 .dark .bg-anim-1 {
-    background: linear-gradient(120deg, #18181b 0%, #27272a 100%);
+    background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
 }
 .bg-anim-2 {
-    background: linear-gradient(to top, #dfe9f3 0%, white 100%);
+    background: linear-gradient(to top, #accbee 0%, #e7f0fd 100%);
 }
 .dark .bg-anim-2 {
-    background: linear-gradient(to top, #0f172a 0%, #1e293b 100%);
+    background: linear-gradient(to top, #020617 0%, #0f172a 100%);
 }
 .bg-anim-3 {
     background-color: #f8fafc;
-    background-image: radial-gradient(circle at 10% 20%, #e2e8f0 0%, transparent 50%), radial-gradient(circle at 90% 80%, #cbd5e1 0%, transparent 50%);
+    background-image: radial-gradient(circle at 20% 30%, #e2e8f0 0%, transparent 60%), radial-gradient(circle at 80% 80%, #cbd5e1 0%, transparent 60%);
 }
 .dark .bg-anim-3 {
-    background-color: #0f172a;
-    background-image: radial-gradient(circle at 10% 20%, #1e293b 0%, transparent 50%), radial-gradient(circle at 90% 80%, #334155 0%, transparent 50%);
+    background-color: #020617;
+    background-image: radial-gradient(circle at 20% 30%, #1e293b 0%, transparent 60%), radial-gradient(circle at 80% 80%, #334155 0%, transparent 60%);
 }
 .bg-anim-4 {
-    background: linear-gradient(-45deg, #f3e7e9 0%, #e3eeff 99%, #e3eeff 100%);
+    background: linear-gradient(-45deg, #e3ebe8 0%, #e3eeff 100%);
 }
 .dark .bg-anim-4 {
-    background: linear-gradient(-45deg, #1e1b4b 0%, #312e81 100%);
+    background: linear-gradient(-45deg, #1e1b4b 0%, #111827 100%);
 }
 .bg-anim-5 {
-    background: radial-gradient(73% 147%, #EADCEB 59%, #BFDFE5 100%), radial-gradient(91% 146%, rgba(255,255,255,0.50) 47%, rgba(0,0,0,0.50) 100%);
-    background-blend-mode: screen;
+    background: radial-gradient(circle at top left, #fff1eb 0%, #ace0f9 100%);
 }
 .dark .bg-anim-5 {
-    background: radial-gradient(73% 147%, #2a112d 59%, #122c32 100%), radial-gradient(91% 146%, rgba(0,0,0,0.50) 47%, rgba(255,255,255,0.10) 100%);
-    background-blend-mode: screen;
+    background: radial-gradient(circle at top left, #1e0000 0%, #001e2b 100%);
 }
 .bg-anim-6 {
-    background: linear-gradient(to right, #fa709a 0%, #fee140 100%);
-    opacity: 0.8;
+    background: linear-gradient(120deg, #f6d365 0%, #fda085 100%);
 }
 .dark .bg-anim-6 {
-    background: linear-gradient(to right, #4c1d95 0%, #881b4d 100%);
+    background: linear-gradient(120deg, #4c1d95 0%, #2a0a4a 100%);
 }
 .bg-anim-7 {
-    background-color: #ffffff;
-    background-image: linear-gradient(90deg, transparent 79px, #f1f5f9 79px, #f1f5f9 81px, transparent 81px),
-                      linear-gradient(#eee 1px, transparent 1px);
+    background-color: #fcfcfc;
+    background-image: linear-gradient(90deg, transparent 79px, #e2e8f0 79px, #e2e8f0 81px, transparent 81px),
+                      linear-gradient(#e2e8f0 1px, transparent 1px);
     background-size: 100% 100%, 80px 80px;
 }
 .dark .bg-anim-7 {
-    background-color: #020617;
-    background-image: linear-gradient(90deg, transparent 79px, #0f172a 79px, #0f172a 81px, transparent 81px),
-                      linear-gradient(#0f172a 1px, transparent 1px);
+    background-color: #0b0f19;
+    background-image: linear-gradient(90deg, transparent 79px, #1e293b 79px, #1e293b 81px, transparent 81px),
+                      linear-gradient(#1e293b 1px, transparent 1px);
     background-size: 100% 100%, 80px 80px;
 }
 .bg-pattern-dots {
     background-color: #f8fafc;
-    background-image: radial-gradient(#cbd5e1 1px, transparent 1px);
+    background-image: radial-gradient(#94a3b8 1px, transparent 1px);
     background-size: 20px 20px;
 }
 .dark .bg-pattern-dots {
-    background-color: #0f172a;
-    background-image: radial-gradient(#334155 1px, transparent 1px);
+    background-color: #020617;
+    background-image: radial-gradient(#475569 1px, transparent 1px);
     background-size: 20px 20px;
 }
 
 /* Premium Animated Backgrounds */
 .bg-premium-1 {
-    background: linear-gradient(-45deg, #a18cd1 0%, #fbc2eb 50%, #8fd3f4 100%);
-    background-size: 400% 400%;
-    animation: premiumPulse 12s ease infinite alternate;
+    background: linear-gradient(-45deg, #ff9a9e 0%, #fecfef 40%, #a1c4fd 100%);
+    background-size: 300% 300%;
+    animation: premiumFlow 12s cubic-bezier(0.4, 0, 0.2, 1) infinite alternate;
 }
 .dark .bg-premium-1 {
-    background: linear-gradient(-45deg, #1e0026 0%, #461b45 50%, #0c384e 100%);
-    background-size: 400% 400%;
-    animation: premiumPulse 12s ease infinite alternate;
+    background: linear-gradient(-45deg, #2a0845 0%, #6441A5 50%, #0f172a 100%);
+    background-size: 300% 300%;
+    animation: premiumFlow 12s cubic-bezier(0.4, 0, 0.2, 1) infinite alternate;
 }
 .bg-premium-2 {
-    background: radial-gradient(circle at 0% 0%, #ffcfdf 0%, transparent 50%),
-                radial-gradient(circle at 100% 100%, #b0f3f1 0%, transparent 50%),
-                radial-gradient(circle at 50% 50%, #ffc3a0 0%, transparent 50%);
-    background-color: #fdfbfb;
+    background: radial-gradient(circle at 10% 20%, #a8edea 0%, transparent 60%),
+                radial-gradient(circle at 90% 80%, #fed6e3 0%, transparent 60%),
+                radial-gradient(circle at 50% 50%, #e0c3fc 0%, transparent 60%);
+    background-color: #f8fafc;
     background-size: 150% 150%;
-    animation: floatingOrbs 15s ease-in-out infinite alternate;
+    animation: premiumOrbs 18s ease-in-out infinite alternate;
 }
 .dark .bg-premium-2 {
-    background: radial-gradient(circle at 0% 0%, #461426 0%, transparent 50%),
-                radial-gradient(circle at 100% 100%, #164645 0%, transparent 50%),
-                radial-gradient(circle at 50% 50%, #462c1b 0%, transparent 50%);
-    background-color: #050505;
+    background: radial-gradient(circle at 10% 20%, #1e3a8a 0%, transparent 60%),
+                radial-gradient(circle at 90% 80%, #4c1d95 0%, transparent 60%),
+                radial-gradient(circle at 50% 50%, #0369a1 0%, transparent 60%);
+    background-color: #020617;
     background-size: 150% 150%;
-    animation: floatingOrbs 15s ease-in-out infinite alternate;
+    animation: premiumOrbs 18s ease-in-out infinite alternate;
 }
 .bg-premium-3 {
-    background: linear-gradient(120deg, #84fab0 0%, #8fd3f4 50%, #d4fc79 100%);
-    background-size: 300% 300%;
-    animation: AuroraWave 10s ease-in-out infinite alternate;
+    background: linear-gradient(120deg, #d4fc79 0%, #96e6a1 50%, #84fab0 100%);
+    background-size: 250% 250%;
+    animation: premiumAurora 15s ease-in-out infinite alternate;
 }
 .dark .bg-premium-3 {
-    background: linear-gradient(120deg, #10341e 0%, #112d3d 50%, #2f3a18 100%);
-    background-size: 300% 300%;
-    animation: AuroraWave 15s ease-in-out infinite alternate;
+    background: linear-gradient(120deg, #064e3b 0%, #0f766e 50%, #075985 100%);
+    background-size: 250% 250%;
+    animation: premiumAurora 15s ease-in-out infinite alternate;
 }
 
-@keyframes premiumPulse {
+@keyframes premiumFlow {
     0% { background-position: 0% 50%; }
     50% { background-position: 100% 50%; }
     100% { background-position: 0% 50%; }
 }
-@keyframes floatingOrbs {
+@keyframes premiumOrbs {
     0% { background-position: 0% 0%; }
     50% { background-position: 100% 100%; }
     100% { background-position: 0% 100%; }
 }
-@keyframes AuroraWave {
+@keyframes premiumAurora {
     0% { background-position: 0% 50%; }
     50% { background-position: 100% 50%; }
     100% { background-position: 0% 50%; }

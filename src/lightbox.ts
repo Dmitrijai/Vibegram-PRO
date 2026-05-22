@@ -1,7 +1,9 @@
 import { isSelectionMode } from './selection';
+import Panzoom from '@panzoom/panzoom';
 
 let lightboxItems: string[] = [];
 let currentLightboxIndex = 0;
+let currentPanzoom: any = null;
 
 export function openLightbox(url: string) {
     if (isSelectionMode) {
@@ -21,6 +23,10 @@ export function openLightbox(url: string) {
 
 export function closeLightbox(e?: Event) {
     if (e) e.stopPropagation();
+    if (currentPanzoom) {
+        currentPanzoom.destroy();
+        currentPanzoom = null;
+    }
     document.getElementById('lightbox-modal')?.classList.add('hidden');
     const content = document.getElementById('lightbox-content');
     if (content) content.innerHTML = '';
@@ -54,10 +60,51 @@ function renderLightbox() {
     
     const isVideo = url.includes('.webm') || url.includes('.mp4') || url.includes('.mov') || url.includes('video');
     
+    if (currentPanzoom) {
+        currentPanzoom.destroy();
+        currentPanzoom = null;
+    }
+    
     if (isVideo) {
         content.innerHTML = `<video src="${url}" class="max-w-full max-h-full object-contain rounded-lg shadow-2xl" controls autoplay onerror="this.onerror=null; window.handleMediaError(this, '${url}');"></video>`;
     } else {
-        content.innerHTML = `<img src="${url}" class="max-w-full max-h-full object-contain rounded-lg shadow-2xl" onerror="this.onerror=null; window.handleMediaError(this, '${url}');">`;
+        content.innerHTML = `<img src="${url}" id="lightbox-zoom-img" class="max-w-full max-h-full object-contain rounded-lg shadow-2xl origin-center" onerror="this.onerror=null; window.handleMediaError(this, '${url}');">`;
+        setTimeout(() => {
+            const img = document.getElementById('lightbox-zoom-img') as HTMLImageElement;
+            if (img && content) {
+                currentPanzoom = Panzoom(img, {
+                    maxScale: 5,
+                    minScale: 1,
+                    step: 0.2,
+                    contain: 'outside'
+                });
+                
+                content.addEventListener('wheel', (e) => {
+                    if (e.shiftKey || e.ctrlKey) {
+                        currentPanzoom.zoomWithWheel(e);
+                    } else {
+                        // Regular scrolling can pan or zoom based on preference, let's zoom
+                        currentPanzoom.zoomWithWheel(e);
+                    }
+                }, { passive: false });
+                
+                // Double tap to zoom
+                let lastTap = 0;
+                img.addEventListener('click', (e) => {
+                    const now = Date.now();
+                    if (now - lastTap < 300) {
+                        e.preventDefault();
+                        const currentScale = currentPanzoom.getScale();
+                        if (currentScale > 1) {
+                            currentPanzoom.reset();
+                        } else {
+                            currentPanzoom.zoom(2.5, { animate: true });
+                        }
+                    }
+                    lastTap = now;
+                });
+            }
+        }, 50);
     }
     
     prevBtn.classList.toggle('hidden', currentLightboxIndex === 0);

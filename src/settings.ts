@@ -634,7 +634,10 @@ function updateBonusProgress() {
     const p365 = s365 ? parseInt(s365.value) || 300 : 300;
 
     modal.innerHTML = `
-        <div class="p-6">
+        <div class="p-6 relative">
+            <button onclick="window.showPremiumBenefits()" class="absolute top-4 right-4 text-gray-400 hover:text-indigo-500 transition-colors p-2 bg-gray-50 dark:bg-gray-800 rounded-full shadow-sm border border-gray-200 dark:border-gray-700" title="О премиуме">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+            </button>
             <div class="text-center mb-6">
                 <div class="w-20 h-20 mx-auto bg-gradient-to-br from-indigo-100 to-white rounded-full flex items-center justify-center p-4 shadow-lg shadow-indigo-500/30 mb-4"><img src="./image/Google-Gemini-Logo-Transparent.png" class="w-full h-full object-contain" alt="Premium"></div>
                 <h3 class="text-2xl font-bold dark:text-white">VIBEGRAM PREMIUM</h3>
@@ -665,6 +668,28 @@ function updateBonusProgress() {
             </div>
             
             <button onclick="window.closeModal()" class="w-full py-3 bg-gray-100 hover:bg-gray-200 dark:bg-gray-800 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-xl font-medium transition-colors">Отмена</button>
+        </div>
+    `;
+};
+
+(window as any).showPremiumBenefits = () => {
+    const modal = document.getElementById('modal-content')!;
+    modal.innerHTML = `
+        <div class="p-6 relative">
+            <h3 class="text-2xl font-bold dark:text-white mb-6 pr-8">Преимущества Premium</h3>
+            <ul class="space-y-4 text-sm text-gray-700 dark:text-gray-300">
+                <li class="flex gap-3 items-start"><span class="text-xl">✨</span> <span><b>Эксклюзивные обои</b> с плавной анимацией для чатов.</span></li>
+                <li class="flex gap-3 items-start"><span class="text-xl">📝</span> <span><b>Голосовые сообщения</b>: преобразование в текст с помощью AI.</span></li>
+                <li class="flex gap-3 items-start"><span class="text-xl">💸</span> <span><b>Монетизация</b>: Установка цены за отправку сообщений вам от других пользователей.</span></li>
+                <li class="flex gap-3 items-start"><span class="text-xl">🌟</span> <span><b>Значок Premium</b> — эксклюзивный статус рядом с вашим именем во всех чатах.</span></li>
+                <li class="flex gap-3 items-start"><span class="text-xl">🎙️</span> <span>Возможность отправки <b>кружочков (видеосообщений)</b>.</span></li>
+                <li class="flex gap-3 items-start"><span class="text-xl">🚀</span> <span><b>Увеличенные лимиты</b> для загружаемых файлов и медиа.</span></li>
+                <li class="flex gap-3 items-start"><span class="text-xl">🎮</span> <span>Разработка и <b>создание собственных мини-приложений</b> в каталоге.</span></li>
+            </ul>
+            <div class="mt-8 flex justify-end gap-3">
+                <button onclick="import('./utils').then(m => m.closeModal())" class="px-4 py-2 bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 rounded-xl font-medium transition-colors hover:bg-gray-200 dark:hover:bg-gray-700">Отмена</button>
+                <button onclick="window.buyPremiumModal()" class="bg-gradient-to-r from-yellow-400 to-orange-500 hover:from-yellow-300 hover:to-orange-400 text-yellow-900 px-6 py-2 rounded-xl font-bold shadow-lg shadow-orange-500/20 transition-transform active:scale-95">К покупке</button>
+            </div>
         </div>
     `;
 };
