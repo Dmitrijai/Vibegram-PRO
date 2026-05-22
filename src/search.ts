@@ -100,14 +100,14 @@ export async function joinGroup(group: any) {
     const { data: existing } = await supabase.from('chat_members').select('*').eq('chat_id', group.id).eq('user_id', state.currentUser.id).single();
     if (existing) {
         if (existing.role === 'pending') {
-            import('./utils').then(m => m.customAlert('Заявка на вступление уже отправлена. Ожидайте подтверждения.'));
+            window.customAlert('Заявка на вступление уже отправлена. Ожидайте подтверждения.');
         } else {
             const { data: members } = await supabase.from('chat_members').select('*, profiles(*)').eq('chat_id', group.id);
             import('./chat').then(m => m.openChat(group.id, group.title, group.title[0].toUpperCase(), true, group.type, members || [], group.avatar_url, group.description, group.is_public));
         }
     } else {
         await supabase.from('chat_members').insert({ chat_id: group.id, user_id: state.currentUser.id, role: 'pending' });
-        import('./utils').then(m => m.customAlert('Заявка на вступление отправлена.'));
+        window.customAlert('Заявка на вступление отправлена.');
     }
 }
 
@@ -115,7 +115,7 @@ export async function joinChannel(channel: any) {
     const { data: existing } = await supabase.from('chat_members').select('*').eq('chat_id', channel.id).eq('user_id', state.currentUser.id).single();
     if (!existing) {
         await supabase.from('chat_members').insert({ chat_id: channel.id, user_id: state.currentUser.id, role: 'member' });
-        import('./utils').then(m => m.customAlert('Вы подписались на канал.'));
+        window.customAlert('Вы подписались на канал.');
     }
     
     const { data: members } = await supabase.from('chat_members').select('*, profiles(*)').eq('chat_id', channel.id);
@@ -163,7 +163,7 @@ export async function startChatWithUser(userToFind: any) {
 export async function startDirectChatById(userId: string) {
     const { data: userToFind } = await supabase.from('profiles').select('*').eq('id', userId).single();
     if (userToFind) {
-        import('./utils').then(m => m.closeModal());
+        window.closeModal();
         startChatWithUser(userToFind);
     }
 }

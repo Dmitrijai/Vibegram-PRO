@@ -807,6 +807,6 @@ export async function openChat(chatId: string, chatName: string, firstLetter: st
             innerEl.classList.remove('!ring-4', '!ring-blue-500', '!bg-blue-500/40', '!scale-[1.02]');
         }, 1500);
     } else {
-        import('./utils').then(m => m.customToast('Сообщение не найдено на экране (может потребоваться прокрутка).'));
+        window.customToast('Сообщение не найдено на экране (может потребоваться прокрутка).');
     }
 };

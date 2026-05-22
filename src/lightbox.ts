@@ -75,7 +75,8 @@ function renderLightbox() {
                 currentPanzoom = Panzoom(img, {
                     maxScale: 5,
                     minScale: 1,
-                    step: 0.2
+                    step: 0.2,
+                    contain: 'outside'
                 });
                 
                 content.addEventListener('wheel', (e) => {

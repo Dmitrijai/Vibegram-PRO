@@ -187,7 +187,7 @@ export function handleMediaSelect(e: any) {
     const newTotalSize = newFiles.reduce((acc: number, f: File) => acc + f.size, 0);
     
     if (currentTotalSize + newTotalSize > maxSizeBytes) {
-        import('./utils').then(m => m.customToast(`Общий размер файлов превышает ${maxSizeMB}МБ.${!isPremium ? ' Приобретите Premium для увеличения лимита до 800МБ!' : ''}`));
+        window.customToast(`Общий размер файлов превышает ${maxSizeMB}МБ.${!isPremium ? ' Приобретите Premium для увеличения лимита до 800МБ!' : ''}`);
         e.target.value = '';
         return;
     }
@@ -291,7 +291,7 @@ export function handleFileSelect(e: any) {
     const newTotalSize = newFiles.reduce((acc: number, f: File) => acc + f.size, 0);
     
     if (newTotalSize > maxSizeBytes) {
-        import('./utils').then(m => m.customToast(`Общий размер файлов превышает ${maxSizeMB}МБ.${!isPremium ? ' Приобретите Premium для увеличения лимита до 800МБ!' : ''}`));
+        window.customToast(`Общий размер файлов превышает ${maxSizeMB}МБ.${!isPremium ? ' Приобретите Premium для увеличения лимита до 800МБ!' : ''}`);
         e.target.value = '';
         return;
     }

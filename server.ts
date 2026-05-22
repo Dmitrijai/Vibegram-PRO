@@ -134,6 +134,30 @@ async function startServer() {
     }
   });
 
+  // API Route for Gemini Proxy to bypass region locks
+  app.post("/api/gemini/transcribe", async (req, res) => {
+    try {
+       const { apiKey, mimeType, base64data } = req.body;
+       const { GoogleGenAI } = await import("@google/genai");
+       const ai = new GoogleGenAI({ apiKey });
+       const result = await ai.models.generateContent({
+           model: 'gemini-2.5-flash',
+           contents: [
+               {
+                   role: 'user',
+                   parts: [
+                       { text: 'Transcribe this audio/video. Return only the transcription text in the language spoken. If there is no speech, return an empty string.' },
+                       { inlineData: { data: base64data, mimeType: mimeType } }
+                   ]
+               }
+           ]
+       });
+       res.json({ text: result.text });
+    } catch (e: any) {
+       res.status(500).json({ error: e.message });
+    }
+  });
+
     if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
       server: { middlewareMode: true },

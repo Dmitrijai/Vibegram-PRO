@@ -39,20 +39,20 @@ export async function transcribeMedia(url: string, messageId: string, msgType?: 
             mimeType = 'audio/webm';
         }
 
-        // Call Gemini
-        const result = await executeAiWithFallback(async (ai: GoogleGenAI) => {
-            return await ai.models.generateContent({
-                model: 'gemini-2.5-flash',
-                contents: [
-                    {
-                        role: 'user',
-                        parts: [
-                            { text: 'Transcribe this audio/video. Return only the transcription text in the language spoken. If there is no speech, return an empty string.' },
-                            { inlineData: { data: base64data, mimeType } }
-                        ]
-                    }
-                ]
+        // Call Gemini via proxy to avoid region lock
+        const result = await executeAiWithFallback(async (ai: GoogleGenAI, currentKey: string) => {
+            const resp = await fetch("/api/gemini/transcribe", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ apiKey: currentKey, mimeType, base64data })
             });
+            if (!resp.ok) {
+                const errText = await resp.text();
+                throw new Error(errText);
+            }
+            const data = await resp.json();
+            if (data.error) throw new Error(data.error);
+            return { text: data.text as string };
         });
 
         const transcription = result.text?.trim() || 'Нет речи';

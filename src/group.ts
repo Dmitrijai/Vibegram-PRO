@@ -1207,7 +1207,7 @@ export async function addSelectedMembers() {
 
 export function openCreateGroup(skipPushState = false) {
     if (state.currentProfile?.settings?.is_tech_support) {
-        import('./utils').then(m => m.customAlert("Техническая поддержка не может создавать группы."));
+        window.customAlert("Техническая поддержка не может создавать группы.");
         return;
     }
 
@@ -1224,7 +1224,7 @@ export function openCreateGroup(skipPushState = false) {
 
 export function openCreateChannel(skipPushState = false) {
     if (state.currentProfile?.settings?.is_tech_support) {
-        import('./utils').then(m => m.customAlert("Техническая поддержка не может создавать каналы."));
+        window.customAlert("Техническая поддержка не может создавать каналы.");
         return;
     }
 
@@ -1255,7 +1255,7 @@ export function renderCreateGroupModal(type: 'group' | 'channel' = 'group') {
         <div class="p-6">
             <div class="flex justify-between items-center mb-6">
                 <div class="flex items-center gap-3">
-                    <button onclick="import('./utils').then(m => m.closeModal(undefined, true)); setTimeout(() => { window.location.hash = '#settings'; window.openSettings('full', true); }, 50);" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 bg-gray-100 dark:bg-gray-800 p-2 rounded-full transition-colors"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path></svg></button>
+                    <button onclick="window.closeModal(undefined, true); setTimeout(() => { window.location.hash = '#settings'; window.openSettings('full', true); }, 50);" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 bg-gray-100 dark:bg-gray-800 p-2 rounded-full transition-colors"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path></svg></button>
                     <h3 class="text-2xl font-bold text-gray-800 dark:text-gray-100">${isChannel ? 'Новый канал' : 'Новая группа'}</h3>
                 </div>
                     <button onclick="window.closeModal(undefined, true); window.location.hash = '';" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 bg-gray-100 dark:bg-gray-800 p-2 rounded-full transition-colors">✕</button>
@@ -1396,7 +1396,7 @@ export async function createGroup() {
     await supabase.from('chat_members').insert(members);
     
     window.history.replaceState({ screen: 'chat', chatId: newChatId }, '', '#chat');
-    import('./utils').then(m => m.closeModal(undefined, true));
+    window.closeModal(undefined, true);
     await loadChats();
     openChat(newChatId, name, name[0].toUpperCase(), true, 'group', members.map(m=>({user_id: m.user_id, role: m.role})), undefined, undefined, isPublic, true);
 }
@@ -1422,7 +1422,7 @@ export async function createChannel() {
     await supabase.from('chat_members').insert(members);
     
     window.history.replaceState({ screen: 'chat', chatId: newChatId }, '', '#chat');
-    import('./utils').then(m => m.closeModal(undefined, true));
+    window.closeModal(undefined, true);
     await loadChats();
     openChat(newChatId, name, name[0].toUpperCase(), true, 'channel', members.map(m=>({user_id: m.user_id, role: m.role})), undefined, undefined, isPublic, true);
 }
@@ -1477,7 +1477,7 @@ export async function deleteChat() {
         if (error) console.error("Error leaving chat:", error);
     }
     
-    import('./utils').then(m => m.closeModal(undefined, true));
+    window.closeModal(undefined, true);
     
     import('./utils').then(m => m.closeChatMobile(true));
     

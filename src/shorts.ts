@@ -5,7 +5,7 @@ let currentShortIdForComments: string | null = null;
 let activeVideo: HTMLVideoElement | null = null;
 
 export async function openShorts(initialShortId?: string, authorFilterId?: string, skipPushState = false) {
-    import('./utils').then(m => m.closeModal(undefined, true));
+    window.closeModal(undefined, true);
     if (!skipPushState && window.location.hash !== '#shorts') {
         window.history.pushState({ type: 'shorts', shortId: initialShortId, authorId: authorFilterId }, '', '#shorts');
     }
@@ -917,7 +917,7 @@ async function recordView(shortId: string) {
         }
     } catch (e: any) { 
         console.error(e); 
-        import('./utils').then(m => m.customAlert("Ошибка при лайке: " + e.message));
+        window.customAlert("Ошибка при лайке: " + e.message);
     }
 };
 
@@ -1103,7 +1103,7 @@ let replyingToCommentId: string | null = null;
         loadShortComments(currentShortIdForComments);
     } catch (e: any) {
         console.error(e);
-        import('./utils').then(m => m.customAlert("Ошибка при отправке комментария: " + e.message));
+        window.customAlert("Ошибка при отправке комментария: " + e.message);
     }
 };
 
@@ -1156,7 +1156,7 @@ let selectedShortFile: File | null = null;
     if (!file) return;
     
     if (file.type.indexOf('video') === -1) {
-        import('./utils').then(m => m.customToast("Пожалуйста, выберите видео файл"));
+        window.customToast("Пожалуйста, выберите видео файл");
         return;
     }
     
@@ -1164,7 +1164,7 @@ let selectedShortFile: File | null = null;
     const maxSizeMB = isPremium ? 200 : 150;
     
     if (file.size > maxSizeMB * 1024 * 1024) {
-        import('./utils').then(m => m.customToast(`Размер видео не должен превышать ${maxSizeMB}МБ.${!isPremium ? ' Приобретите Premium для увеличения лимита до 200МБ!' : ''}`));
+        window.customToast(`Размер видео не должен превышать ${maxSizeMB}МБ.${!isPremium ? ' Приобретите Premium для увеличения лимита до 200МБ!' : ''}`);
         return;
     }
     
@@ -1190,7 +1190,7 @@ let selectedShortFile: File | null = null;
 
 (window as any).submitShort = async () => {
     if (!selectedShortFile || !state.currentUser) {
-        import('./utils').then(m => m.customAlert("Выберите видео"));
+        window.customAlert("Выберите видео");
         return;
     }
     
@@ -1201,11 +1201,11 @@ let selectedShortFile: File | null = null;
     const desc = descInput.value.trim();
     
     if (title.length > 25) {
-        import('./utils').then(m => m.customToast('Название не должно превышать 25 символов'));
+        window.customToast('Название не должно превышать 25 символов');
         return;
     }
     if (desc.length > 200) {
-        import('./utils').then(m => m.customToast('Описание не должно превышать 200 символов'));
+        window.customToast('Описание не должно превышать 200 символов');
         return;
     }
 
@@ -1229,14 +1229,14 @@ let selectedShortFile: File | null = null;
         
         if (insertError) throw insertError;
         
-        import('./utils').then(m => m.customAlert("Видео успешно опубликовано!"));
+        window.customAlert("Видео успешно опубликовано!");
         (window as any).closeUploadShort();
         
         loadShorts();
         
     } catch(e: any) {
         console.error(e);
-        import('./utils').then(m => m.customAlert("Ошибка загрузки: " + e.message));
+        window.customAlert("Ошибка загрузки: " + e.message);
     } finally {
         if (progressOverlay) progressOverlay.className = 'hidden absolute inset-0 bg-gray-900/80 flex-col items-center justify-center z-20 backdrop-blur-sm';
         btn.disabled = false;
@@ -1274,9 +1274,9 @@ export async function deleteShort(shortId: string) {
     // Check if it was actually deleted
     const { data: stillExists } = await supabase.from('shorts').select('id').eq('id', shortId).single();
     if (stillExists) {
-        import('./utils').then(m => m.customAlert("Ошибка: Недостаточно прав для удаления (необходима политика RLS для DELETE) или есть связанные данные. Шортс скрыт только локально."));
+        window.customAlert("Ошибка: Недостаточно прав для удаления (необходима политика RLS для DELETE) или есть связанные данные. Шортс скрыт только локально.");
     } else {
-        import('./utils').then(m => m.customAlert("Видео успешно удалено."));
+        window.customAlert("Видео успешно удалено.");
     }
     
     // Cleanup lists

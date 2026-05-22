@@ -988,7 +988,7 @@ async function actuallySend(text: string, files: File[], input: HTMLTextAreaElem
     } catch (err: any) {
         if (err.message === 'Upload cancelled' || err.name === 'AbortError' || String(err).toLowerCase().includes('abort')) {
             document.getElementById(tempId)?.remove();
-            import('./utils').then(m => m.customToast('Отправка отменена'));
+            window.customToast('Отправка отменена');
         } else {
             console.error('Error sending message:', err);
             document.getElementById(tempId)?.remove();
