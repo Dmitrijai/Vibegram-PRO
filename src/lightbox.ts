@@ -84,7 +84,7 @@ function renderLightbox() {
                     currentPanzoom.zoomWithWheel(e);
                 }, { passive: false });
                 
-                // Single click to zoom
+                // Single click to zoom (desktop) or tap
                 img.addEventListener('click', (e) => {
                     e.preventDefault();
                     const currentScale = currentPanzoom.getScale();
@@ -95,32 +95,25 @@ function renderLightbox() {
                     }
                 });
 
-                img.addEventListener('panzoomchange', (e: any) => {
-                    if (e.detail.scale > 1) {
-                        currentPanzoom.setOptions({ contain: 'outside' });
-                    } else {
-                        currentPanzoom.setOptions({ contain: undefined });
-                    }
-                });
-
-                img.addEventListener('panzoomend', (e: any) => {
-                    if (e.detail.scale <= 1) {
+                img.addEventListener('panzoomend', () => {
+                    const currentScale = currentPanzoom.getScale();
+                    if (currentScale <= 1) {
                         currentPanzoom.pan(0, 0, { animate: true });
                     }
                 });
-
-                // Snap back on touch release like Telegram
-                const onTouchEnd = (e: TouchEvent) => {
-                    if (e.touches.length === 0) {
-                        const currentScale = currentPanzoom.getScale();
-                        if (currentScale > 1) {
-                            // If we want it to snap back to 1 on pinch release, uncomment this:
-                            // currentPanzoom.reset({ animate: true });
-                        }
+                
+                // Allow "pull to close" effect, but restrict it from going fully off-screen without closing
+                img.addEventListener('panzoompan', (e: any) => {
+                    if (currentPanzoom.getScale() <= 1) {
+                       const pan = currentPanzoom.getPan();
+                       const limitY = window.innerHeight / 2.5; 
+                       
+                       // Close lightbox if pulled too far
+                       if (Math.abs(pan.y) > limitY) {
+                           closeLightbox();
+                       }
                     }
-                };
-                content.addEventListener('touchend', onTouchEnd);
-                content.addEventListener('touchcancel', onTouchEnd);
+                });
             }
         }, 50);
     }
