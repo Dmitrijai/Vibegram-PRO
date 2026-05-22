@@ -277,6 +277,17 @@ export function openSettings(modeOrSkip: 'full' | 'profile' | boolean = 'full', 
                 <svg class="w-5 h-5 text-gray-400 group-open:rotate-180 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
             </summary>
             <div class="border-t border-gray-100 dark:border-gray-700 bg-white dark:bg-gray-800/80 p-3 space-y-2">
+                <label class="flex items-center justify-between w-full py-3 px-4 hover:bg-gray-100 dark:hover:bg-gray-700/50 transition-colors rounded-xl font-semibold cursor-pointer text-gray-800 dark:text-gray-100">
+                    <div class="flex items-center gap-3">
+                        <svg class="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"></path></svg>
+                        Полноэкранный режим
+                    </div>
+                    <div class="relative inline-block w-10 mr-2 align-middle select-none transition duration-200 ease-in">
+                        <input type="checkbox" id="settings-fullscreen" class="sr-only peer" ${localStorage.getItem('vibegram_fullscreen') === 'true' ? 'checked' : ''} onchange="window.toggleFullscreenApp(this.checked)">
+                        <div class="w-11 h-6 bg-gray-300 dark:bg-gray-600 rounded-full peer peer-checked:bg-blue-500 transition-colors"></div>
+                        <div class="absolute left-1 top-1 bg-white w-4 h-4 rounded-full transition-transform peer-checked:translate-x-5 shadow-sm"></div>
+                    </div>
+                </label>
                 ${state.isAdminStatus || (window as any).originalAdminUser ? '' : `
                 <button onclick="logout()" class="w-full py-3 bg-red-50 dark:bg-red-900/20 hover:bg-red-100 dark:hover:bg-red-900/40 transition-colors text-red-600 dark:text-red-400 rounded-xl font-semibold flex items-center gap-3 px-4">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3-3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"></path></svg>

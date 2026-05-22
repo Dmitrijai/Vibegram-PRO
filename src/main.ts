@@ -52,6 +52,7 @@ window.addEventListener('popstate', (e) => {
 (window as any).joinGroup = logic.joinGroup;
 (window as any).closeModal = logic.closeModal;
 (window as any).openSettings = logic.openSettings;
+(window as any).toggleFullscreenApp = logic.toggleFullscreenApp;
 (window as any).saveSettings = logic.saveSettings;
 (window as any).saveAppLock = logic.saveAppLock;
 (window as any).promptForPasswordSetting = logic.promptForPasswordSetting;
@@ -539,6 +540,19 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('search-input')?.addEventListener('blur', () => {
         setTimeout(() => document.getElementById('search-results')?.classList.add('hidden'), 200);
     });
+    
+    // Auto full-screen handler on first interaction
+    const handleFirstInteraction = () => {
+        if (localStorage.getItem('vibegram_fullscreen') === 'true') {
+            if (!document.fullscreenElement && document.documentElement.requestFullscreen) {
+                document.documentElement.requestFullscreen().catch(e => console.warn(e));
+            }
+        }
+        document.body.removeEventListener('click', handleFirstInteraction);
+        document.body.removeEventListener('touchstart', handleFirstInteraction);
+    };
+    document.body.addEventListener('click', handleFirstInteraction);
+    document.body.addEventListener('touchstart', handleFirstInteraction);
 });
 
 setupMiniApps();

@@ -292,6 +292,20 @@ export function showInAppNotification(chatId: string, title: string, text: strin
     let clickTimer: any;
 
     notif.onclick = (e) => {
+        const isMobile = window.innerWidth <= 768;
+        if (isMobile) {
+            clickCount++;
+            if (clickCount === 1) {
+                clickTimer = setTimeout(() => {
+                    clickCount = 0;
+                }, 400); // Wait 400ms for a second tap
+                return;
+            } else {
+                clearTimeout(clickTimer);
+                clickCount = 0;
+            }
+        }
+        
         const chatElement = document.querySelector(`div[data-chat-id="${chatId}"]`) as HTMLElement;
         if (chatElement) {
             chatElement.click();
@@ -342,6 +356,24 @@ export function customToast(message: string) {
             alertDiv.remove();
         }, 300);
     }, 2000);
+}
+
+export function toggleFullscreenApp(enable: boolean) {
+    if (enable) {
+        localStorage.setItem('vibegram_fullscreen', 'true');
+        if (document.documentElement.requestFullscreen) {
+            document.documentElement.requestFullscreen().catch(err => {
+                console.warn(`Error attempting to enable full-screen mode: ${err.message} (${err.name})`);
+            });
+        }
+    } else {
+        localStorage.removeItem('vibegram_fullscreen');
+        if (document.exitFullscreen && document.fullscreenElement) {
+            document.exitFullscreen().catch(err => {
+                console.warn(`Error attempting to exit full-screen mode: ${err.message} (${err.name})`);
+            });
+        }
+    }
 }
 
 export function customAlert(msg: string) {
