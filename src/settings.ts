@@ -124,19 +124,19 @@ export function openSettings(modeOrSkip: 'full' | 'profile' | boolean = 'full', 
                     <svg class="w-5 h-5 text-gray-400 group-open:rotate-180 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
                 </summary>
                 <div class="border-t border-gray-100 dark:border-gray-700 bg-white dark:bg-gray-800/80 p-2 space-y-1">
-                    <button onclick="window.closeModal(); setTimeout(() => { window.history.replaceState({ screen: 'create' }, '', '#create-channel'); window.openCreateChannel(true); }, 150);" class="w-full text-left p-3 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition flex items-center gap-3 text-gray-700 dark:text-gray-200">
+                    <button onclick="import('./utils').then(m => m.closeModal()); setTimeout(() => { window.history.replaceState({ screen: 'create' }, '', '#create-channel'); window.openCreateChannel(true); }, 150);" class="w-full text-left p-3 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition flex items-center gap-3 text-gray-700 dark:text-gray-200">
                         <svg class="w-5 h-5 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5.882V19.24a1.76 1.76 0 01-3.417.592l-2.147-6.15M18 13a3 3 0 100-6M5.436 13.683A4.001 4.001 0 017 6h1.832c4.1 0 7.625-1.234 9.168-3v14c-1.543-1.766-5.067-3-9.168-3H7a3.988 3.988 0 01-1.564-.317z"></path></svg>
                         Создать канал
                     </button>
-                    <button onclick="window.closeModal(); setTimeout(() => { window.history.replaceState({ screen: 'create' }, '', '#create-group'); window.openCreateGroup(true); }, 150);" class="w-full text-left p-3 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition flex items-center gap-3 text-gray-700 dark:text-gray-200">
+                    <button onclick="import('./utils').then(m => m.closeModal()); setTimeout(() => { window.history.replaceState({ screen: 'create' }, '', '#create-group'); window.openCreateGroup(true); }, 150);" class="w-full text-left p-3 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition flex items-center gap-3 text-gray-700 dark:text-gray-200">
                         <svg class="w-5 h-5 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>
                         Создать группу
                     </button>
-                    <button onclick="window.closeModal(); setTimeout(() => { window.history.replaceState({ type: 'shorts' }, '', '#shorts'); window.openShorts(undefined, undefined, true); }, 150);" class="w-full text-left p-3 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition flex items-center gap-3 text-gray-700 dark:text-gray-200">
+                    <button onclick="import('./utils').then(m => m.closeModal()); setTimeout(() => { window.history.replaceState({ type: 'shorts' }, '', '#shorts'); window.openShorts(undefined, undefined, true); }, 150);" class="w-full text-left p-3 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition flex items-center gap-3 text-gray-700 dark:text-gray-200">
                         <svg class="w-5 h-5 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
                         Shorts
                     </button>
-                    <button onclick="window.closeModal(); setTimeout(() => { window.history.replaceState({}, '', '#miniapps'); window.openMiniAppsCatalog(true); }, 150);" class="w-full text-left p-3 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition flex items-center gap-3 text-gray-700 dark:text-gray-200">
+                    <button onclick="import('./utils').then(m => m.closeModal()); setTimeout(() => { window.history.replaceState({}, '', '#miniapps'); window.openMiniAppsCatalog(true); }, 150);" class="w-full text-left p-3 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition flex items-center gap-3 text-gray-700 dark:text-gray-200">
                         <svg class="w-5 h-5 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"></path></svg>
                         Мини-приложения
                     </button>
@@ -477,10 +477,10 @@ export function saveAppLock(pin: string) {
     if (!state.currentUser) return;
     if (pin.trim()) {
         localStorage.setItem('vibegram_app_lock_' + state.currentUser.id, pin.trim());
-        window.customToast('PIN-код установлен. Он будет запрашиваться при входе.');
+        import('./utils').then(m => m.customToast('PIN-код установлен. Он будет запрашиваться при входе.'));
     } else {
         localStorage.removeItem('vibegram_app_lock_' + state.currentUser.id);
-        window.customToast('PIN-код отключен.');
+        import('./utils').then(m => m.customToast('PIN-код отключен.'));
     }
     openSettings(); // refresh UI
 }
@@ -535,10 +535,10 @@ export async function promptForPasswordSetting(type: '2fa' | 'applock') {
             const newSettings = { ...oldSettings };
             if (p1.trim()) {
                 newSettings.twoStepPasscode = p1;
-                window.customToast('Двухэтапный пароль установлен');
+                import('./utils').then(m => m.customToast('Двухэтапный пароль установлен'));
             } else {
                 delete newSettings.twoStepPasscode;
-                window.customToast('Двухэтапный пароль отключен');
+                import('./utils').then(m => m.customToast('Двухэтапный пароль отключен'));
             }
             if (state.currentProfile) state.currentProfile.settings = newSettings;
             await supabase.from('profiles').update({ settings: newSettings }).eq('id', state.currentUser!.id);

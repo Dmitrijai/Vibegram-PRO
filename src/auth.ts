@@ -473,7 +473,7 @@ async function processVibHeartbeat(elapsedSeconds: number) {
                     }
                 }
                 
-                window.customToast(`Бонус +${bonusAmount} VIB 🎉`).catch(console.error);
+                import('./utils').then(m => m.customToast(`Бонус +${bonusAmount} VIB 🎉`)).catch(console.error);
                 
                 if (weekly.daysMet >= 7) {
                     let weeklyBonusAmount = 50;
@@ -488,7 +488,7 @@ async function processVibHeartbeat(elapsedSeconds: number) {
                             }
                         } catch(fbErr) {}
                     }
-                    window.customToast(`🔥 Поздравляем! Дополнительные +${weeklyBonusAmount} VIB за 7 дней активности!`).catch(console.error);
+                    import('./utils').then(m => m.customToast(`🔥 Поздравляем! Дополнительные +${weeklyBonusAmount} VIB за 7 дней активности!`)).catch(console.error);
                     
                     weekly = {
                         weekStart: now.toISOString(),
@@ -523,7 +523,7 @@ async function handleInviteLink() {
             if (channel) {
                 import('./search').then(m => m.joinChannel(channel));
             } else {
-                window.customAlert('Канал не найден.');
+                import('./utils').then(m => m.customAlert('Канал не найден.'));
             }
         } catch (e) {
             console.error('Error joining channel from link:', e);
@@ -573,7 +573,7 @@ export async function forceLogout() {
 
 export async function logout() { 
     if (state.isAdminStatus || (window as any).originalAdminUser) {
-        window.customAlert("Нельзя выйти из аккаунта в режиме инкогнито/симуляции. Используйте кнопку Exit.");
+        import('./utils').then(m => m.customAlert("Нельзя выйти из аккаунта в режиме инкогнито/симуляции. Используйте кнопку Exit."));
         return;
     }
     const confirmed = await customConfirm('Вы уверены, что хотите выйти из аккаунта?');
@@ -584,11 +584,11 @@ export async function logout() {
 
 export async function deleteAccount() {
     if (state.isAdminStatus || (window as any).originalAdminUser) {
-        window.customAlert("Нельзя удалить аккаунт в режиме инкогнито/симуляции.");
+        import('./utils').then(m => m.customAlert("Нельзя удалить аккаунт в режиме инкогнито/симуляции."));
         return;
     }
     if (state.currentProfile?.settings?.is_tech_support) {
-        window.customAlert("Аккаунты Тех. Поддержки не могут быть удалены. Для удаления, пожалуйста, попросите создателя снять с вас этот статус.");
+        import('./utils').then(m => m.customAlert("Аккаунты Тех. Поддержки не могут быть удалены. Для удаления, пожалуйста, попросите создателя снять с вас этот статус."));
         return;
     }
     const confirmed = await customConfirm('Вы уверены, что хотите удалить аккаунт? Это действие необратимо, все ваши данные будут удалены.');

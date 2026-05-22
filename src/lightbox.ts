@@ -84,13 +84,9 @@ function renderLightbox() {
                     currentPanzoom.zoomWithWheel(e);
                 }, { passive: false });
                 
-                // Single click to zoom (desktop) or tap
+                // Single click to zoom
                 img.addEventListener('click', (e) => {
                     e.preventDefault();
-                    // On touch devices, 'click' still fires, but maybe we only want to bounce back on release.
-                    // Telegram usually doesn't snap back on a simple tap/click zoom on desktop. It stays.
-                    // But on mobile, if you pinch, you hold it, and release -> it snaps back.
-                    // For now, let click toggle zoom.
                     const currentScale = currentPanzoom.getScale();
                     if (currentScale > 1) {
                         currentPanzoom.reset({ animate: true });
@@ -99,12 +95,27 @@ function renderLightbox() {
                     }
                 });
 
+                img.addEventListener('panzoomchange', (e: any) => {
+                    if (e.detail.scale > 1) {
+                        currentPanzoom.setOptions({ contain: 'outside' });
+                    } else {
+                        currentPanzoom.setOptions({ contain: undefined });
+                    }
+                });
+
+                img.addEventListener('panzoomend', (e: any) => {
+                    if (e.detail.scale <= 1) {
+                        currentPanzoom.pan(0, 0, { animate: true });
+                    }
+                });
+
                 // Snap back on touch release like Telegram
                 const onTouchEnd = (e: TouchEvent) => {
                     if (e.touches.length === 0) {
                         const currentScale = currentPanzoom.getScale();
-                        if (currentScale !== 1) {
-                            currentPanzoom.reset({ animate: true });
+                        if (currentScale > 1) {
+                            // If we want it to snap back to 1 on pinch release, uncomment this:
+                            // currentPanzoom.reset({ animate: true });
                         }
                     }
                 };

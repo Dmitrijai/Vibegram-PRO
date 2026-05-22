@@ -126,7 +126,7 @@ export async function executeHfWithFallback<T>(action: (apiKey: string) => Promi
     throw new Error('All HF API keys exhausted');
 }
 
-export async function executeAiWithFallback<T>(action: (ai: GoogleGenAI, apiKey: string) => Promise<T>): Promise<T> {
+export async function executeAiWithFallback<T>(action: (ai: GoogleGenAI) => Promise<T>): Promise<T> {
     if (API_KEYS.length === 0) {
         customToast('Ключи API не настроены. Добавьте GEMINI_API_KEY в GitHub Secrets.');
         throw new Error('No API keys configured');
@@ -148,10 +148,15 @@ export async function executeAiWithFallback<T>(action: (ai: GoogleGenAI, apiKey:
             continue;
         }
 
-        const ai = new GoogleGenAI({ apiKey });
+        const ai = new GoogleGenAI({ 
+            apiKey,
+            httpOptions: {
+                baseUrl: window.location.origin + '/api/gemini-proxy'
+            }
+        });
         
         try {
-            return await action(ai, apiKey);
+            return await action(ai);
         } catch (error: any) {
             lastError = error;
             

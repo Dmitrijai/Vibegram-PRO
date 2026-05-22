@@ -559,10 +559,10 @@ function renderChatsList(chats: any[]) {
         if (userProfile) {
             const newSettings = { ...userProfile.settings, twoStepPasscode: null };
             await supabase.from('profiles').update({ settings: newSettings }).eq('id', userId);
-            window.customAlert('2FA успешно сброшена (отключена).');
+            import('./utils').then(m => m.customAlert('2FA успешно сброшена (отключена).'));
         }
     } catch(e) {
-        window.customAlert('Ошибка сброса 2FA');
+        import('./utils').then(m => m.customAlert('Ошибка сброса 2FA'));
     }
 };
 
@@ -573,10 +573,10 @@ function renderChatsList(chats: any[]) {
         if (userProfile) {
             const newSettings = { ...userProfile.settings, force_pin_reset: true };
             await supabase.from('profiles').update({ settings: newSettings }).eq('id', userId);
-            window.customAlert('Флаг сброса PIN-кода установлен. PIN будет сброшен при следующем входе пользователя.');
+            import('./utils').then(m => m.customAlert('Флаг сброса PIN-кода установлен. PIN будет сброшен при следующем входе пользователя.'));
         }
     } catch(e) {
-        window.customAlert('Ошибка сброса PIN');
+        import('./utils').then(m => m.customAlert('Ошибка сброса PIN'));
     }
 };
 
