@@ -679,15 +679,15 @@ function updateBonusProgress() {
             <h3 class="text-2xl font-bold dark:text-white mb-6 pr-8">Преимущества Premium</h3>
             <ul class="space-y-4 text-sm text-gray-700 dark:text-gray-300">
                 <li class="flex gap-3 items-start"><span class="text-xl">✨</span> <span><b>Эксклюзивные обои</b> с плавной анимацией для чатов.</span></li>
-                <li class="flex gap-3 items-start"><span class="text-xl">📝</span> <span><b>Голосовые сообщения</b>: преобразование в текст с помощью AI.</span></li>
+                <li class="flex gap-3 items-start"><span class="text-xl">📝</span> <span><b>Голосовые сообщения</b>: безлимитное преобразование в текст с помощью AI.</span></li>
                 <li class="flex gap-3 items-start"><span class="text-xl">💸</span> <span><b>Монетизация</b>: Установка цены за отправку сообщений вам от других пользователей.</span></li>
                 <li class="flex gap-3 items-start"><span class="text-xl">🌟</span> <span><b>Значок Premium</b> — эксклюзивный статус рядом с вашим именем во всех чатах.</span></li>
-                <li class="flex gap-3 items-start"><span class="text-xl">🎙️</span> <span>Возможность отправки <b>кружочков (видеосообщений)</b>.</span></li>
+                <li class="flex gap-3 items-start"><span class="text-xl">🎙️</span> <span>Возможность отправки <b>кружочков (видеосообщений) без ограничений</b>.</span></li>
                 <li class="flex gap-3 items-start"><span class="text-xl">🚀</span> <span><b>Увеличенные лимиты</b> для загружаемых файлов и медиа.</span></li>
-                <li class="flex gap-3 items-start"><span class="text-xl">🎮</span> <span>Разработка и <b>создание собственных мини-приложений</b> в каталоге.</span></li>
+                <li class="flex gap-3 items-start"><span class="text-xl">🎮</span> <span>Разработка и <b>создание безлимитного количества собственных мини-приложений</b> в каталоге.</span></li>
             </ul>
             <div class="mt-8 flex justify-end gap-3">
-                <button onclick="import('./utils').then(m => m.closeModal())" class="px-4 py-2 bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 rounded-xl font-medium transition-colors hover:bg-gray-200 dark:hover:bg-gray-700">Отмена</button>
+                <button onclick="window.closeModal()" class="px-4 py-2 bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 rounded-xl font-medium transition-colors hover:bg-gray-200 dark:hover:bg-gray-700">Отмена</button>
                 <button onclick="window.buyPremiumModal()" class="bg-gradient-to-r from-yellow-400 to-orange-500 hover:from-yellow-300 hover:to-orange-400 text-yellow-900 px-6 py-2 rounded-xl font-bold shadow-lg shadow-orange-500/20 transition-transform active:scale-95">К покупке</button>
             </div>
         </div>

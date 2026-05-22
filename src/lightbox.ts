@@ -75,33 +75,23 @@ function renderLightbox() {
                 currentPanzoom = Panzoom(img, {
                     maxScale: 5,
                     minScale: 1,
-                    step: 0.2,
-                    contain: 'outside'
+                    step: 0.2
                 });
                 
                 content.addEventListener('wheel', (e) => {
-                    if (e.shiftKey || e.ctrlKey) {
-                        currentPanzoom.zoomWithWheel(e);
-                    } else {
-                        // Regular scrolling can pan or zoom based on preference, let's zoom
-                        currentPanzoom.zoomWithWheel(e);
-                    }
+                    e.preventDefault();
+                    currentPanzoom.zoomWithWheel(e);
                 }, { passive: false });
                 
-                // Double tap to zoom
-                let lastTap = 0;
+                // Single click to zoom
                 img.addEventListener('click', (e) => {
-                    const now = Date.now();
-                    if (now - lastTap < 300) {
-                        e.preventDefault();
-                        const currentScale = currentPanzoom.getScale();
-                        if (currentScale > 1) {
-                            currentPanzoom.reset();
-                        } else {
-                            currentPanzoom.zoom(2.5, { animate: true });
-                        }
+                    e.preventDefault();
+                    const currentScale = currentPanzoom.getScale();
+                    if (currentScale > 1) {
+                        currentPanzoom.reset({ animate: true });
+                    } else {
+                        currentPanzoom.zoom(2.5, { animate: true });
                     }
-                    lastTap = now;
                 });
             }
         }, 50);
