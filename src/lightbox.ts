@@ -83,9 +83,13 @@ function renderLightbox() {
                     currentPanzoom.zoomWithWheel(e);
                 }, { passive: false });
                 
-                // Single click to zoom
+                // Single click to zoom (desktop) or tap
                 img.addEventListener('click', (e) => {
                     e.preventDefault();
+                    // On touch devices, 'click' still fires, but maybe we only want to bounce back on release.
+                    // Telegram usually doesn't snap back on a simple tap/click zoom on desktop. It stays.
+                    // But on mobile, if you pinch, you hold it, and release -> it snaps back.
+                    // For now, let click toggle zoom.
                     const currentScale = currentPanzoom.getScale();
                     if (currentScale > 1) {
                         currentPanzoom.reset({ animate: true });
@@ -93,6 +97,18 @@ function renderLightbox() {
                         currentPanzoom.zoom(2.5, { animate: true });
                     }
                 });
+
+                // Snap back on touch release like Telegram
+                const onTouchEnd = (e: TouchEvent) => {
+                    if (e.touches.length === 0) {
+                        const currentScale = currentPanzoom.getScale();
+                        if (currentScale !== 1) {
+                            currentPanzoom.reset({ animate: true });
+                        }
+                    }
+                };
+                content.addEventListener('touchend', onTouchEnd);
+                content.addEventListener('touchcancel', onTouchEnd);
             }
         }, 50);
     }
