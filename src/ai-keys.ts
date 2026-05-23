@@ -59,7 +59,10 @@ function isTransientError(error: any) {
 }
 
 export async function executeHfWithFallback<T>(action: (apiKey: string) => Promise<T>): Promise<T> {
-    if (HF_API_KEYS.length === 0) {
+    const keysToUse = HF_API_KEYS.length > 0 ? HF_API_KEYS : API_KEYS;
+    const currentStatusMap = HF_API_KEYS.length > 0 ? hfKeyStatus : keyStatus;
+    
+    if (keysToUse.length === 0) {
         customToast('Ключи Hugging Face не настроены. Добавьте HF_API_KEY в GitHub Secrets.');
         throw new Error('No HF API keys configured');
     }
@@ -70,12 +73,14 @@ export async function executeHfWithFallback<T>(action: (apiKey: string) => Promi
     
     let lastError: any = null;
     
-    while (attempts < HF_API_KEYS.length) {
-        const apiKey = HF_API_KEYS[currentHfKeyIndex];
-        const exhaustedAt = hfKeyStatus.get(apiKey) || 0;
+    while (attempts < keysToUse.length) {
+        // We reuse currentHfKeyIndex, just ensuring it's within bounds
+        currentHfKeyIndex = currentHfKeyIndex % keysToUse.length;
+        const apiKey = keysToUse[currentHfKeyIndex];
+        const exhaustedAt = currentStatusMap.get(apiKey) || 0;
         
         if (now - exhaustedAt < EXHAUSTED_COOLDOWN) {
-            currentHfKeyIndex = (currentHfKeyIndex + 1) % HF_API_KEYS.length;
+            currentHfKeyIndex = (currentHfKeyIndex + 1) % keysToUse.length;
             attempts++;
             continue;
         }
@@ -95,19 +100,19 @@ export async function executeHfWithFallback<T>(action: (apiKey: string) => Promi
             
             if (isQuotaError(error)) {
                 console.warn(`HF Key at index ${currentHfKeyIndex} hit quota/auth error. Switching key...`, error.message);
-                hfKeyStatus.set(apiKey, Date.now());
-                currentHfKeyIndex = (currentHfKeyIndex + 1) % HF_API_KEYS.length;
+                currentStatusMap.set(apiKey, Date.now());
+                currentHfKeyIndex = (currentHfKeyIndex + 1) % keysToUse.length;
                 attempts++;
                 
                 let hasUnexhaustedKeys = false;
-                for (let i = 0; i < HF_API_KEYS.length; i++) {
-                    if (now - (hfKeyStatus.get(HF_API_KEYS[i]) || 0) >= EXHAUSTED_COOLDOWN) {
+                for (let i = 0; i < keysToUse.length; i++) {
+                    if (now - (currentStatusMap.get(keysToUse[i]) || 0) >= EXHAUSTED_COOLDOWN) {
                         hasUnexhaustedKeys = true;
                         break;
                     }
                 }
                 
-                if (attempts < HF_API_KEYS.length && hasUnexhaustedKeys) {
+                if (attempts < keysToUse.length && hasUnexhaustedKeys) {
                     customToast('Поиск свободного ключа HF...');
                     await new Promise(r => setTimeout(r, 500));
                 }

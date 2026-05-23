@@ -1,6 +1,6 @@
 import { supabase } from './supabase';
 import { customToast } from './utils';
-import { executeRawAiKeyWithFallback } from './ai-keys';
+import { executeHfWithFallback } from './ai-keys';
 
 export async function transcribeMedia(url: string, messageId: string, msgType?: string) {
     try {
@@ -22,23 +22,23 @@ export async function transcribeMedia(url: string, messageId: string, msgType?: 
             mimeType = 'audio/webm';
         }
 
-        // Call microsoft/VibeVoice-ASR-HF via HF API using the key from GEMINI_API_KEY
-        const result = await executeRawAiKeyWithFallback(async (apiKey: string) => {
-            const serverResponse = await fetch("/api/transcribe", {
+        // Call microsoft/VibeVoice-ASR-HF via HF API using the key
+        const result = await executeHfWithFallback(async (apiKey: string) => {
+            const hfResponse = await fetch("https://api-inference.huggingface.co/models/microsoft/VibeVoice-ASR-HF", {
                 headers: { 
-                    "X-Api-Key": apiKey,
+                    Authorization: `Bearer ${apiKey}`,
                     "Content-Type": mimeType
                 },
                 method: "POST",
                 body: blob,
             });
 
-            if (!serverResponse.ok) {
-                 const errText = await serverResponse.text();
-                 throw new Error(`HF proxy API error: ${serverResponse.status} ${errText}`);
+            if (!hfResponse.ok) {
+                 const errText = await hfResponse.text();
+                 throw new Error(`HF API error: ${hfResponse.status} ${errText}`);
             }
 
-            return await serverResponse.json();
+            return await hfResponse.json();
         });
 
         let transcription = 'Нет речи';
