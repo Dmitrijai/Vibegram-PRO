@@ -1,6 +1,6 @@
 import { supabase } from './supabase';
 import { customToast } from './utils';
-import { executeHfWithFallback } from './ai-keys';
+import { API_KEYS, HF_API_KEYS } from './ai-keys';
 
 export async function transcribeMedia(url: string, messageId: string, msgType?: string) {
     try {
@@ -22,24 +22,29 @@ export async function transcribeMedia(url: string, messageId: string, msgType?: 
             mimeType = 'audio/webm';
         }
 
-        // Call microsoft/VibeVoice-ASR-HF via HF API using the key
-        const result = await executeHfWithFallback(async (apiKey: string) => {
-            const hfResponse = await fetch("https://api-inference.huggingface.co/models/microsoft/VibeVoice-ASR-HF", {
-                headers: { 
-                    Authorization: `Bearer ${apiKey}`,
-                    "Content-Type": mimeType
-                },
-                method: "POST",
-                body: blob,
-            });
+        // Obtain API Key directly like the prompt suggested if we were to just use raw keys
+        const apiKey = Array.isArray(HF_API_KEYS) && HF_API_KEYS.length > 0 ? HF_API_KEYS[0] : (Array.isArray(API_KEYS) && API_KEYS.length > 0 ? API_KEYS[0] : '');
 
-            if (!hfResponse.ok) {
-                 const errText = await hfResponse.text();
-                 throw new Error(`HF API error: ${hfResponse.status} ${errText}`);
-            }
+        if (!apiKey) {
+            throw new Error("Не настроены ключи API для расшифровки.");
+        }
 
-            return await hfResponse.json();
+        const hfResponse = await fetch("https://api-inference.huggingface.co/models/microsoft/VibeVoice-ASR-HF", {
+            headers: { 
+                Authorization: `Bearer ${apiKey}`,
+                "Content-Type": mimeType
+            },
+            method: "POST",
+            body: blob,
         });
+
+        if (!hfResponse.ok) {
+            const errText = await hfResponse.text();
+            throw new Error(`HF API error: ${hfResponse.status} ${errText}`);
+        }
+
+        const result = await hfResponse.json();
+
 
         let transcription = 'Нет речи';
 
@@ -104,20 +109,17 @@ export async function transcribeMedia(url: string, messageId: string, msgType?: 
     } catch (err: any) {
         console.error('Transcription error:', err);
         
-        if (!err.message?.includes('All API keys exhausted')) {
-            let errorMessage = `Ошибка расшифровки: ${err.message?.substring(0, 50)}`;
-            const errText = err.message?.toLowerCase() || '';
-            if (errText.includes('quota') || errText.includes('429') || errText.includes('exhausted') || errText.includes('rate limit')) {
-                errorMessage = '⚡ Превышен лимит запросов. Попробуйте позже.';
-            } else if (errText.includes('safety') || errText.includes('blocked') || errText.includes('filter')) {
-                errorMessage = '🛡️ Расшифровка заблокирована фильтром безопасности.';
-            } else if (errText.includes('fetch')) {
-                errorMessage = 'Не удалось загрузить файл для расшифровки';
-            } else if (errText.includes('503') || errText.includes('overloaded')) {
-                errorMessage = '🐌 Сервер нейросети перегружен. Попробуйте через пару минут.';
-            }
-            customToast(errorMessage);
+        let errorMessage = `Ошибка расшифровки: ${err.message?.substring(0, 100)}`;
+        const errText = err.message?.toLowerCase() || '';
+        
+        if (errText.includes('quota') || errText.includes('429') || errText.includes('rate limit')) {
+            errorMessage = '⚡ Превышен лимит запросов к HuggingFace. Попробуйте позже.';
+        } else if (errText.includes('fetch')) {
+            errorMessage = '🌐 Ошибка сети. Проверьте подключение или VPN.';
+        } else if (errText.includes('503') || errText.includes('overloaded')) {
+            errorMessage = '🐌 Сервер нейросети HF перегружен. Попробуйте через пару минут.';
         }
+        customToast(errorMessage);
         
         const btn = document.getElementById(`transcribe-btn-${messageId}`);
         if (btn) {

@@ -11,7 +11,7 @@ try {
     console.error("Failed to decode API keys:", e);
 }
 
-const API_KEYS = rawKeys
+export const API_KEYS = rawKeys
     .split(',')
     .map(k => k.replace(/['"]/g, '').trim())
     .filter(Boolean);
@@ -25,7 +25,7 @@ try {
     console.error("Failed to decode HF API keys:", e);
 }
 
-const HF_API_KEYS = rawHfKeys
+export const HF_API_KEYS = rawHfKeys
     .split(',')
     .map(k => k.replace(/['"]/g, '').trim())
     .filter(Boolean);
