@@ -52,7 +52,6 @@ window.addEventListener('popstate', (e) => {
 (window as any).joinGroup = logic.joinGroup;
 (window as any).closeModal = logic.closeModal;
 (window as any).openSettings = logic.openSettings;
-(window as any).toggleFullscreenApp = logic.toggleFullscreenApp;
 (window as any).saveSettings = logic.saveSettings;
 (window as any).saveAppLock = logic.saveAppLock;
 (window as any).promptForPasswordSetting = logic.promptForPasswordSetting;
@@ -314,7 +313,7 @@ function setupRealtime() {
                                 new Notification(`Новое сообщение от ${senderName}`, { body: text });
                             }
                             
-                            if (state.activeChatId !== payload.new.chat_id) {
+                            if (!document.hidden && state.activeChatId !== payload.new.chat_id) {
                                 if ((window as any).logic?.showInAppNotification) {
                                     (window as any).logic.showInAppNotification(payload.new.chat_id, senderName, text, sender?.avatar_url || null);
                                 }
@@ -539,32 +538,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
     document.getElementById('search-input')?.addEventListener('blur', () => {
         setTimeout(() => document.getElementById('search-results')?.classList.add('hidden'), 200);
-    });
-    
-    // Auto full-screen handler on first interaction
-    const handleFirstInteraction = () => {
-        if (localStorage.getItem('vibegram_fullscreen') === 'true') {
-            if (!document.fullscreenElement && document.documentElement.requestFullscreen) {
-                document.documentElement.requestFullscreen().catch(e => console.warn(e));
-            }
-        }
-        document.body.removeEventListener('click', handleFirstInteraction);
-        document.body.removeEventListener('touchstart', handleFirstInteraction);
-    };
-    document.body.addEventListener('click', handleFirstInteraction);
-    document.body.addEventListener('touchstart', handleFirstInteraction);
-    
-    document.addEventListener('fullscreenchange', () => {
-        const isFullscreen = !!document.fullscreenElement;
-        if (isFullscreen) {
-            localStorage.setItem('vibegram_fullscreen', 'true');
-        } else {
-            localStorage.removeItem('vibegram_fullscreen');
-        }
-        const toggle = document.getElementById('settings-fullscreen') as HTMLInputElement;
-        if (toggle) {
-            toggle.checked = isFullscreen;
-        }
     });
 });
 

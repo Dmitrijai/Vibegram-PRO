@@ -142,7 +142,7 @@ document.addEventListener('touchstart', () => {
 
 export function playNotificationSound() {
     try {
-        if (navigator.vibrate) {
+        if (navigator.vibrate && navigator.userActivation?.hasBeenActive) {
             try { navigator.vibrate([100, 50, 100]); } catch (e) {}
         }
         const ctx = getAudioContext();
@@ -176,7 +176,6 @@ export function playNotificationSound() {
 }
 
 export function closeChatMobile(skipHistoryBack = false) {
-    import('./messages-recording').then(m => m.cancelRecording());
     if (state.activeChatParentInfo && Object.keys(state.activeChatParentInfo).length > 0) {
         const parentId = state.activeChatParentInfo.parentId;
         const targetMsgId = state.activeChatParentInfo.messageId;
@@ -292,42 +291,38 @@ export function showInAppNotification(chatId: string, title: string, text: strin
     let clickTimer: any;
 
     notif.onclick = (e) => {
-        const isMobile = window.innerWidth <= 768;
-        if (isMobile) {
-            clickCount++;
-            if (clickCount === 1) {
-                clickTimer = setTimeout(() => {
-                    clickCount = 0;
-                }, 400); // Wait 400ms for a second tap
-                return;
-            } else {
-                clearTimeout(clickTimer);
+        clickCount++;
+        if (clickCount === 1) {
+            clickTimer = setTimeout(() => {
                 clickCount = 0;
+            }, 400);
+        } else if (clickCount === 2) {
+            clearTimeout(clickTimer);
+            clickCount = 0;
+            
+            const chatElement = document.querySelector(`div[data-chat-id="${chatId}"]`) as HTMLElement;
+            if (chatElement) {
+                chatElement.click();
+            } else {
+                // Fallback load chat if it's not rendered in the list yet
+                if ((window as any).logic?.loadChats) {
+                    (window as any).logic.loadChats().then(() => {
+                        const el = document.querySelector(`div[data-chat-id="${chatId}"]`) as HTMLElement;
+                        if (el) el.click();
+                    });
+                }
             }
+            notif.remove();
         }
-        
-        const chatElement = document.querySelector(`div[data-chat-id="${chatId}"]`) as HTMLElement;
-        if (chatElement) {
-            chatElement.click();
-        } else {
-            // Fallback load chat if it's not rendered in the list yet
-            if ((window as any).logic?.loadChats) {
-                (window as any).logic.loadChats().then(() => {
-                    const el = document.querySelector(`div[data-chat-id="${chatId}"]`) as HTMLElement;
-                    if (el) el.click();
-                });
-            }
-        }
-        notif.remove();
     };
 
     container.appendChild(notif);
 
     // Animate in
-    setTimeout(() => {
+    requestAnimationFrame(() => {
         notif.classList.remove('-translate-y-4', 'opacity-0');
         notif.classList.add('translate-y-0', 'opacity-100');
-    }, 10);
+    });
 
     // Auto remove after 5 seconds
     setTimeout(() => {
@@ -356,24 +351,6 @@ export function customToast(message: string) {
             alertDiv.remove();
         }, 300);
     }, 2000);
-}
-
-export function toggleFullscreenApp(enable: boolean) {
-    if (enable) {
-        localStorage.setItem('vibegram_fullscreen', 'true');
-        if (document.documentElement.requestFullscreen) {
-            document.documentElement.requestFullscreen().catch(err => {
-                console.warn(`Error attempting to enable full-screen mode: ${err.message} (${err.name})`);
-            });
-        }
-    } else {
-        localStorage.removeItem('vibegram_fullscreen');
-        if (document.exitFullscreen && document.fullscreenElement) {
-            document.exitFullscreen().catch(err => {
-                console.warn(`Error attempting to exit full-screen mode: ${err.message} (${err.name})`);
-            });
-        }
-    }
 }
 
 export function customAlert(msg: string) {

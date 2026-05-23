@@ -473,7 +473,7 @@ async function processVibHeartbeat(elapsedSeconds: number) {
                     }
                 }
                 
-                import('./utils').then(m => m.customToast(`Бонус +${bonusAmount} VIB 🎉`)).catch(console.error);
+                import('./utils').then(m => m.customToast(`🎉 Вы провели 15 минут в приложении! Получен ежедневный бонус: +${bonusAmount} VIB`)).catch(console.error);
                 
                 if (weekly.daysMet >= 7) {
                     let weeklyBonusAmount = 50;

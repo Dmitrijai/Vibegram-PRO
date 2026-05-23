@@ -10,12 +10,8 @@ let currentCallPeerId: string | null = null;
 function playRingtone() {
     stopRingtone();
     if (navigator.vibrate) {
-        try { navigator.vibrate([500, 500]); } catch(e){}
-        vibrateInterval = setInterval(() => {
-            if (navigator.vibrate) {
-                 try { navigator.vibrate([500, 500]); } catch(e){}
-            }
-        }, 1000);
+        // Vibrate in a repeating pattern for incoming calls for up to ~30 seconds
+        try { navigator.vibrate(Array.from({ length: 30 }).flatMap(() => [500, 500])); } catch(e){}
     }
     const basePath = (import.meta as any).env.BASE_URL || '/';
     currentRingtone = new Audio(basePath + 'sound/skype_call.mp3');
@@ -31,10 +27,6 @@ function playRingtone() {
 }
 
 function stopRingtone() {
-    if (vibrateInterval) {
-        clearInterval(vibrateInterval);
-        vibrateInterval = null;
-    }
     if (navigator.vibrate) {
         try { navigator.vibrate(0); } catch(e){}
     }
@@ -46,26 +38,25 @@ function stopRingtone() {
 }
 
 const rtcConfig: RTCConfiguration = {
+    bundlePolicy: 'max-bundle',
     iceServers: [
         { urls: [
             'stun:stun.l.google.com:19302',
             'stun:stun1.l.google.com:19302',
-            'stun:stun2.l.google.com:19302',
-            'stun:stun3.l.google.com:19302',
-            'stun:stun4.l.google.com:19302',
             'stun:stun.cloudflare.com:3478'
         ]},
-        { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
-        { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
-        { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' },
-        { urls: 'turn:turn.bistri.com:80', username: 'homeo', credential: 'homeo' }
+        { urls: [
+            'turn:openrelay.metered.ca:80',
+            'turn:openrelay.metered.ca:443',
+            'turn:openrelay.metered.ca:443?transport=tcp',
+            'turns:openrelay.metered.ca:443?transport=tcp'
+        ], username: 'openrelayproject', credential: 'openrelayproject' }
     ]
 };
 
 let pendingIceCandidates: any[] = [];
 let iceCandidateQueue: any[] = [];
 let iceCandidateTimer: any = null;
-let vibrateInterval: any = null;
 
 function queueIceCandidate(targetId: string, candidate: any) {
     iceCandidateQueue.push(candidate);
@@ -96,12 +87,7 @@ export async function initWebRTC() {
                 document.getElementById('incoming-call-name')!.innerText = data.callerName;
             }
             if (document.getElementById('incoming-call-avatar')) {
-                const incAvatar = document.getElementById('incoming-call-avatar')!;
-                if (data.callerAvatar) {
-                    incAvatar.innerHTML = `<img src="${data.callerAvatar}" class="w-full h-full object-cover rounded-full border border-gray-700">`;
-                } else {
-                    incAvatar.innerText = data.callerName[0].toUpperCase();
-                }
+                document.getElementById('incoming-call-avatar')!.innerText = data.callerName[0].toUpperCase();
             }
             modal.classList.remove('hidden');
             
@@ -112,7 +98,7 @@ export async function initWebRTC() {
                 stopRingtone();
                 modal.classList.add('hidden');
                 cleanup();
-                await answerCall(data.callerId, data.offer, data.callerName, data.isVideo !== false, data.callerAvatar);
+                await answerCall(data.callerId, data.offer, data.callerName, data.isVideo !== false);
             };
             
             const handleReject = () => {
@@ -219,22 +205,14 @@ async function startCall(isVideo: boolean) {
     if (state.isAdminStatus) return alert('Звонки недоступны в режиме инкогнито');
     await initWebRTC();
     
-    const targetUser = state.activeChatOtherUser;
-    currentCallPeerId = targetUser.id;
+    const targetUserId = state.activeChatOtherUser.id;
+    currentCallPeerId = targetUserId;
     
     const name = document.getElementById('current-chat-name')?.innerText || 'Абонент';
+    const avatar = document.getElementById('chat-header-avatar')?.innerText || 'C';
     
     document.getElementById('call-name')!.innerText = name;
-    
-    const avatarEl = document.getElementById('call-avatar');
-    if (avatarEl) {
-        if (targetUser.avatar_url) {
-            avatarEl.innerHTML = `<img src="${targetUser.avatar_url}" class="w-full h-full object-cover rounded-full border border-gray-700">`;
-        } else {
-            avatarEl.innerText = name[0].toUpperCase();
-        }
-    }
-    
+    document.getElementById('call-avatar')!.innerText = avatar;
     document.getElementById('call-status')!.innerText = 'Вызов...';
     document.getElementById('video-call-modal')!.classList.remove('hidden');
     
@@ -275,6 +253,14 @@ async function startCall(isVideo: boolean) {
         remoteStream = new MediaStream();
         const remoteVideo = document.getElementById('remote-video') as HTMLVideoElement;
         const remoteAudio = document.getElementById('remote-audio') as HTMLAudioElement;
+        if (remoteVideo && isVideo) {
+            remoteVideo.srcObject = remoteStream;
+            remoteVideo.play().catch(e => { if (e.name !== 'AbortError') console.warn('Error playing remote video:', e); });
+        }
+        if (remoteAudio && !isVideo) {
+            remoteAudio.srcObject = remoteStream;
+            remoteAudio.play().catch(e => { if (e.name !== 'AbortError') console.warn('Error playing remote audio:', e); });
+        }
         
         localStream.getTracks().forEach(track => rtcPeerConnection!.addTrack(track, localStream!));
         
@@ -287,19 +273,15 @@ async function startCall(isVideo: boolean) {
 
             const attemptPlay = () => {
                 if (isVideo && remoteVideo) {
-                    if (remoteVideo.srcObject !== remoteStream) {
-                        remoteVideo.srcObject = remoteStream;
-                        const p = remoteVideo.play();
-                        if (p) p.catch(e => { if (e.name !== 'AbortError') console.warn('Error playing remote video:', e); });
-                    }
+                    if (remoteVideo.srcObject !== remoteStream) remoteVideo.srcObject = remoteStream;
+                    const p = remoteVideo.play();
+                    if (p) p.catch(e => { if (e.name !== 'AbortError') console.warn('Error playing remote video:', e); });
                     document.getElementById('call-avatar-container')?.classList.add('hidden');
                     remoteVideo.classList.remove('hidden');
                 } else if (!isVideo && remoteAudio) {
-                    if (remoteAudio.srcObject !== remoteStream) {
-                        remoteAudio.srcObject = remoteStream;
-                        const p = remoteAudio.play();
-                        if (p) p.catch(e => { if (e.name !== 'AbortError') console.warn('Error playing remote audio:', e); });
-                    }
+                    if (remoteAudio.srcObject !== remoteStream) remoteAudio.srcObject = remoteStream;
+                    const p = remoteAudio.play();
+                    if (p) p.catch(e => { if (e.name !== 'AbortError') console.warn('Error playing remote audio:', e); });
                 }
             };
             
@@ -312,7 +294,7 @@ async function startCall(isVideo: boolean) {
         
         rtcPeerConnection.onicecandidate = event => {
             if (event.candidate) {
-                queueIceCandidate(targetUser.id, event.candidate);
+                queueIceCandidate(targetUserId, event.candidate);
             }
         };
         
@@ -332,7 +314,6 @@ async function startCall(isVideo: boolean) {
                 targetUserId: state.activeChatOtherUser.id, 
                 callerId: state.currentUser.id,
                 callerName: state.currentProfile.display_name || state.currentProfile.username,
-                callerAvatar: state.currentProfile.avatar_url,
                 offer,
                 isVideo
             }
@@ -345,22 +326,13 @@ async function startCall(isVideo: boolean) {
     }
 }
 
-export async function answerCall(callerId: string, offer: any, callerName: string, isVideo: boolean = true, callerAvatar?: string) {
+export async function answerCall(callerId: string, offer: any, callerName: string, isVideo: boolean = true) {
     await initWebRTC();
     
     currentCallPeerId = callerId;
     
     document.getElementById('call-name')!.innerText = callerName;
-    
-    const avatarEl = document.getElementById('call-avatar');
-    if (avatarEl) {
-        if (callerAvatar) {
-            avatarEl.innerHTML = `<img src="${callerAvatar}" class="w-full h-full object-cover rounded-full border border-gray-700">`;
-        } else {
-            avatarEl.innerText = callerName[0].toUpperCase();
-        }
-    }
-    
+    document.getElementById('call-avatar')!.innerText = callerName[0].toUpperCase();
     document.getElementById('call-status')!.innerText = 'Соединение...';
     document.getElementById('video-call-modal')!.classList.remove('hidden');
     
@@ -401,6 +373,14 @@ export async function answerCall(callerId: string, offer: any, callerName: strin
         remoteStream = new MediaStream();
         const remoteVideo = document.getElementById('remote-video') as HTMLVideoElement;
         const remoteAudio = document.getElementById('remote-audio') as HTMLAudioElement;
+        if (remoteVideo && isVideo) {
+            remoteVideo.srcObject = remoteStream;
+            remoteVideo.play().catch(e => { if (e.name !== 'AbortError') console.warn('Error playing remote video:', e); });
+        }
+        if (remoteAudio && !isVideo) {
+            remoteAudio.srcObject = remoteStream;
+            remoteAudio.play().catch(e => { if (e.name !== 'AbortError') console.warn('Error playing remote audio:', e); });
+        }
         
         localStream.getTracks().forEach(track => rtcPeerConnection!.addTrack(track, localStream!));
         
@@ -413,19 +393,15 @@ export async function answerCall(callerId: string, offer: any, callerName: strin
 
             const attemptPlay = () => {
                 if (isVideo && remoteVideo) {
-                    if (remoteVideo.srcObject !== remoteStream) {
-                        remoteVideo.srcObject = remoteStream;
-                        const p = remoteVideo.play();
-                        if (p) p.catch(e => { if (e.name !== 'AbortError') console.warn('Error playing remote video:', e); });
-                    }
+                    if (remoteVideo.srcObject !== remoteStream) remoteVideo.srcObject = remoteStream;
+                    const p = remoteVideo.play();
+                    if (p) p.catch(e => { if (e.name !== 'AbortError') console.warn('Error playing remote video:', e); });
                     document.getElementById('call-avatar-container')?.classList.add('hidden');
                     remoteVideo.classList.remove('hidden');
                 } else if (!isVideo && remoteAudio) {
-                    if (remoteAudio.srcObject !== remoteStream) {
-                        remoteAudio.srcObject = remoteStream;
-                        const p = remoteAudio.play();
-                        if (p) p.catch(e => { if (e.name !== 'AbortError') console.warn('Error playing remote audio:', e); });
-                    }
+                    if (remoteAudio.srcObject !== remoteStream) remoteAudio.srcObject = remoteStream;
+                    const p = remoteAudio.play();
+                    if (p) p.catch(e => { if (e.name !== 'AbortError') console.warn('Error playing remote audio:', e); });
                 }
             };
             
@@ -471,70 +447,62 @@ export async function answerCall(callerId: string, offer: any, callerName: strin
     }
 }
 
-let isEndingCall = false;
-
 export async function endVideoCall(broadcast = true) {
-    if (isEndingCall) return;
-    isEndingCall = true;
-    try {
-        stopRingtone();
-        pendingIceCandidates = [];
-        if (broadcast && currentCallPeerId && callChannel) {
-            callChannel.send({
-                type: 'broadcast', event: 'call-ended',
-                payload: { targetUserId: currentCallPeerId, callerId: state.currentUser.id }
-            });
+    stopRingtone();
+    pendingIceCandidates = [];
+    if (broadcast && currentCallPeerId && callChannel) {
+        callChannel.send({
+            type: 'broadcast', event: 'call-ended',
+            payload: { targetUserId: currentCallPeerId, callerId: state.currentUser.id }
+        });
+        
+        // Push a call ended message to the active chat
+        if (state.activeChatId) {
+            const isMissed = document.getElementById('call-status')?.innerText === 'Вызов...' || document.getElementById('call-status')?.innerText === 'Отклонен';
+            const content = isMissed ? 'Пропущенный звонок' : 'Звонок завершен';
             
-            // Push a call ended message to the active chat
-            if (state.activeChatId) {
-                const isMissed = document.getElementById('call-status')?.innerText === 'Вызов...' || document.getElementById('call-status')?.innerText === 'Отклонен';
-                const content = isMissed ? 'Пропущенный звонок' : 'Звонок завершен';
-                
-                try {
-                    await supabase.from('messages').insert({
-                        chat_id: state.activeChatId,
-                        sender_id: state.currentUser.id,
-                        content: `📞 ${content}`,
-                        message_type: 'text'
-                    });
-                } catch(e) {
-                    console.warn('Failed to insert call message:', e);
-                }
+            try {
+                await supabase.from('messages').insert({
+                    chat_id: state.activeChatId,
+                    sender_id: state.currentUser.id,
+                    content: `📞 ${content}`,
+                    message_type: 'text'
+                });
+            } catch(e) {
+                console.warn('Failed to insert call message:', e);
             }
         }
-        currentCallPeerId = null;
-        
-        if (rtcPeerConnection) {
-            rtcPeerConnection.close();
-            rtcPeerConnection = null;
-        }
-        if (localStream) {
-            localStream.getTracks().forEach(track => track.stop());
-            localStream = null;
-        }
-        
-        document.getElementById('video-call-modal')!.classList.add('hidden');
-        document.getElementById('call-status')!.innerText = 'Вызов...';
-        document.getElementById('call-avatar-container')?.classList.remove('hidden');
-        
-        const remoteVideo = document.getElementById('remote-video') as HTMLVideoElement;
-        const remoteAudio = document.getElementById('remote-audio') as HTMLAudioElement;
-        if (remoteVideo) {
-            remoteVideo.srcObject = null;
-            remoteVideo.classList.add('hidden');
-        }
-        if (remoteAudio) {
-            remoteAudio.srcObject = null;
-        }
-        const localVideo = document.getElementById('local-video') as HTMLVideoElement;
-        const localVideoContainer = document.getElementById('local-video-container');
-        if (localVideo) localVideo.srcObject = null;
-        if (localVideoContainer) localVideoContainer.classList.remove('hidden');
-        const callVideoBtn = document.getElementById('call-video-btn');
-        if (callVideoBtn) callVideoBtn.classList.remove('hidden');
-    } finally {
-        isEndingCall = false;
     }
+    currentCallPeerId = null;
+    
+    if (rtcPeerConnection) {
+        rtcPeerConnection.close();
+        rtcPeerConnection = null;
+    }
+    if (localStream) {
+        localStream.getTracks().forEach(track => track.stop());
+        localStream = null;
+    }
+    
+    document.getElementById('video-call-modal')!.classList.add('hidden');
+    document.getElementById('call-status')!.innerText = 'Вызов...';
+    document.getElementById('call-avatar-container')?.classList.remove('hidden');
+    
+    const remoteVideo = document.getElementById('remote-video') as HTMLVideoElement;
+    const remoteAudio = document.getElementById('remote-audio') as HTMLAudioElement;
+    if (remoteVideo) {
+        remoteVideo.srcObject = null;
+        remoteVideo.classList.add('hidden');
+    }
+    if (remoteAudio) {
+        remoteAudio.srcObject = null;
+    }
+    const localVideo = document.getElementById('local-video') as HTMLVideoElement;
+    const localVideoContainer = document.getElementById('local-video-container');
+    if (localVideo) localVideo.srcObject = null;
+    if (localVideoContainer) localVideoContainer.classList.remove('hidden');
+    const callVideoBtn = document.getElementById('call-video-btn');
+    if (callVideoBtn) callVideoBtn.classList.remove('hidden');
 }
 
 export function toggleCallAudio() {

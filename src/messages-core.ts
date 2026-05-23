@@ -91,8 +91,6 @@ function renderContent(content: string) {
     return `<p class="break-words [word-break:break-word] leading-relaxed whitespace-pre-wrap" style="font-size: var(--msg-text-size, 15px);">${content}</p>`;
 }
 
-let floatingDateTimeout: any = null;
-
 function setupMessageScrollListener() {
     const list = document.getElementById('messages-list');
     if (!list) return;
@@ -107,56 +105,6 @@ function setupMessageScrollListener() {
             currentMessageLimit += 50;
             await loadMessages(state.activeChatId!);
             isLoadingMore = false;
-        }
-
-        const floatingDate = document.getElementById('floating-date');
-        if (floatingDate) {
-            const elements = list.children;
-            let topMsgOrDivider: HTMLElement | null = null;
-            for (let i = 0; i < elements.length; i++) {
-                const el = elements[i] as HTMLElement;
-                if ((el.classList.contains('msg-wrapper') || el.classList.contains('msg-date-divider')) && el.offsetTop >= list.scrollTop) {
-                    topMsgOrDivider = el;
-                    break;
-                }
-            }
-
-            if (topMsgOrDivider) {
-                let dateStr = '';
-                if (topMsgOrDivider.classList.contains('msg-date-divider')) {
-                    dateStr = topMsgOrDivider.dataset.date || '';
-                } else {
-                    let prev = topMsgOrDivider.previousElementSibling;
-                    while (prev) {
-                        if (prev.classList.contains('msg-date-divider')) {
-                            dateStr = (prev as HTMLElement).dataset.date || '';
-                            break;
-                        }
-                        prev = prev.previousElementSibling;
-                    }
-                }
-                
-                if (dateStr) {
-                    if (floatingDate.textContent !== dateStr) {
-                        floatingDate.textContent = dateStr;
-                    }
-                    floatingDate.classList.remove('hidden');
-                    // Small delay to allow display:block to apply before changing opacity
-                    requestAnimationFrame(() => {
-                        floatingDate.classList.remove('opacity-0');
-                    });
-                    
-                    if (floatingDateTimeout) clearTimeout(floatingDateTimeout);
-                    floatingDateTimeout = setTimeout(() => {
-                        floatingDate.classList.add('opacity-0');
-                        setTimeout(() => {
-                            if (floatingDate.classList.contains('opacity-0')) {
-                                floatingDate.classList.add('hidden');
-                            }
-                        }, 300);
-                    }, 1500);
-                }
-            }
         }
     };
     
@@ -187,7 +135,6 @@ export async function loadMessagesUntil(chatId: string, targetMsgId: string) {
 }
 export async function loadMessages(chatId: string, isInitialLoad = false) {
     if (isInitialLoad) {
-        import('./messages-recording').then(m => m.cancelRecording());
         currentMessageLimit = 50;
         hasMoreMessages = true;
         setupMessageScrollListener();
@@ -264,33 +211,7 @@ export function renderMessages(messages: any[], isInitialLoad = false) {
         if (div) div.remove();
     });
 
-    // Remove old date dividers to recreate them cleanly in the correct order
-    Array.from(list.children).forEach(child => {
-        if (child.classList && child.classList.contains('msg-date-divider')) {
-            child.remove();
-        }
-    });
-
-    let domIndex = 0;
-    let currentDateString = '';
-
     messages.forEach((msg, i) => {
-        const msgDateObj = new Date(msg.created_at);
-        const dateStr = msgDateObj.toLocaleDateString('ru-RU', { month: 'long', day: 'numeric', year: msgDateObj.getFullYear() !== new Date().getFullYear() ? 'numeric' : undefined }).replace(' г.', '');
-        
-        if (dateStr !== currentDateString) {
-            currentDateString = dateStr;
-            const dateId = `date-divider-${msgDateObj.toISOString().split('T')[0]}`;
-            let dateDiv = document.createElement('div');
-            dateDiv.id = dateId;
-            dateDiv.className = 'w-full flex justify-center my-3 msg-date-divider shrink-0';
-            dateDiv.dataset.date = dateStr;
-            dateDiv.innerHTML = `<span class="bg-black/20 dark:bg-black/40 text-white text-[11px] font-semibold px-3 py-1 rounded-full shadow-sm backdrop-blur-sm">${dateStr}</span>`;
-            
-            list.insertBefore(dateDiv, list.children[domIndex] || null);
-            domIndex++;
-        }
-
         const isMe = msg.sender_id === state.currentUser.id;
         
         let fileHtml = '';
@@ -662,10 +583,9 @@ export function renderMessages(messages: any[], isInitialLoad = false) {
             };
         }
         
-        if (list.children[domIndex] !== div) {
-            list.insertBefore(div, list.children[domIndex] || null);
+        if (list.children[i] !== div) {
+            list.insertBefore(div, list.children[i] || null);
         }
-        domIndex++;
     });
 
     const observer = getMediaObserver();

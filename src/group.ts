@@ -438,9 +438,6 @@ export async function openChatInfo(skipPushState = false) {
     modal.classList.remove('overflow-y-auto', 'p-6');
     modal.classList.add('flex', 'flex-col', 'overflow-hidden', 'p-0');
     
-    document.getElementById('modal-overlay')?.classList.remove('hidden');
-    modal.innerHTML = `<div class="p-12 flex justify-center items-center"><div class="w-10 h-10 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div></div>`;
-    
     const name = document.getElementById('current-chat-name')!.innerText;
     const isChannel = state.activeChatType === 'channel';
     
