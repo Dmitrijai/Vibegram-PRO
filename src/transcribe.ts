@@ -43,12 +43,11 @@ export async function transcribeMedia(url: string, messageId: string, msgType?: 
         let usedFallback = false;
 
         try {
-            // HF Inference API for Whisper (using corsproxy.io to bypass RF blocks)
+            // HF Inference API for Whisper (using router.huggingface.co to bypass DNS blocks)
             transcription = await executeHfWithFallback(async (apiKey: string) => {
-                const targetUrl = "https://api-inference.huggingface.co/models/openai/whisper-large-v3-turbo";
-                const proxyUrl = "https://corsproxy.io/?" + encodeURIComponent(targetUrl);
+                const targetUrl = "https://router.huggingface.co/hf-inference/models/openai/whisper-large-v3-turbo";
                 
-                const response = await fetch(proxyUrl, {
+                const response = await fetch(targetUrl, {
                     method: "POST",
                     headers: {
                         "Authorization": `Bearer ${apiKey}`,

@@ -149,8 +149,7 @@ export async function executeAiWithFallback<T>(action: (ai: GoogleGenAI) => Prom
         }
 
         const ai = new GoogleGenAI({ 
-            apiKey,
-            httpOptions: { baseUrl: 'https://corsproxy.io/?https://generativelanguage.googleapis.com' }
+            apiKey
         });
         
         try {
