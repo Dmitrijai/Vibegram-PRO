@@ -169,9 +169,6 @@ export async function startDirectChatById(userId: string) {
 }
 
 export async function openUserProfile(userId: string) {
-    const { data: userToFind } = await supabase.from('profiles').select('*').eq('id', userId).single();
-    if (!userToFind) return;
-
     if (window.location.hash !== '#profile') {
         window.history.pushState({ screen: 'profile' }, '', '#profile');
     }
@@ -179,6 +176,15 @@ export async function openUserProfile(userId: string) {
     const modal = document.getElementById('modal-content')!;
     modal.classList.remove('overflow-y-auto', 'p-6');
     modal.classList.add('flex', 'flex-col', 'overflow-hidden', 'p-0');
+    
+    document.getElementById('modal-overlay')?.classList.remove('hidden');
+    modal.innerHTML = `<div class="p-12 flex justify-center items-center"><div class="w-10 h-10 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div></div>`;
+
+    const { data: userToFind } = await supabase.from('profiles').select('*').eq('id', userId).single();
+    if (!userToFind) {
+        modal.innerHTML = '<div class="p-6 text-center text-gray-500">Пользователь не найден</div>';
+        return;
+    }
     
     let isPremiumUser = userToFind.is_premium && (!userToFind.premium_until || new Date(userToFind.premium_until) > new Date());
     const premiumBadgeHtml = isPremiumUser ? `<div class="absolute bottom-0 right-0 translate-x-1.5 translate-y-1.5 bg-white dark:bg-gray-800 rounded-full p-1 shadow-sm border-2 border-white dark:border-gray-900 z-50 w-8 h-8 flex items-center justify-center"><img src="./image/Google-Gemini-Logo-Transparent.png" class="w-full h-full object-contain" alt="Premium"></div>` : '';

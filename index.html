@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>Vibegram</title>
-    <link rel="icon" href="data:," />
+    <link rel="icon" href="./image/Gemini_Generated_Image_fpoqbdfpoqbdfpoq (1).png" />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <script>
         if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
@@ -18,7 +18,7 @@
         } catch(e) {}
     </script>
 </head>
-<body class="h-[100dvh] w-[100dvw] flex overflow-hidden bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100 transition-colors">
+<body class="fixed inset-0 pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)] flex overflow-hidden bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100 transition-colors">
     <!-- Standalone Mini App Screen -->
     <div id="standalone-miniapp-screen" class="hidden w-full h-[100dvh] absolute top-0 left-0 bg-white dark:bg-gray-900 z-[10000] flex-col">
         <iframe id="standalone-miniapp-frame" class="w-full h-full border-0 flex-1" sandbox="allow-scripts allow-forms allow-popups"></iframe>
@@ -68,9 +68,6 @@
             <button onclick="forceLogout()" class="text-sm text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 mt-6 block mx-auto underline">Выйти из аккаунта</button>
         </div>
     </div>
-
-    <!-- Floating in-app notifications container -->
-    <div id="in-app-notifications" class="fixed top-4 left-1/2 -translate-x-1/2 z-[100] flex flex-col items-center gap-2 pointer-events-none w-[90%] max-w-[400px]"></div>
 
     <div id="app-screen" class="w-full h-full flex hidden relative">
         
@@ -166,6 +163,10 @@
                     </button>
                 </div>
                 <div id="chat-search-results" class="hidden mt-2 max-h-48 overflow-y-auto w-full custom-scrollbar flex flex-col gap-1"></div>
+            </div>
+
+            <div id="floating-date" class="absolute top-16 left-1/2 -translate-x-1/2 mt-2 px-3 py-1 bg-black/40 dark:bg-black/60 backdrop-blur-md text-white text-xs font-semibold rounded-full z-[35] opacity-0 transition-opacity duration-300 pointer-events-none shadow-md hidden">
+                Дата
             </div>
 
             <div id="messages-list" class="flex-1 overflow-y-auto p-4 flex flex-col gap-3 relative z-10 pb-20">
@@ -697,6 +698,9 @@
         </div>
 
     </div>
+    <!-- Floating in-app notifications container -->
+    <div id="in-app-notifications" class="fixed top-14 md:top-4 left-1/2 -translate-x-1/2 z-[999999] flex flex-col items-center gap-2 pointer-events-none w-[90%] max-w-[400px]"></div>
+
     <script type="module" src="/src/main.ts"></script>
 </body>
 </html>
