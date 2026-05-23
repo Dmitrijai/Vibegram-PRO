@@ -1,7 +1,7 @@
 import { supabase } from './supabase';
 import { customToast } from './utils';
 import { GoogleGenAI } from '@google/genai';
-import { executeAiWithFallback } from './ai-keys';
+import { executeAiWithFallback, executeHfWithFallback } from './ai-keys';
 
 export async function transcribeMedia(url: string, messageId: string, msgType?: string) {
     try {
@@ -43,35 +43,30 @@ export async function transcribeMedia(url: string, messageId: string, msgType?: 
         let usedFallback = false;
 
         try {
-            // Convert to File for FormData
-            const file = new File([blob], 'audio.webm', { type: mimeType });
-            const formData = new FormData();
-            formData.append('file', file);
-            formData.append('model', 'whisper-1');
-
-            const pollResponse = await fetch('https://text.pollinations.ai/openai/v1/audio/transcriptions', {
-                method: 'POST',
-                body: formData
+            // HF Inference API for Whisper
+            transcription = await executeHfWithFallback(async (apiKey: string) => {
+                const response = await fetch("https://api-inference.huggingface.co/models/openai/whisper-large-v3-turbo", {
+                    method: "POST",
+                    headers: {
+                        "Authorization": `Bearer ${apiKey}`,
+                        "Content-Type": mimeType
+                    },
+                    body: blob
+                });
+                
+                if (!response.ok) {
+                    const errText = await response.text();
+                    throw new Error(`HF API error: ${response.status} ${errText}`);
+                }
+                
+                const data = await response.json();
+                return data.text?.trim() || '';
             });
-
-            if (!pollResponse.ok) {
-                throw new Error(`Pollinations API error: ${pollResponse.status}`);
-            }
-
-            const pollData = await pollResponse.json();
-
-            // Whisper returns { text: "..." }
-            // If Pollinations returns a Chat Completion (e.g. { choices: [...] }) it means Audio is still unsupported
-            if (pollData && pollData.text) {
-                transcription = pollData.text.trim();
-            } else {
-                throw new Error('Pollinations AI returned unsupported format (likely no audio support yet)');
-            }
             
             if (!transcription) transcription = 'Нет речи';
             
-        } catch (pollError) {
-            console.warn('Pollinations AI failed, using Gemini fallback:', pollError);
+        } catch (hfError) {
+            console.warn('Hugging Face AI failed, using Gemini fallback:', hfError);
             usedFallback = true;
             
             // Call Gemini

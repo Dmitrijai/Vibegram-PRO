@@ -148,7 +148,9 @@ export async function executeAiWithFallback<T>(action: (ai: GoogleGenAI) => Prom
             continue;
         }
 
-        const ai = new GoogleGenAI({ apiKey });
+        const ai = new GoogleGenAI({ 
+            apiKey
+        });
         
         try {
             return await action(ai);
