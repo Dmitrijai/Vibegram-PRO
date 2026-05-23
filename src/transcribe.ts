@@ -10,35 +10,94 @@ export async function transcribeMedia(url: string, messageId: string, msgType?: 
             btn.classList.add('pointer-events-none');
         }
 
+        // Fetch the media file on client
+        const response = await fetch(url);
+        const blob = await response.blob();
+        
+        // Convert blob to base64 for Gemini
+        const base64data = await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onloadend = () => {
+                const base64 = (reader.result as string).split(',')[1];
+                resolve(base64);
+            };
+            reader.onerror = reject;
+            reader.readAsDataURL(blob);
+        });
+
+        let mimeType = blob.type || (url.includes('.mp4') ? 'video/mp4' : 'audio/webm');
+        if (mimeType.includes(';')) mimeType = mimeType.split(';')[0];
+        if (msgType === 'voice' || msgType === 'video_circle' || mimeType.includes('video')) {
+            mimeType = 'audio/webm';
+        }
+        
         let resultText = '';
         try {
-            // First try Gemini via Server Proxy (Server handles download and transcription to bypass NGINX upload sizes and Russian blocks!)
+            // First try Gemini via Client Proxies (to bypass NGINX and Russian blocks)
             resultText = await executeApiKeyWithFallback(async (apiKey: string) => {
-                 const rsp = await fetch('/api/transcribe', {
-                     method: 'POST',
-                     headers: { 'Content-Type': 'application/json' },
-                     body: JSON.stringify({ url, apiKey, aiProvider: 'gemini' })
-                 });
-                 if (!rsp.ok) {
-                     const errData = await rsp.json().catch(() => ({}));
-                     throw Object.assign(new Error(errData.error || await rsp.text()), { status: rsp.status });
+                 const targetUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
+                 
+                 const endpoints = [
+                     `https://corsproxy.io/?${encodeURIComponent(targetUrl)}`,
+                     targetUrl
+                 ];
+                 
+                 let lastError = null;
+                 
+                 for (const endpoint of endpoints) {
+                     try {
+                         const rsp = await fetch(endpoint, {
+                             method: 'POST',
+                             headers: { 'Content-Type': 'application/json' },
+                             body: JSON.stringify({
+                                 contents: [{
+                                     role: 'user',
+                                     parts: [
+                                         { text: 'Transcribe this audio/video. Return only the transcription text in the language spoken. If there is no speech, return an empty string.' },
+                                         { inline_data: { mime_type: mimeType, data: base64data } }
+                                     ]
+                                 }]
+                             })
+                         });
+    
+                         if (!rsp.ok) {
+                             const errText = await rsp.text();
+                             let errMsg = errText;
+                             try { 
+                                 const errData = JSON.parse(errText);
+                                 errMsg = errData.error?.message || errData.error || errText;
+                             } catch(e) {}
+                             throw Object.assign(new Error(errMsg), { status: rsp.status });
+                         }
+    
+                         const data = await rsp.json();
+                         return data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+                     } catch (err: any) {
+                         lastError = err;
+                         if (err.status >= 400 && err.status < 500 && err.status !== 403) {
+                             throw err;
+                         }
+                     }
                  }
-                 const data = await rsp.json();
-                 if (data.error) throw new Error(data.error);
-                 return data.text;
+                 
+                 throw lastError || new Error('All proxy attempts failed');
             });
         } catch (geminiError: any) {
-             console.warn("Gemini transcription failed, falling back to HuggingFace server proxy:", geminiError);
-             // Fallback to HuggingFace via Server Proxy
+             console.warn("Gemini transcription failed, falling back to HuggingFace:", geminiError);
              resultText = await executeHfWithFallback(async (apiKey: string) => {
-                  const rsp = await fetch('/api/transcribe', {
+                  const rsp = await fetch('https://api-inference.huggingface.co/models/openai/whisper-large-v3-turbo', {
                       method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({ url, apiKey, aiProvider: 'hf' })
+                      headers: { 'Authorization': `Bearer ${apiKey}` },
+                      body: blob
                   });
                   if (!rsp.ok) {
-                      const errData = await rsp.json().catch(() => ({}));
-                      throw Object.assign(new Error(errData.error || await rsp.text()), { status: rsp.status });
+                      const errText = await rsp.text();
+                      let errMsg = errText;
+                      try { 
+                          const errData = JSON.parse(errText);
+                          errMsg = errData.error || errText;
+                      } catch(e) {}
+                      throw Object.assign(new Error(errMsg), { status: rsp.status });
                   }
                   const data = await rsp.json();
                   if (data.error) throw new Error(data.error);
