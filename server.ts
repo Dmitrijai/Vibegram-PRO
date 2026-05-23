@@ -135,42 +135,74 @@ async function startServer() {
     }
   });
 
-  // API Route for Gemini Proxy (Bypass region block)
-  app.post("/api/gemini-proxy/transcribe", async (req, res) => {
+  // API Route for Transcribing (Bypasses region block AND avoids large base64 uploads)
+  app.post("/api/transcribe", async (req, res) => {
     try {
-      const { base64data, mimeType, apiKey } = req.body;
-      if (!base64data || !apiKey) {
-         res.status(400).json({ error: "Missing required fields" });
+      const { url, apiKey, aiProvider } = req.body;
+      if (!url || !apiKey) {
+         res.status(400).json({ error: "Missing url or apiKey" });
          return;
       }
 
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
-      
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{
-            role: 'user',
-            parts: [
-              { text: 'Transcribe this audio/video. Return only the transcription text in the language spoken. If there is no speech, return an empty string.' },
-              { inline_data: { mime_type: mimeType, data: base64data } }
-            ]
-          }]
-        })
-      });
-
-      if (!response.ok) {
-        const errText = await response.text();
-        res.status(response.status).send(errText);
-        return;
+      // Download file on server this bypasses client-side NGINX upload limits
+      const fileRes = await fetch(url);
+      if (!fileRes.ok) {
+         res.status(500).json({ error: "Failed to download media on server" });
+         return;
       }
 
-      const data = await response.json();
-      const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
-      res.json({ text });
+      let mimeType = fileRes.headers.get("content-type") || 'audio/webm';
+      if (mimeType.includes(';')) mimeType = mimeType.split(';')[0];
+      // Normalize mimeType since some video codecs break the API
+      if (mimeType.includes('video')) mimeType = 'audio/webm';
+
+      const arrayBuffer = await fileRes.arrayBuffer();
+
+      if (aiProvider === 'hf') {
+          const hfRes = await fetch('https://api-inference.huggingface.co/models/openai/whisper-large-v3-turbo', {
+              method: 'POST',
+              headers: { 'Authorization': `Bearer ${apiKey}` },
+              body: Buffer.from(arrayBuffer)
+          });
+          if (!hfRes.ok) {
+              const text = await hfRes.text();
+              res.status(hfRes.status).json({ error: text });
+              return;
+          }
+          const data = await hfRes.json();
+          if (data.error) throw new Error(data.error);
+          res.json({ text: data.text });
+          return;
+      } else {
+          // Default to Gemini
+          const base64data = Buffer.from(arrayBuffer).toString('base64');
+          const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
+          
+          const geminiRes = await fetch(geminiUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              contents: [{
+                role: 'user',
+                parts: [
+                  { text: 'Transcribe this audio/video. Return only the transcription text in the language spoken. If there is no speech, return an empty string.' },
+                  { inline_data: { mime_type: mimeType, data: base64data } }
+                ]
+              }]
+            })
+          });
+
+          if (!geminiRes.ok) {
+            const text = await geminiRes.text();
+            res.status(geminiRes.status).json({ error: text });
+            return;
+          }
+          const data = await geminiRes.json();
+          const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+          res.json({ text });
+      }
     } catch (e: any) {
-      console.error("Gemini proxy error:", e);
+      console.error("Transcribe proxy error:", e);
       res.status(500).json({ error: e.message });
     }
   });

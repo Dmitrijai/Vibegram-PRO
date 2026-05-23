@@ -1,6 +1,6 @@
 import { supabase } from './supabase';
 import { customToast } from './utils';
-import { executeHfWithFallback } from './ai-keys';
+import { executeHfWithFallback, executeApiKeyWithFallback } from './ai-keys';
 
 export async function transcribeMedia(url: string, messageId: string, msgType?: string) {
     try {
@@ -10,32 +10,41 @@ export async function transcribeMedia(url: string, messageId: string, msgType?: 
             btn.classList.add('pointer-events-none');
         }
 
-        // Fetch the media file
-        const response = await fetch(url);
-        const blob = await response.blob();
-        
-        // Use HuggingFace Whisper API directly on the blob to bypass Gemini regional restrictions!
-        // HF Whisper automatically extracts audio from webm/mp4 blobs.
-        const resultText = await executeHfWithFallback(async (apiKey: string) => {
-             const rsp = await fetch('https://api-inference.huggingface.co/models/openai/whisper-large-v3-turbo', {
-                 method: 'POST',
-                 headers: {
-                     'Authorization': `Bearer ${apiKey}`,
-                     // Do not set Content-Type so it sends the raw binary blob
-                 },
-                 body: blob
+        let resultText = '';
+        try {
+            // First try Gemini via Server Proxy (Server handles download and transcription to bypass NGINX upload sizes and Russian blocks!)
+            resultText = await executeApiKeyWithFallback(async (apiKey: string) => {
+                 const rsp = await fetch('/api/transcribe', {
+                     method: 'POST',
+                     headers: { 'Content-Type': 'application/json' },
+                     body: JSON.stringify({ url, apiKey, aiProvider: 'gemini' })
+                 });
+                 if (!rsp.ok) {
+                     const errData = await rsp.json().catch(() => ({}));
+                     throw Object.assign(new Error(errData.error || await rsp.text()), { status: rsp.status });
+                 }
+                 const data = await rsp.json();
+                 if (data.error) throw new Error(data.error);
+                 return data.text;
+            });
+        } catch (geminiError: any) {
+             console.warn("Gemini transcription failed, falling back to HuggingFace server proxy:", geminiError);
+             // Fallback to HuggingFace via Server Proxy
+             resultText = await executeHfWithFallback(async (apiKey: string) => {
+                  const rsp = await fetch('/api/transcribe', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ url, apiKey, aiProvider: 'hf' })
+                  });
+                  if (!rsp.ok) {
+                      const errData = await rsp.json().catch(() => ({}));
+                      throw Object.assign(new Error(errData.error || await rsp.text()), { status: rsp.status });
+                  }
+                  const data = await rsp.json();
+                  if (data.error) throw new Error(data.error);
+                  return data.text;
              });
-             
-             if (!rsp.ok) {
-                 const errText = await rsp.text();
-                 let status = rsp.status;
-                 throw Object.assign(new Error(errText), { status });
-             }
-             
-             const data = await rsp.json();
-             if (data.error) throw new Error(data.error);
-             return data.text;
-        });
+        }
 
         const transcription = resultText?.trim() || 'Нет речи';
 
