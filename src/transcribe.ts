@@ -24,21 +24,21 @@ export async function transcribeMedia(url: string, messageId: string, msgType?: 
 
         // Call microsoft/VibeVoice-ASR-HF via HF API using the key from GEMINI_API_KEY
         const result = await executeRawAiKeyWithFallback(async (apiKey: string) => {
-            const hfResponse = await fetch("https://api-inference.huggingface.co/models/microsoft/VibeVoice-ASR-HF", {
+            const serverResponse = await fetch("/api/transcribe", {
                 headers: { 
-                    Authorization: `Bearer ${apiKey}`,
+                    "X-Api-Key": apiKey,
                     "Content-Type": mimeType
                 },
                 method: "POST",
                 body: blob,
             });
 
-            if (!hfResponse.ok) {
-                 const errText = await hfResponse.text();
-                 throw new Error(`HF API error: ${hfResponse.status} ${errText}`);
+            if (!serverResponse.ok) {
+                 const errText = await serverResponse.text();
+                 throw new Error(`HF proxy API error: ${serverResponse.status} ${errText}`);
             }
 
-            return await hfResponse.json();
+            return await serverResponse.json();
         });
 
         let transcription = 'Нет речи';

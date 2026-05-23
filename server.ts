@@ -134,6 +134,43 @@ async function startServer() {
     }
   });
 
+  app.post("/api/transcribe", express.raw({ type: ['audio/*', 'video/*'], limit: '50mb' }), async (req, res) => {
+    try {
+      const apiKey = req.headers['x-api-key'] || process.env.GEMINI_API_KEY; // Using that same key as user said
+      const mimeType = req.headers['content-type'] || 'audio/webm';
+      
+      if (!apiKey) {
+         res.status(401).json({ error: "No API key provided" });
+         return;
+      }
+
+      console.log(`Transcribing via proxy... Mime: ${mimeType}, Size: ${req.body.length}`);
+
+      const hfResponse = await fetch("https://api-inference.huggingface.co/models/microsoft/VibeVoice-ASR-HF", {
+          headers: { 
+              Authorization: `Bearer ${apiKey}`,
+              "Content-Type": mimeType
+          },
+          method: "POST",
+          body: req.body,
+      });
+
+      if (!hfResponse.ok) {
+         const errText = await hfResponse.text();
+         console.error("HF Error:", hfResponse.status, errText);
+         res.status(hfResponse.status).send(errText);
+         return;
+      }
+
+      const result = await hfResponse.json();
+      res.json(result);
+
+    } catch (e: any) {
+       console.error("Transcription proxy error:", e);
+       res.status(500).json({ error: e.message });
+    }
+  });
+
     if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
       server: { middlewareMode: true },
