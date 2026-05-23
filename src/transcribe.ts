@@ -1,7 +1,7 @@
 import { supabase } from './supabase';
 import { customToast } from './utils';
 import { GoogleGenAI } from '@google/genai';
-import { executeAiWithFallback, executeHfWithFallback } from './ai-keys';
+import { executeAiWithFallback } from './ai-keys';
 
 export async function transcribeMedia(url: string, messageId: string, msgType?: string) {
     try {
@@ -39,60 +39,23 @@ export async function transcribeMedia(url: string, messageId: string, msgType?: 
             mimeType = 'audio/webm';
         }
 
-        let transcription = '';
-        let usedFallback = false;
-
-        try {
-            // HF Inference API for Whisper (using router.huggingface.co to bypass DNS blocks)
-            transcription = await executeHfWithFallback(async (apiKey: string) => {
-                const targetUrl = "https://router.huggingface.co/hf-inference/models/openai/whisper-large-v3-turbo";
-                
-                const response = await fetch(targetUrl, {
-                    method: "POST",
-                    headers: {
-                        "Authorization": `Bearer ${apiKey}`,
-                        "Content-Type": mimeType
-                    },
-                    body: blob
-                });
-                
-                if (!response.ok) {
-                    const errText = await response.text();
-                    throw new Error(`HF API error: ${response.status} ${errText}`);
-                }
-                
-                const data = await response.json();
-                return data.text?.trim() || '';
+        // Call Gemini
+        const result = await executeAiWithFallback(async (ai: GoogleGenAI) => {
+            return await ai.models.generateContent({
+                model: 'gemini-2.5-flash',
+                contents: [
+                    {
+                        role: 'user',
+                        parts: [
+                            { text: 'Transcribe this audio/video. Return only the transcription text in the language spoken. If there is no speech, return an empty string.' },
+                            { inlineData: { data: base64data, mimeType } }
+                        ]
+                    }
+                ]
             });
-            
-            if (!transcription) transcription = 'Нет речи';
-            
-        } catch (hfError) {
-            console.warn('Hugging Face AI failed, using Gemini fallback:', hfError);
-            usedFallback = true;
-            
-            // Call Gemini
-            const result = await executeAiWithFallback(async (ai: GoogleGenAI) => {
-                return await ai.models.generateContent({
-                    model: 'gemini-2.5-flash',
-                    contents: [
-                        {
-                            role: 'user',
-                            parts: [
-                                { text: 'Transcribe this audio/video. Return only the transcription text in the language spoken. If there is no speech, return an empty string.' },
-                                { inlineData: { data: base64data, mimeType } }
-                            ]
-                        }
-                    ]
-                });
-            });
+        });
 
-            transcription = result.text?.trim() || 'Нет речи';
-        }
-
-        if (usedFallback) {
-            customToast('🔄 Используется запасной ИИ (Gemini) для расшифровки');
-        }
+        const transcription = result.text?.trim() || 'Нет речи';
 
         // Save transcription to message
         const { data: msg, error: fetchError } = await supabase
