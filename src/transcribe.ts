@@ -1,7 +1,6 @@
 import { supabase } from './supabase';
 import { customToast } from './utils';
-import { GoogleGenAI } from '@google/genai';
-import { executeAiWithFallback } from './ai-keys';
+import { executeHfWithFallback } from './ai-keys';
 
 export async function transcribeMedia(url: string, messageId: string, msgType?: string) {
     try {
@@ -15,47 +14,30 @@ export async function transcribeMedia(url: string, messageId: string, msgType?: 
         const response = await fetch(url);
         const blob = await response.blob();
         
-        // Convert blob to base64
-        const base64data = await new Promise<string>((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onloadend = () => {
-                const base64 = (reader.result as string).split(',')[1];
-                resolve(base64);
-            };
-            reader.onerror = reject;
-            reader.readAsDataURL(blob);
-        });
-        
-        // Determine mime type
-        let mimeType = blob.type || (url.includes('.mp4') ? 'video/mp4' : 'audio/webm');
-        
-        // Strip codec info that Gemini rejects (e.g. "audio/webm; codecs=opus" -> "audio/webm")
-        if (mimeType.includes(';')) {
-            mimeType = mimeType.split(';')[0];
-        }
-        
-        // Force audio/webm to prevent Gemini from parsing video frames which fails on pure MediaRecorder webM files
-        if (msgType === 'voice' || msgType === 'video_circle' || mimeType.includes('video')) {
-            mimeType = 'audio/webm';
-        }
-
-        // Call Gemini
-        const result = await executeAiWithFallback(async (ai: GoogleGenAI) => {
-            return await ai.models.generateContent({
-                model: 'gemini-2.5-flash',
-                contents: [
-                    {
-                        role: 'user',
-                        parts: [
-                            { text: 'Transcribe this audio/video. Return only the transcription text in the language spoken. If there is no speech, return an empty string.' },
-                            { inlineData: { data: base64data, mimeType } }
-                        ]
-                    }
-                ]
-            });
+        // Use HuggingFace Whisper API directly on the blob to bypass Gemini regional restrictions!
+        // HF Whisper automatically extracts audio from webm/mp4 blobs.
+        const resultText = await executeHfWithFallback(async (apiKey: string) => {
+             const rsp = await fetch('https://api-inference.huggingface.co/models/openai/whisper-large-v3-turbo', {
+                 method: 'POST',
+                 headers: {
+                     'Authorization': `Bearer ${apiKey}`,
+                     // Do not set Content-Type so it sends the raw binary blob
+                 },
+                 body: blob
+             });
+             
+             if (!rsp.ok) {
+                 const errText = await rsp.text();
+                 let status = rsp.status;
+                 throw Object.assign(new Error(errText), { status });
+             }
+             
+             const data = await rsp.json();
+             if (data.error) throw new Error(data.error);
+             return data.text;
         });
 
-        const transcription = result.text?.trim() || 'Нет речи';
+        const transcription = resultText?.trim() || 'Нет речи';
 
         // Save transcription to message
         const { data: msg, error: fetchError } = await supabase
@@ -87,7 +69,7 @@ export async function transcribeMedia(url: string, messageId: string, msgType?: 
     } catch (err: any) {
         console.error('Transcription error:', err);
         
-        if (!err.message?.includes('All API keys exhausted')) {
+        if (!err.message?.includes('All HF API keys exhausted') && !err.message?.includes('All API keys exhausted')) {
             let errorMessage = `Ошибка расшифровки: ${err.message?.substring(0, 50)}`;
             const errText = err.message?.toLowerCase() || '';
             if (errText.includes('quota') || errText.includes('429') || errText.includes('exhausted') || errText.includes('rate limit')) {

@@ -49,7 +49,8 @@ async function startServer() {
   const app = express();
   const PORT = 3000;
 
-  app.use(express.json());
+  app.use(express.json({ limit: '200mb' }));
+  app.use(express.urlencoded({ limit: '200mb', extended: true }));
 
   // API Route for soft-delete
   app.post("/api/cloudinary/soft-delete", async (req, res) => {
@@ -131,6 +132,46 @@ async function startServer() {
       
     } catch (e: any) {
        res.status(500).json({ error: e.message });
+    }
+  });
+
+  // API Route for Gemini Proxy (Bypass region block)
+  app.post("/api/gemini-proxy/transcribe", async (req, res) => {
+    try {
+      const { base64data, mimeType, apiKey } = req.body;
+      if (!base64data || !apiKey) {
+         res.status(400).json({ error: "Missing required fields" });
+         return;
+      }
+
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
+      
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{
+            role: 'user',
+            parts: [
+              { text: 'Transcribe this audio/video. Return only the transcription text in the language spoken. If there is no speech, return an empty string.' },
+              { inline_data: { mime_type: mimeType, data: base64data } }
+            ]
+          }]
+        })
+      });
+
+      if (!response.ok) {
+        const errText = await response.text();
+        res.status(response.status).send(errText);
+        return;
+      }
+
+      const data = await response.json();
+      const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+      res.json({ text });
+    } catch (e: any) {
+      console.error("Gemini proxy error:", e);
+      res.status(500).json({ error: e.message });
     }
   });
 

@@ -1,7 +1,5 @@
-import { GoogleGenAI, HarmCategory, HarmBlockThreshold } from "@google/genai";
 import { state } from './supabase';
 import { renderMediaModal } from './messages-media';
-import { executeAiWithFallback, executeHfWithFallback } from './ai-keys';
 import { customAlert } from './utils';
 
 export async function generateAiImage() {

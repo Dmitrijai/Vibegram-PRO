@@ -132,26 +132,13 @@ function getAudioContext() {
     return audioCtx;
 }
 
-// Full iOS Audio unlock
-function unlockAudio() {
-    const ctx = getAudioContext();
-    if (!ctx) return;
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    gain.gain.value = 0.001; // Not fully zero to avoid optimization
-    osc.frequency.value = 20; // Inaudible frequency
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-    osc.start(0);
-    osc.stop(ctx.currentTime + 0.1);
-    
-    document.removeEventListener('click', unlockAudio);
-    document.removeEventListener('touchstart', unlockAudio);
-}
-
 // Resume context on any click to bypass autoplay
-document.addEventListener('click', unlockAudio);
-document.addEventListener('touchstart', unlockAudio);
+document.addEventListener('click', () => {
+    getAudioContext();
+}, { once: true });
+document.addEventListener('touchstart', () => {
+    getAudioContext();
+}, { once: true });
 
 export function playNotificationSound() {
     try {
