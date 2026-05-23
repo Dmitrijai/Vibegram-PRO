@@ -11,7 +11,7 @@ try {
     console.error("Failed to decode API keys:", e);
 }
 
-export const API_KEYS = rawKeys
+const API_KEYS = rawKeys
     .split(',')
     .map(k => k.replace(/['"]/g, '').trim())
     .filter(Boolean);
@@ -25,7 +25,7 @@ try {
     console.error("Failed to decode HF API keys:", e);
 }
 
-export const HF_API_KEYS = rawHfKeys
+const HF_API_KEYS = rawHfKeys
     .split(',')
     .map(k => k.replace(/['"]/g, '').trim())
     .filter(Boolean);
@@ -59,10 +59,7 @@ function isTransientError(error: any) {
 }
 
 export async function executeHfWithFallback<T>(action: (apiKey: string) => Promise<T>): Promise<T> {
-    const keysToUse = HF_API_KEYS.length > 0 ? HF_API_KEYS : API_KEYS;
-    const currentStatusMap = HF_API_KEYS.length > 0 ? hfKeyStatus : keyStatus;
-    
-    if (keysToUse.length === 0) {
+    if (HF_API_KEYS.length === 0) {
         customToast('Ключи Hugging Face не настроены. Добавьте HF_API_KEY в GitHub Secrets.');
         throw new Error('No HF API keys configured');
     }
@@ -73,14 +70,12 @@ export async function executeHfWithFallback<T>(action: (apiKey: string) => Promi
     
     let lastError: any = null;
     
-    while (attempts < keysToUse.length) {
-        // We reuse currentHfKeyIndex, just ensuring it's within bounds
-        currentHfKeyIndex = currentHfKeyIndex % keysToUse.length;
-        const apiKey = keysToUse[currentHfKeyIndex];
-        const exhaustedAt = currentStatusMap.get(apiKey) || 0;
+    while (attempts < HF_API_KEYS.length) {
+        const apiKey = HF_API_KEYS[currentHfKeyIndex];
+        const exhaustedAt = hfKeyStatus.get(apiKey) || 0;
         
         if (now - exhaustedAt < EXHAUSTED_COOLDOWN) {
-            currentHfKeyIndex = (currentHfKeyIndex + 1) % keysToUse.length;
+            currentHfKeyIndex = (currentHfKeyIndex + 1) % HF_API_KEYS.length;
             attempts++;
             continue;
         }
@@ -100,19 +95,19 @@ export async function executeHfWithFallback<T>(action: (apiKey: string) => Promi
             
             if (isQuotaError(error)) {
                 console.warn(`HF Key at index ${currentHfKeyIndex} hit quota/auth error. Switching key...`, error.message);
-                currentStatusMap.set(apiKey, Date.now());
-                currentHfKeyIndex = (currentHfKeyIndex + 1) % keysToUse.length;
+                hfKeyStatus.set(apiKey, Date.now());
+                currentHfKeyIndex = (currentHfKeyIndex + 1) % HF_API_KEYS.length;
                 attempts++;
                 
                 let hasUnexhaustedKeys = false;
-                for (let i = 0; i < keysToUse.length; i++) {
-                    if (now - (currentStatusMap.get(keysToUse[i]) || 0) >= EXHAUSTED_COOLDOWN) {
+                for (let i = 0; i < HF_API_KEYS.length; i++) {
+                    if (now - (hfKeyStatus.get(HF_API_KEYS[i]) || 0) >= EXHAUSTED_COOLDOWN) {
                         hasUnexhaustedKeys = true;
                         break;
                     }
                 }
                 
-                if (attempts < keysToUse.length && hasUnexhaustedKeys) {
+                if (attempts < HF_API_KEYS.length && hasUnexhaustedKeys) {
                     customToast('Поиск свободного ключа HF...');
                     await new Promise(r => setTimeout(r, 500));
                 }
@@ -129,74 +124,6 @@ export async function executeHfWithFallback<T>(action: (apiKey: string) => Promi
         customToast('Все свободные слоты запяты. Попробуйте позже.');
     }
     throw new Error('All HF API keys exhausted');
-}
-
-export async function executeRawAiKeyWithFallback<T>(action: (apiKey: string) => Promise<T>): Promise<T> {
-    if (API_KEYS.length === 0) {
-        customToast('Ключи API не настроены.');
-        throw new Error('No API keys configured');
-    }
-
-    const now = Date.now();
-    let attempts = 0;
-    let transientRetries = 0;
-    
-    let lastError: any = null;
-    
-    while (attempts < API_KEYS.length) {
-        const apiKey = API_KEYS[currentKeyIndex];
-        const exhaustedAt = keyStatus.get(apiKey) || 0;
-        
-        if (now - exhaustedAt < EXHAUSTED_COOLDOWN) {
-            currentKeyIndex = (currentKeyIndex + 1) % API_KEYS.length;
-            attempts++;
-            continue;
-        }
-        
-        try {
-            return await action(apiKey);
-        } catch (error: any) {
-            lastError = error;
-            
-            if (isTransientError(error) && transientRetries < 3) {
-                 console.warn('Model overloaded (503), retrying in 2 seconds...', error.message);
-                 transientRetries++;
-                 customToast('Сервер перегружен, ожидание...');
-                 await new Promise(r => setTimeout(r, 2000));
-                 continue; // Retry same key
-            }
-            
-            if (isQuotaError(error)) {
-                console.warn(`Key at index ${currentKeyIndex} hit quota/auth error. Switching key...`, error.message);
-                keyStatus.set(apiKey, Date.now());
-                currentKeyIndex = (currentKeyIndex + 1) % API_KEYS.length;
-                attempts++;
-                
-                let hasUnexhaustedKeys = false;
-                for (let i = 0; i < API_KEYS.length; i++) {
-                    if (now - (keyStatus.get(API_KEYS[i]) || 0) >= EXHAUSTED_COOLDOWN) {
-                        hasUnexhaustedKeys = true;
-                        break;
-                    }
-                }
-                
-                if (attempts < API_KEYS.length && hasUnexhaustedKeys) {
-                    customToast('Поиск свободного ключа...');
-                    await new Promise(r => setTimeout(r, 500));
-                }
-            } else {
-                throw error;
-            }
-        }
-    }
-    
-    console.error('All keys exhausted!', lastError);
-    if (lastError?.message) {
-        customToast(`Ошибка API: ${lastError.message.substring(0, 50)}...`);
-    } else {
-        customToast('Все свободные слоты запяты. Попробуйте позже.');
-    }
-    throw new Error('All API keys exhausted');
 }
 
 export async function executeAiWithFallback<T>(action: (ai: GoogleGenAI) => Promise<T>): Promise<T> {

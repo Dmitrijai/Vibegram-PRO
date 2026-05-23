@@ -1,6 +1,7 @@
 import { supabase } from './supabase';
 import { customToast } from './utils';
-import { API_KEYS, HF_API_KEYS } from './ai-keys';
+import { GoogleGenAI } from '@google/genai';
+import { executeAiWithFallback } from './ai-keys';
 
 export async function transcribeMedia(url: string, messageId: string, msgType?: string) {
     try {
@@ -14,70 +15,87 @@ export async function transcribeMedia(url: string, messageId: string, msgType?: 
         const response = await fetch(url);
         const blob = await response.blob();
         
+        // Convert blob to base64
+        const base64data = await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onloadend = () => {
+                const base64 = (reader.result as string).split(',')[1];
+                resolve(base64);
+            };
+            reader.onerror = reject;
+            reader.readAsDataURL(blob);
+        });
+        
+        // Determine mime type
         let mimeType = blob.type || (url.includes('.mp4') ? 'video/mp4' : 'audio/webm');
+        
+        // Strip codec info that Gemini rejects (e.g. "audio/webm; codecs=opus" -> "audio/webm")
         if (mimeType.includes(';')) {
             mimeType = mimeType.split(';')[0];
         }
+        
+        // Force audio/webm to prevent Gemini from parsing video frames which fails on pure MediaRecorder webM files
         if (msgType === 'voice' || msgType === 'video_circle' || mimeType.includes('video')) {
             mimeType = 'audio/webm';
         }
 
-        // Obtain API Key directly like the prompt suggested if we were to just use raw keys
-        const apiKey = Array.isArray(HF_API_KEYS) && HF_API_KEYS.length > 0 ? HF_API_KEYS[0] : (Array.isArray(API_KEYS) && API_KEYS.length > 0 ? API_KEYS[0] : '');
+        let transcription = '';
+        let usedFallback = false;
 
-        if (!apiKey) {
-            throw new Error("Не настроены ключи API для расшифровки.");
+        try {
+            // Convert to File for FormData
+            const file = new File([blob], 'audio.webm', { type: mimeType });
+            const formData = new FormData();
+            formData.append('file', file);
+            formData.append('model', 'whisper-1');
+
+            const pollResponse = await fetch('https://text.pollinations.ai/openai/v1/audio/transcriptions', {
+                method: 'POST',
+                body: formData
+            });
+
+            if (!pollResponse.ok) {
+                throw new Error(`Pollinations API error: ${pollResponse.status}`);
+            }
+
+            const pollData = await pollResponse.json();
+
+            // Whisper returns { text: "..." }
+            // If Pollinations returns a Chat Completion (e.g. { choices: [...] }) it means Audio is still unsupported
+            if (pollData && pollData.text) {
+                transcription = pollData.text.trim();
+            } else {
+                throw new Error('Pollinations AI returned unsupported format (likely no audio support yet)');
+            }
+            
+            if (!transcription) transcription = 'Нет речи';
+            
+        } catch (pollError) {
+            console.warn('Pollinations AI failed, using Gemini fallback:', pollError);
+            usedFallback = true;
+            
+            // Call Gemini
+            const result = await executeAiWithFallback(async (ai: GoogleGenAI) => {
+                return await ai.models.generateContent({
+                    model: 'gemini-2.5-flash',
+                    contents: [
+                        {
+                            role: 'user',
+                            parts: [
+                                { text: 'Transcribe this audio/video. Return only the transcription text in the language spoken. If there is no speech, return an empty string.' },
+                                { inlineData: { data: base64data, mimeType } }
+                            ]
+                        }
+                    ]
+                });
+            });
+
+            transcription = result.text?.trim() || 'Нет речи';
         }
 
-        const hfResponse = await fetch("https://api-inference.huggingface.co/models/microsoft/VibeVoice-ASR-HF", {
-            headers: { 
-                Authorization: `Bearer ${apiKey}`,
-                "Content-Type": mimeType
-            },
-            method: "POST",
-            body: blob,
-        });
-
-        if (!hfResponse.ok) {
-            const errText = await hfResponse.text();
-            throw new Error(`HF API error: ${hfResponse.status} ${errText}`);
+        if (usedFallback) {
+            customToast('🔄 Используется запасной ИИ (Gemini) для расшифровки');
         }
-
-        const result = await hfResponse.json();
-
-
-        let transcription = 'Нет речи';
-
-        if (Array.isArray(result) && result[0]?.text) {
-             transcription = result[0].text;
-        } else if (result?.text) {
-             transcription = result.text;
-        } else if (Array.isArray(result) && result[0]?.Content) {
-             transcription = result.map((i: any) => i.Content).join(" ");
-        } else if (typeof result === 'string') {
-             transcription = result;
-        } else if (Array.isArray(result)) {
-             if (result[0]?.generated_text) {
-                try {
-                     // Check if it's the VibeVoice raw JSON array syntax
-                     const jsonStr = result[0].generated_text.replace(/^.*?<\|im_start\|>assistant\n*/, '').replace(/<\|im_end\|>.*$/, '').trim();
-                     if (jsonStr.startsWith('[') && jsonStr.endsWith(']')) {
-                         const parsed = JSON.parse(jsonStr);
-                         if (parsed[0]?.Content) {
-                             transcription = parsed.map((i: any) => i.Content).join("\n");
-                         } else {
-                             transcription = result[0].generated_text;
-                         }
-                     } else {
-                         transcription = result[0].generated_text;
-                     }
-                } catch (e) {
-                     transcription = result[0].generated_text;
-                }
-             }
-        }
-
-        transcription = transcription.trim() || 'Нет речи';
 
         // Save transcription to message
         const { data: msg, error: fetchError } = await supabase
@@ -109,17 +127,20 @@ export async function transcribeMedia(url: string, messageId: string, msgType?: 
     } catch (err: any) {
         console.error('Transcription error:', err);
         
-        let errorMessage = `Ошибка расшифровки: ${err.message?.substring(0, 100)}`;
-        const errText = err.message?.toLowerCase() || '';
-        
-        if (errText.includes('quota') || errText.includes('429') || errText.includes('rate limit')) {
-            errorMessage = '⚡ Превышен лимит запросов к HuggingFace. Попробуйте позже.';
-        } else if (errText.includes('fetch')) {
-            errorMessage = '🌐 Ошибка сети. Проверьте подключение или VPN.';
-        } else if (errText.includes('503') || errText.includes('overloaded')) {
-            errorMessage = '🐌 Сервер нейросети HF перегружен. Попробуйте через пару минут.';
+        if (!err.message?.includes('All API keys exhausted')) {
+            let errorMessage = `Ошибка расшифровки: ${err.message?.substring(0, 50)}`;
+            const errText = err.message?.toLowerCase() || '';
+            if (errText.includes('quota') || errText.includes('429') || errText.includes('exhausted') || errText.includes('rate limit')) {
+                errorMessage = '⚡ Превышен лимит запросов. Попробуйте позже.';
+            } else if (errText.includes('safety') || errText.includes('blocked') || errText.includes('filter')) {
+                errorMessage = '🛡️ Расшифровка заблокирована фильтром безопасности.';
+            } else if (errText.includes('fetch')) {
+                errorMessage = 'Не удалось загрузить файл для расшифровки';
+            } else if (errText.includes('503') || errText.includes('overloaded')) {
+                errorMessage = '🐌 Сервер нейросети перегружен. Попробуйте через пару минут.';
+            }
+            customToast(errorMessage);
         }
-        customToast(errorMessage);
         
         const btn = document.getElementById(`transcribe-btn-${messageId}`);
         if (btn) {
