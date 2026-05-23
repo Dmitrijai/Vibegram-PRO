@@ -140,6 +140,8 @@ function setupMessageScrollListener() {
                     if (floatingDate.textContent !== dateStr) {
                         floatingDate.textContent = dateStr;
                     }
+                    const scrollbarWidth = list.offsetWidth - list.clientWidth;
+                    floatingDate.style.transform = `translateX(calc(-50% - ${scrollbarWidth/2}px))`;
                     floatingDate.classList.remove('hidden');
                     // Small delay to allow display:block to apply before changing opacity
                     requestAnimationFrame(() => {
