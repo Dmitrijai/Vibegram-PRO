@@ -140,38 +140,47 @@ document.addEventListener('touchstart', () => {
     getAudioContext();
 }, { once: true });
 
+let notifAudio: HTMLAudioElement | null = null;
+
 export function playNotificationSound() {
     try {
         if (navigator.vibrate) {
             try { navigator.vibrate([100, 50, 100]); } catch (e) {}
         }
-        const ctx = getAudioContext();
-        if (!ctx) return;
         
-        const osc = ctx.createOscillator();
-        const gain = ctx.createGain();
-        
-        osc.connect(gain);
-        gain.connect(ctx.destination);
-        
-        osc.type = 'sine';
-        
-        // Soft double "pop" ping
-        osc.frequency.setValueAtTime(800, ctx.currentTime);
-        osc.frequency.setValueAtTime(1000, ctx.currentTime + 0.1);
-        
-        gain.gain.setValueAtTime(0, ctx.currentTime);
-        gain.gain.linearRampToValueAtTime(1.5, ctx.currentTime + 0.01);
-        gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.1);
-        
-        gain.gain.setValueAtTime(0, ctx.currentTime + 0.1);
-        gain.gain.linearRampToValueAtTime(1.5, ctx.currentTime + 0.11);
-        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.2);
-        
-        osc.start(ctx.currentTime);
-        osc.stop(ctx.currentTime + 0.25);
+        if (!notifAudio) {
+            notifAudio = new Audio(window.location.origin + '/sound/skype_call.mp3');
+        }
+        notifAudio.currentTime = 0;
+        notifAudio.play().catch(e => {
+            console.warn('Audio play blocked or not supported', e);
+            // Fallback to synth if mp3 is blocked but audioCtx is alive
+            const ctx = getAudioContext();
+            if (!ctx) return;
+            
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(800, ctx.currentTime);
+            osc.frequency.setValueAtTime(1000, ctx.currentTime + 0.1);
+            
+            gain.gain.setValueAtTime(0, ctx.currentTime);
+            gain.gain.linearRampToValueAtTime(1.5, ctx.currentTime + 0.01);
+            gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.1);
+            
+            gain.gain.setValueAtTime(0, ctx.currentTime + 0.1);
+            gain.gain.linearRampToValueAtTime(1.5, ctx.currentTime + 0.11);
+            gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.2);
+            
+            osc.start(ctx.currentTime);
+            osc.stop(ctx.currentTime + 0.25);
+        });
     } catch (e) {
-        console.warn('Audio play blocked or not supported', e);
+        console.warn('Audio play error', e);
     }
 }
 
