@@ -75,8 +75,7 @@ function renderLightbox() {
                 currentPanzoom = Panzoom(img, {
                     maxScale: 5,
                     minScale: 1,
-                    step: 0.2,
-                    contain: 'outside'
+                    step: 0.2
                 });
                 
                 content.addEventListener('wheel', (e) => {
@@ -87,6 +86,10 @@ function renderLightbox() {
                 // Single click to zoom (desktop) or tap
                 img.addEventListener('click', (e) => {
                     e.preventDefault();
+                    // On touch devices, 'click' still fires, but maybe we only want to bounce back on release.
+                    // Telegram usually doesn't snap back on a simple tap/click zoom on desktop. It stays.
+                    // But on mobile, if you pinch, you hold it, and release -> it snaps back.
+                    // For now, let click toggle zoom.
                     const currentScale = currentPanzoom.getScale();
                     if (currentScale > 1) {
                         currentPanzoom.reset({ animate: true });
@@ -95,25 +98,17 @@ function renderLightbox() {
                     }
                 });
 
-                img.addEventListener('panzoomend', () => {
-                    const currentScale = currentPanzoom.getScale();
-                    if (currentScale <= 1) {
-                        currentPanzoom.pan(0, 0, { animate: true });
+                // Snap back on touch release like Telegram
+                const onTouchEnd = (e: TouchEvent) => {
+                    if (e.touches.length === 0) {
+                        const currentScale = currentPanzoom.getScale();
+                        if (currentScale !== 1) {
+                            currentPanzoom.reset({ animate: true });
+                        }
                     }
-                });
-                
-                // Allow "pull to close" effect, but restrict it from going fully off-screen without closing
-                img.addEventListener('panzoompan', (e: any) => {
-                    if (currentPanzoom.getScale() <= 1) {
-                       const pan = currentPanzoom.getPan();
-                       const limitY = window.innerHeight / 2.5; 
-                       
-                       // Close lightbox if pulled too far
-                       if (Math.abs(pan.y) > limitY) {
-                           closeLightbox();
-                       }
-                    }
-                });
+                };
+                content.addEventListener('touchend', onTouchEnd);
+                content.addEventListener('touchcancel', onTouchEnd);
             }
         }, 50);
     }

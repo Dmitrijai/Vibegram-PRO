@@ -134,60 +134,6 @@ async function startServer() {
     }
   });
 
-  // API Route for Gemini Proxy (Bypass Region Locks)
-  app.post("/api/gemini-proxy/*", async (req, res) => {
-    try {
-      const pathPart = req.originalUrl.replace('/api/gemini-proxy', ''); 
-      const baseUrl = 'https://generativelanguage.googleapis.com';
-      const url = `${baseUrl}${pathPart}`;
-
-      const headers: any = {
-        "Content-Type": req.headers["content-type"] || "application/json",
-      };
-      
-      // Forward the API key and client version headers
-      if (req.headers["x-goog-api-key"]) headers["x-goog-api-key"] = req.headers["x-goog-api-key"];
-      if (req.headers["x-goog-api-client"]) headers["x-goog-api-client"] = req.headers["x-goog-api-client"];
-
-      const response = await fetch(url, {
-        method: "POST",
-        headers,
-        body: JSON.stringify(req.body)
-      });
-
-      if (!response.ok) {
-         const errText = await response.text();
-         res.status(response.status).send(errText);
-         return;
-      }
-
-      // Stream if it's a streaming request, otherwise just return JSON
-      if (response.headers.get('content-type')?.includes('text/event-stream')) {
-        res.setHeader('Content-Type', 'text/event-stream');
-        res.setHeader('Cache-Control', 'no-cache');
-        res.setHeader('Connection', 'keep-alive');
-        if (response.body) {
-           // Type casting to any because node-fetch body vs standard Response differ slightly,
-           // but modern Node fetch returns standard web stream.
-           const reader = (response.body as any).getReader();
-           while (true) {
-             const { done, value } = await reader.read();
-             if (done) break;
-             res.write(Buffer.from(value));
-           }
-           res.end();
-           return;
-        }
-      }
-
-      const data = await response.json();
-      res.status(response.status).json(data);
-    } catch (e: any) {
-      console.error("Gemini Proxy Error:", e);
-      res.status(500).json({ error: e.message });
-    }
-  });
-
     if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
       server: { middlewareMode: true },

@@ -1,6 +1,5 @@
 import { customToast } from './utils';
 import { GoogleGenAI } from '@google/genai';
-import { SUPABASE_URL } from './supabase';
 
 const obfuscatedKey = (process.env.GEMINI_API_KEY_OBFUSCATED as string) || "";
 let rawKeys = "";
@@ -149,19 +148,7 @@ export async function executeAiWithFallback<T>(action: (ai: GoogleGenAI) => Prom
             continue;
         }
 
-        let baseUrl;
-        const proxyEnv = (import.meta as any).env?.VITE_GEMINI_PROXY_URL;
-        if (proxyEnv) {
-             baseUrl = proxyEnv; // Use external proxy (e.g., Supabase Edge Function, Cloudflare worker)
-        } else if (window.location.hostname.includes('github.io')) {
-             if (SUPABASE_URL) {
-                 baseUrl = `${SUPABASE_URL}/functions/v1/gemini-proxy`;
-             }
-        } else {
-             baseUrl = `${window.location.protocol}//${window.location.host}/api/gemini-proxy`;
-        }
-
-        const ai = new GoogleGenAI({ apiKey, httpOptions: { baseUrl } });
+        const ai = new GoogleGenAI({ apiKey });
         
         try {
             return await action(ai);
