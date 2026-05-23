@@ -1,6 +1,6 @@
 import { supabase } from './supabase';
 import { customToast } from './utils';
-import { executeHfWithFallback, executeApiKeyWithFallback } from './ai-keys';
+import { executeRawAiKeyWithFallback } from './ai-keys';
 
 export async function transcribeMedia(url: string, messageId: string, msgType?: string) {
     try {
@@ -10,102 +10,69 @@ export async function transcribeMedia(url: string, messageId: string, msgType?: 
             btn.classList.add('pointer-events-none');
         }
 
-        // Fetch the media file on client
+        // Fetch the media file
         const response = await fetch(url);
         const blob = await response.blob();
         
-        // Convert blob to base64 for Gemini
-        const base64data = await new Promise<string>((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onloadend = () => {
-                const base64 = (reader.result as string).split(',')[1];
-                resolve(base64);
-            };
-            reader.onerror = reject;
-            reader.readAsDataURL(blob);
-        });
-
         let mimeType = blob.type || (url.includes('.mp4') ? 'video/mp4' : 'audio/webm');
-        if (mimeType.includes(';')) mimeType = mimeType.split(';')[0];
+        if (mimeType.includes(';')) {
+            mimeType = mimeType.split(';')[0];
+        }
         if (msgType === 'voice' || msgType === 'video_circle' || mimeType.includes('video')) {
             mimeType = 'audio/webm';
         }
-        
-        let resultText = '';
-        try {
-            // First try Gemini via Client Proxies (to bypass NGINX and Russian blocks)
-            resultText = await executeApiKeyWithFallback(async (apiKey: string) => {
-                 const targetUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
-                 
-                 const endpoints = [
-                     `https://corsproxy.io/?${encodeURIComponent(targetUrl)}`,
-                     targetUrl
-                 ];
-                 
-                 let lastError = null;
-                 
-                 for (const endpoint of endpoints) {
-                     try {
-                         const rsp = await fetch(endpoint, {
-                             method: 'POST',
-                             headers: { 'Content-Type': 'application/json' },
-                             body: JSON.stringify({
-                                 contents: [{
-                                     role: 'user',
-                                     parts: [
-                                         { text: 'Transcribe this audio/video. Return only the transcription text in the language spoken. If there is no speech, return an empty string.' },
-                                         { inline_data: { mime_type: mimeType, data: base64data } }
-                                     ]
-                                 }]
-                             })
-                         });
-    
-                         if (!rsp.ok) {
-                             const errText = await rsp.text();
-                             let errMsg = errText;
-                             try { 
-                                 const errData = JSON.parse(errText);
-                                 errMsg = errData.error?.message || errData.error || errText;
-                             } catch(e) {}
-                             throw Object.assign(new Error(errMsg), { status: rsp.status });
-                         }
-    
-                         const data = await rsp.json();
-                         return data.candidates?.[0]?.content?.parts?.[0]?.text || '';
-                     } catch (err: any) {
-                         lastError = err;
-                         if (err.status >= 400 && err.status < 500 && err.status !== 403) {
-                             throw err;
-                         }
-                     }
-                 }
-                 
-                 throw lastError || new Error('All proxy attempts failed');
+
+        // Call microsoft/VibeVoice-ASR-HF via HF API using the key from GEMINI_API_KEY
+        const result = await executeRawAiKeyWithFallback(async (apiKey: string) => {
+            const hfResponse = await fetch("https://api-inference.huggingface.co/models/microsoft/VibeVoice-ASR-HF", {
+                headers: { 
+                    Authorization: `Bearer ${apiKey}`,
+                    "Content-Type": mimeType
+                },
+                method: "POST",
+                body: blob,
             });
-        } catch (geminiError: any) {
-             console.warn("Gemini transcription failed, falling back to HuggingFace:", geminiError);
-             resultText = await executeHfWithFallback(async (apiKey: string) => {
-                  const rsp = await fetch('https://api-inference.huggingface.co/models/openai/whisper-large-v3-turbo', {
-                      method: 'POST',
-                      headers: { 'Authorization': `Bearer ${apiKey}` },
-                      body: blob
-                  });
-                  if (!rsp.ok) {
-                      const errText = await rsp.text();
-                      let errMsg = errText;
-                      try { 
-                          const errData = JSON.parse(errText);
-                          errMsg = errData.error || errText;
-                      } catch(e) {}
-                      throw Object.assign(new Error(errMsg), { status: rsp.status });
-                  }
-                  const data = await rsp.json();
-                  if (data.error) throw new Error(data.error);
-                  return data.text;
-             });
+
+            if (!hfResponse.ok) {
+                 const errText = await hfResponse.text();
+                 throw new Error(`HF API error: ${hfResponse.status} ${errText}`);
+            }
+
+            return await hfResponse.json();
+        });
+
+        let transcription = 'Нет речи';
+
+        if (Array.isArray(result) && result[0]?.text) {
+             transcription = result[0].text;
+        } else if (result?.text) {
+             transcription = result.text;
+        } else if (Array.isArray(result) && result[0]?.Content) {
+             transcription = result.map((i: any) => i.Content).join(" ");
+        } else if (typeof result === 'string') {
+             transcription = result;
+        } else if (Array.isArray(result)) {
+             if (result[0]?.generated_text) {
+                try {
+                     // Check if it's the VibeVoice raw JSON array syntax
+                     const jsonStr = result[0].generated_text.replace(/^.*?<\|im_start\|>assistant\n*/, '').replace(/<\|im_end\|>.*$/, '').trim();
+                     if (jsonStr.startsWith('[') && jsonStr.endsWith(']')) {
+                         const parsed = JSON.parse(jsonStr);
+                         if (parsed[0]?.Content) {
+                             transcription = parsed.map((i: any) => i.Content).join("\n");
+                         } else {
+                             transcription = result[0].generated_text;
+                         }
+                     } else {
+                         transcription = result[0].generated_text;
+                     }
+                } catch (e) {
+                     transcription = result[0].generated_text;
+                }
+             }
         }
 
-        const transcription = resultText?.trim() || 'Нет речи';
+        transcription = transcription.trim() || 'Нет речи';
 
         // Save transcription to message
         const { data: msg, error: fetchError } = await supabase
@@ -137,7 +104,7 @@ export async function transcribeMedia(url: string, messageId: string, msgType?: 
     } catch (err: any) {
         console.error('Transcription error:', err);
         
-        if (!err.message?.includes('All HF API keys exhausted') && !err.message?.includes('All API keys exhausted')) {
+        if (!err.message?.includes('All API keys exhausted')) {
             let errorMessage = `Ошибка расшифровки: ${err.message?.substring(0, 50)}`;
             const errText = err.message?.toLowerCase() || '';
             if (errText.includes('quota') || errText.includes('429') || errText.includes('exhausted') || errText.includes('rate limit')) {

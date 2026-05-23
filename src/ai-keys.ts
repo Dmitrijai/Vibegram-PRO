@@ -126,9 +126,9 @@ export async function executeHfWithFallback<T>(action: (apiKey: string) => Promi
     throw new Error('All HF API keys exhausted');
 }
 
-export async function executeApiKeyWithFallback<T>(action: (apiKey: string) => Promise<T>): Promise<T> {
+export async function executeRawAiKeyWithFallback<T>(action: (apiKey: string) => Promise<T>): Promise<T> {
     if (API_KEYS.length === 0) {
-        customToast('Ключи API не настроены. Добавьте GEMINI_API_KEY в GitHub Secrets.');
+        customToast('Ключи API не настроены.');
         throw new Error('No API keys configured');
     }
 
