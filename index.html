@@ -306,7 +306,34 @@
     </div>
 
     <div id="video-call-modal" class="hidden fixed inset-0 bg-gray-900 z-[100] flex flex-col">
-        <div id="jitsi-container" class="w-full h-full"></div>
+        <div class="flex-1 relative bg-black flex items-center justify-center overflow-hidden">
+            <video id="remote-video" class="absolute inset-0 w-full h-full object-cover hidden" autoplay playsinline></video>
+            <audio id="remote-audio" autoplay playsinline></audio>
+            
+            <div class="text-white text-center z-10" id="call-avatar-container">
+                <div class="w-24 h-24 bg-blue-500 rounded-full mx-auto mb-4 flex items-center justify-center text-4xl font-bold" id="call-avatar">U</div>
+                <h2 class="text-2xl font-bold mb-2" id="call-name">User</h2>
+                <p class="text-gray-400" id="call-status">Вызов...</p>
+            </div>
+            
+            <div id="local-video-container" class="absolute bottom-8 right-8 w-32 h-48 bg-gray-800 rounded-xl border-2 border-gray-700 overflow-hidden z-20 shadow-2xl">
+                <video id="local-video" class="w-full h-full object-cover" muted playsinline autoplay></video>
+            </div>
+        </div>
+        <div class="h-24 bg-gray-900 flex items-center justify-center gap-4 sm:gap-6 pb-4 z-20">
+            <button onclick="toggleCallAudio()" id="call-audio-btn" class="w-12 h-12 sm:w-14 sm:h-14 bg-gray-700 rounded-full flex items-center justify-center text-white hover:bg-gray-600 transition-colors">
+                <svg class="w-5 h-5 sm:w-6 sm:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"></path></svg>
+            </button>
+            <button onclick="toggleCallVideo()" id="call-video-btn" class="w-12 h-12 sm:w-14 sm:h-14 bg-gray-700 rounded-full flex items-center justify-center text-white hover:bg-gray-600 transition-colors">
+                <svg class="w-5 h-5 sm:w-6 sm:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>
+            </button>
+            <button onclick="switchCallCamera()" id="call-switch-camera-btn" class="w-12 h-12 sm:w-14 sm:h-14 bg-gray-700 rounded-full flex items-center justify-center text-white hover:bg-gray-600 transition-colors">
+                <svg class="w-5 h-5 sm:w-6 sm:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+            </button>
+            <button onclick="endVideoCall()" class="w-12 h-12 sm:w-14 sm:h-14 bg-red-500 rounded-full flex items-center justify-center text-white hover:bg-red-600 transition-colors shadow-lg shadow-red-500/30">
+                <svg class="w-5 h-5 sm:w-6 sm:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 8l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2M5 3a2 2 0 00-2 2v1c0 8.284 6.716 15 15 15h1a2 2 0 002-2v-3.28a1 1 0 00-.684-.948l-4.493-1.498a1 1 0 00-1.21.502l-1.13 2.257a11.042 11.042 0 01-5.516-5.517l2.257-1.128a1 1 0 00.502-1.21L9.228 3.683A1 1 0 008.279 3H5z"></path></svg>
+            </button>
+        </div>
     </div>
 
     <div id="incoming-call-modal" class="hidden fixed inset-0 bg-black/80 z-[110] flex items-center justify-center p-4 backdrop-blur-sm">
@@ -674,7 +701,6 @@
     <!-- Floating in-app notifications container -->
     <div id="in-app-notifications" class="fixed top-14 md:top-4 left-1/2 -translate-x-1/2 z-[999999] flex flex-col items-center gap-2 pointer-events-none w-[90%] max-w-[400px]"></div>
 
-    <script src="https://meet.jit.si/external_api.js"></script>
     <script type="module" src="/src/main.ts"></script>
 </body>
 </html>
