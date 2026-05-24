@@ -63,24 +63,7 @@ const rtcConfig: RTCConfiguration = {
         "stun:stun.yandex.ru:3478",
       ],
     },
-    {
-      urls: "turn:openrelay.metered.ca:80",
-      username: "openrelayproject",
-      credential: "openrelayproject",
-    },
-    {
-      urls: "turn:openrelay.metered.ca:443",
-      username: "openrelayproject",
-      credential: "openrelayproject",
-    },
-    {
-      urls: "turn:openrelay.metered.ca:443?transport=tcp",
-      username: "openrelayproject",
-      credential: "openrelayproject",
-    },
   ],
-  bundlePolicy: "max-bundle",
-  iceCandidatePoolSize: 10,
 };
 
 let pendingIceCandidates: any[] = [];
@@ -99,6 +82,7 @@ function queueIceCandidate(targetId: string, candidate: any) {
       candidate: candidate.candidate,
       sdpMid: candidate.sdpMid,
       sdpMLineIndex: candidate.sdpMLineIndex,
+      usernameFragment: candidate.usernameFragment,
     };
   }
 
