@@ -59,11 +59,20 @@ const rtcConfig: RTCConfiguration = {
       urls: [
         "stun:stun.l.google.com:19302",
         "stun:stun1.l.google.com:19302",
-        "stun:stun.cloudflare.com:3478",
-        "stun:stun.yandex.ru:3478",
+        "stun:stun2.l.google.com:19302",
       ],
     },
+    {
+      urls: [
+        "turn:openrelay.metered.ca:80",
+        "turn:openrelay.metered.ca:443",
+        "turn:openrelay.metered.ca:443?transport=tcp",
+      ],
+      username: "openrelayproject",
+      credential: "openrelayproject",
+    },
   ],
+  iceCandidatePoolSize: 10,
 };
 
 let pendingIceCandidates: any[] = [];
@@ -108,6 +117,7 @@ export async function initWebRTC() {
     const data = payload.payload;
     if (data.senderTabId === tabSessionId) return;
     if (data.targetUserId === state.currentUser.id) {
+      pendingIceCandidates = [];
       playRingtone();
       const modal = document.getElementById("incoming-call-modal")!;
       if (document.getElementById("incoming-call-name")) {
@@ -383,6 +393,7 @@ async function startCall(isVideo: boolean) {
       }
     }
 
+    pendingIceCandidates = [];
     rtcPeerConnection = new RTCPeerConnection(rtcConfig);
 
     remoteStream = new MediaStream();
