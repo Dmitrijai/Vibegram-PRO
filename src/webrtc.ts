@@ -66,19 +66,18 @@ let iceCandidateTimer: any = null;
 let vibrateInterval: any = null;
 
 function queueIceCandidate(targetId: string, candidate: any) {
-    iceCandidateQueue.push(candidate);
-    if (!iceCandidateTimer) {
-        iceCandidateTimer = setTimeout(() => {
-            if (iceCandidateQueue.length > 0) {
-                callChannel.send({
-                    type: 'broadcast', event: 'ice-candidates-batch',
-                    payload: { targetUserId: targetId, candidates: [...iceCandidateQueue] }
-                });
-                iceCandidateQueue = [];
-            }
-            iceCandidateTimer = null;
-        }, 400); // 400ms accumulates STUN/TURN candidates to prevent 10msg/sec drop
+    let candObj = candidate;
+    if (typeof candidate.toJSON === 'function') {
+        candObj = candidate.toJSON();
+    } else if (candidate.candidate || candidate.sdpMid) {
+        candObj = { candidate: candidate.candidate, sdpMid: candidate.sdpMid, sdpMLineIndex: candidate.sdpMLineIndex };
     }
+    
+    console.log('Sending single ICE candidate to', targetId);
+    callChannel.send({
+        type: 'broadcast', event: 'ice-candidate',
+        payload: { targetUserId: targetId, candidate: candObj }
+    }).catch((err: any) => console.error('ICE send error:', err));
 }
 
 export async function initWebRTC() {
@@ -140,18 +139,21 @@ export async function initWebRTC() {
             // Process any queued ICE candidates safely against race conditions
             while (pendingIceCandidates.length > 0) {
                 const candidate = pendingIceCandidates.shift();
-                await rtcPeerConnection.addIceCandidate(candidate).catch(e => console.error("Error adding queued ICE:", e));
+                console.log('Processing queued ICE candidate');
+                await rtcPeerConnection.addIceCandidate(candidate).then(() => console.log('Successfully added queued ICE')).catch(e => console.error("Error adding queued ICE:", e));
             }
         }
     });
 
     callChannel.on('broadcast', { event: 'ice-candidate' }, async (payload: any) => {
         const data = payload.payload;
+        console.log('Received single ICE candidate for', data.targetUserId);
         if (data.targetUserId === state.currentUser.id) {
             const candidate = new RTCIceCandidate(data.candidate);
             if (rtcPeerConnection && rtcPeerConnection.remoteDescription) {
-                await rtcPeerConnection.addIceCandidate(candidate).catch(e => console.error("Error adding ICE:", e));
+                await rtcPeerConnection.addIceCandidate(candidate).then(() => console.log('Added single ICE')).catch(e => console.error("Error adding ICE:", e));
             } else {
+                console.log('Pushed single ICE to pending');
                 pendingIceCandidates.push(candidate);
             }
         }
@@ -159,12 +161,14 @@ export async function initWebRTC() {
 
     callChannel.on('broadcast', { event: 'ice-candidates-batch' }, async (payload: any) => {
         const data = payload.payload;
+        console.log('Received ICE batch:', data.candidates.length, 'for', data.targetUserId);
         if (data.targetUserId === state.currentUser.id) {
             for (const cand of data.candidates) {
                 const candidate = new RTCIceCandidate(cand);
                 if (rtcPeerConnection && rtcPeerConnection.remoteDescription) {
-                    await rtcPeerConnection.addIceCandidate(candidate).catch(e => console.error("Error adding queued batch ICE:", e));
+                    await rtcPeerConnection.addIceCandidate(candidate).then(() => console.log('Added batch ICE')).catch(e => console.error("Error adding queued batch ICE:", e));
                 } else {
+                    console.log('Pushed to pending ICE');
                     pendingIceCandidates.push(candidate);
                 }
             }
@@ -458,7 +462,8 @@ export async function answerCall(callerId: string, offer: any, callerName: strin
         await rtcPeerConnection.setRemoteDescription(new RTCSessionDescription(offer));
         while (pendingIceCandidates.length > 0) {
             const candidate = pendingIceCandidates.shift();
-            await rtcPeerConnection.addIceCandidate(candidate).catch(e => console.error("Error adding queued ICE:", e));
+            console.log('AnswerCall: Processing queued ICE candidate');
+            await rtcPeerConnection.addIceCandidate(candidate).then(() => console.log('AnswerCall: Successfully added queued ICE')).catch(e => console.error("Error adding queued ICE:", e));
         }
         
         const answer = await rtcPeerConnection.createAnswer();
