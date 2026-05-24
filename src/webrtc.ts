@@ -57,6 +57,7 @@ const rtcConfig: RTCConfiguration = {
         { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
         { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' }
     ],
+    bundlePolicy: 'max-bundle',
     iceCandidatePoolSize: 10
 };
 
@@ -139,7 +140,7 @@ export async function initWebRTC() {
             // Process any queued ICE candidates safely against race conditions
             while (pendingIceCandidates.length > 0) {
                 const candidate = pendingIceCandidates.shift();
-                console.log('Processing queued ICE candidate');
+                console.log('Processing queued ICE candidate', candidate.candidate);
                 await rtcPeerConnection.addIceCandidate(candidate).then(() => console.log('Successfully added queued ICE')).catch(e => console.error("Error adding queued ICE:", e));
             }
         }
@@ -147,13 +148,25 @@ export async function initWebRTC() {
 
     callChannel.on('broadcast', { event: 'ice-candidate' }, async (payload: any) => {
         const data = payload.payload;
-        console.log('Received single ICE candidate for', data.targetUserId);
+        console.log('Received single ICE candidate for', data.targetUserId, 'Candidate:', data.candidate);
         if (data.targetUserId === state.currentUser.id) {
-            const candidate = new RTCIceCandidate(data.candidate);
+            let candidate: RTCIceCandidate;
+            try {
+                if (data.candidate && (data.candidate.candidate || data.candidate.candidate === '')) {
+                    candidate = new RTCIceCandidate(data.candidate);
+                } else {
+                    console.log('Ignoring invalid candidate payload');
+                    return;
+                }
+            } catch (err) {
+                console.error('Error creating RTCIceCandidate:', err, data.candidate);
+                return;
+            }
+
             if (rtcPeerConnection && rtcPeerConnection.remoteDescription) {
-                await rtcPeerConnection.addIceCandidate(candidate).then(() => console.log('Added single ICE')).catch(e => console.error("Error adding ICE:", e));
+                await rtcPeerConnection.addIceCandidate(candidate).then(() => console.log('Added single ICE:', candidate.candidate)).catch(e => console.error("Error adding ICE:", e));
             } else {
-                console.log('Pushed single ICE to pending');
+                console.log('Pushed single ICE to pending:', candidate.candidate);
                 pendingIceCandidates.push(candidate);
             }
         }
@@ -278,7 +291,10 @@ async function startCall(isVideo: boolean) {
         const remoteVideo = document.getElementById('remote-video') as HTMLVideoElement;
         const remoteAudio = document.getElementById('remote-audio') as HTMLAudioElement;
         
-        localStream.getTracks().forEach(track => rtcPeerConnection!.addTrack(track, localStream!));
+        if (localStream) {
+            localStream.getAudioTracks().forEach(track => rtcPeerConnection!.addTrack(track, localStream!));
+            localStream.getVideoTracks().forEach(track => rtcPeerConnection!.addTrack(track, localStream!));
+        }
         
         rtcPeerConnection.ontrack = event => {
             if (event.streams && event.streams[0]) {
@@ -408,8 +424,6 @@ export async function answerCall(callerId: string, offer: any, callerName: strin
         const remoteVideo = document.getElementById('remote-video') as HTMLVideoElement;
         const remoteAudio = document.getElementById('remote-audio') as HTMLAudioElement;
         
-        localStream.getTracks().forEach(track => rtcPeerConnection!.addTrack(track, localStream!));
-        
         rtcPeerConnection.ontrack = event => {
             if (event.streams && event.streams[0]) {
                 remoteStream = event.streams[0];
@@ -460,9 +474,15 @@ export async function answerCall(callerId: string, offer: any, callerName: strin
         };
 
         await rtcPeerConnection.setRemoteDescription(new RTCSessionDescription(offer));
+        
+        if (localStream) {
+            localStream.getAudioTracks().forEach(track => rtcPeerConnection!.addTrack(track, localStream!));
+            localStream.getVideoTracks().forEach(track => rtcPeerConnection!.addTrack(track, localStream!));
+        }
+
         while (pendingIceCandidates.length > 0) {
             const candidate = pendingIceCandidates.shift();
-            console.log('AnswerCall: Processing queued ICE candidate');
+            console.log('AnswerCall: Processing queued ICE candidate', candidate.candidate);
             await rtcPeerConnection.addIceCandidate(candidate).then(() => console.log('AnswerCall: Successfully added queued ICE')).catch(e => console.error("Error adding queued ICE:", e));
         }
         
