@@ -1,11 +1,13 @@
 import { supabase, state } from "./supabase";
 
-let rtcPeerConnection: RTCPeerConnection | null = null;
-let localStream: MediaStream | null = null;
-let remoteStream: MediaStream | null = null;
 let callChannel: any = null;
 let currentRingtone: HTMLAudioElement | null = null;
 let currentCallPeerId: string | null = null;
+let currentRoomName: string | null = null;
+let jitsiApi: any = null;
+let vibrateInterval: any = null;
+
+const tabSessionId = Math.random().toString(36).substring(2, 10);
 
 function playRingtone() {
   stopRingtone();
@@ -26,8 +28,6 @@ function playRingtone() {
   currentRingtone.loop = true;
   currentRingtone.play().catch((e) => {
     console.error("Audio play failed:", e);
-    // If autoplay is blocked, we can't do much without user interaction
-    // We can show a toast to the user
     if ((window as any).customToast) {
       (window as any).customToast(
         "Входящий звонок! (Звук заблокирован браузером)",
@@ -53,63 +53,33 @@ function stopRingtone() {
   }
 }
 
-const rtcConfig: RTCConfiguration = {
-  iceServers: [
-    {
-      urls: [
-        "stun:stun.l.google.com:19302",
-        "stun:stun1.l.google.com:19302",
-        "stun:stun2.l.google.com:19302",
-        "stun:stun3.l.google.com:19302",
-        "stun:stun4.l.google.com:19302",
-      ],
+function mountJitsi(roomName: string, isVideo: boolean) {
+  const container = document.getElementById("jitsi-container");
+  if (!container) return;
+  container.innerHTML = "";
+  document.getElementById("video-call-modal")!.classList.remove("hidden");
+
+  jitsiApi = new (window as any).JitsiMeetExternalAPI("meet.jit.si", {
+    roomName,
+    parentNode: container,
+    configOverwrite: {
+      startWithVideoMuted: !isVideo,
+      startWithAudioMuted: false,
+      prejoinPageEnabled: false,
     },
-    {
-      urls: [
-        "turn:openrelay.metered.ca:80",
-        "turn:openrelay.metered.ca:443",
-        "turn:openrelay.metered.ca:443?transport=tcp",
-      ],
-      username: "openrelayproject",
-      credential: "openrelayproject"
-    }
-  ],
-};
+    interfaceConfigOverwrite: {
+      SHOW_JITSI_WATERMARK: false,
+    },
+    userInfo: {
+      displayName: state.currentProfile?.display_name || state.currentProfile?.username,
+    },
+  });
 
-let pendingIceCandidates: any[] = [];
-let iceCandidateQueue: any[] = [];
-let iceCandidateTimer: any = null;
-let vibrateInterval: any = null;
-
-const tabSessionId = Math.random().toString(36).substring(2, 10);
-
-function queueIceCandidate(targetId: string, candidate: any) {
-  let candObj = candidate;
-  if (candidate && typeof candidate.toJSON === "function") {
-    candObj = candidate.toJSON();
-  } else if (candidate) {
-    candObj = {
-      candidate: candidate.candidate || "",
-      sdpMid: candidate.sdpMid || null,
-      sdpMLineIndex: candidate.sdpMLineIndex !== undefined ? candidate.sdpMLineIndex : null,
-      usernameFragment: candidate.usernameFragment || null,
-    };
-  } else {
-    candObj = null;
-  }
-
-  console.log("Sending single ICE candidate to", targetId);
-  callChannel
-    .send({
-      type: "broadcast",
-      event: "ice-candidate",
-      payload: {
-        targetUserId: targetId,
-        candidate: candObj,
-        senderTabId: tabSessionId,
-      },
-    })
-    .catch((err: any) => console.error("ICE send error:", err));
+  jitsiApi.addEventListeners({
+    videoConferenceLeft: () => {
+      endVideoCall(true);
+    },
+  });
 }
 
 export async function initWebRTC() {
@@ -120,7 +90,6 @@ export async function initWebRTC() {
     const data = payload.payload;
     if (data.senderTabId === tabSessionId) return;
     if (data.targetUserId === state.currentUser.id) {
-      pendingIceCandidates = [];
       playRingtone();
       const modal = document.getElementById("incoming-call-modal")!;
       if (document.getElementById("incoming-call-name")) {
@@ -146,10 +115,8 @@ export async function initWebRTC() {
         cleanup();
         await answerCall(
           data.callerId,
-          data.offer,
-          data.callerName,
+          data.roomName,
           data.isVideo !== false,
-          data.callerAvatar,
         );
       };
 
@@ -180,69 +147,13 @@ export async function initWebRTC() {
     async (payload: any) => {
       const data = payload.payload;
       if (data.senderTabId === tabSessionId) return;
-      if (data.targetUserId === state.currentUser.id && rtcPeerConnection) {
-        stopRingtone();
-        await rtcPeerConnection.setRemoteDescription(
-          new RTCSessionDescription(data.answer),
-        );
-        document.getElementById("call-status")!.innerText =
-          "Соединение установлено";
-
-        // Process any queued ICE candidates safely against race conditions
-        while (pendingIceCandidates.length > 0) {
-          const candidate = pendingIceCandidates.shift();
-          console.log("Processing queued ICE candidate", candidate?.candidate || "end");
-          await rtcPeerConnection
-            .addIceCandidate(candidate || undefined)
-            .then(() => console.log("Successfully added queued ICE"))
-            .catch((e) => console.error("Error adding queued ICE:", e));
-        }
-      }
-    },
-  );
-
-  callChannel.on(
-    "broadcast",
-    { event: "ice-candidate" },
-    async (payload: any) => {
-      const data = payload.payload;
-      if (data.senderTabId === tabSessionId) return;
-      console.log(
-        "Received single ICE candidate for",
-        data.targetUserId,
-        "Candidate:",
-        data.candidate,
-      );
       if (data.targetUserId === state.currentUser.id) {
-        let candidate: RTCIceCandidate | null = null;
-        try {
-          if (data.candidate && data.candidate.candidate !== undefined) {
-             candidate = new RTCIceCandidate(data.candidate);
-          } else if (data.candidate === null) {
-             candidate = null;
-          } else {
-             console.log("Ignoring invalid candidate payload");
-             return;
-          }
-        } catch (err) {
-          console.error("Error creating RTCIceCandidate:", err, data.candidate);
-          return;
-        }
-
-        if (rtcPeerConnection && rtcPeerConnection.remoteDescription) {
-          await rtcPeerConnection
-            .addIceCandidate(candidate || undefined)
-            .then(() => console.log("Added single ICE:", candidate?.candidate || "end-of-candidates"))
-            .catch((e) => console.error("Error adding ICE:", e));
-        } else {
-          console.log("Pushed single ICE to pending:", candidate?.candidate || "end-of-candidates");
-          pendingIceCandidates.push(candidate);
-        }
+        stopRingtone();
+        // The caller already has Jitsi mounted to the same room
+        console.log("Call answered by remote peer!");
       }
     },
   );
-
-
 
   callChannel.on("broadcast", { event: "call-ended" }, (payload: any) => {
     const data = payload.payload;
@@ -252,10 +163,6 @@ export async function initWebRTC() {
       data.callerId === state.currentUser.id
     ) {
       document.getElementById("incoming-call-modal")?.classList.add("hidden");
-      pendingIceCandidates = [];
-      if (iceCandidateTimer) clearTimeout(iceCandidateTimer);
-      iceCandidateTimer = null;
-      iceCandidateQueue = [];
       endVideoCall(false);
     }
   });
@@ -265,13 +172,7 @@ export async function initWebRTC() {
     if (data.senderTabId === tabSessionId) return;
     if (data.targetUserId === state.currentUser.id) {
       stopRingtone();
-      document.getElementById("call-status")!.innerText =
-        "Абонент отклонил вызов";
-      pendingIceCandidates = [];
-      if (iceCandidateTimer) clearTimeout(iceCandidateTimer);
-      iceCandidateTimer = null;
-      iceCandidateQueue = [];
-      setTimeout(() => endVideoCall(false), 2000);
+      endVideoCall(false);
     }
   });
 
@@ -304,370 +205,43 @@ async function startCall(isVideo: boolean) {
 
   const targetUser = state.activeChatOtherUser;
   currentCallPeerId = targetUser.id;
+  currentRoomName = 'VibeChat_' + Math.random().toString(36).substring(2, 15);
 
-  const name =
-    document.getElementById("current-chat-name")?.innerText || "Абонент";
+  mountJitsi(currentRoomName, isVideo);
 
-  document.getElementById("call-name")!.innerText = name;
-
-  const avatarEl = document.getElementById("call-avatar");
-  if (avatarEl) {
-    if (targetUser.avatar_url) {
-      avatarEl.innerHTML = `<img src="${targetUser.avatar_url}" class="w-full h-full object-cover rounded-full border border-gray-700">`;
-    } else {
-      avatarEl.innerText = name[0].toUpperCase();
-    }
-  }
-
-  document.getElementById("call-status")!.innerText = "Вызов...";
-  document.getElementById("video-call-modal")!.classList.remove("hidden");
-
-  try {
-    try {
-      localStream = await navigator.mediaDevices.getUserMedia({
-        video: isVideo,
-        audio: true,
-      });
-    } catch (e) {
-      console.warn("Failed to get video, trying audio only", e);
-      if (isVideo) {
-        isVideo = false;
-        localStream = await navigator.mediaDevices.getUserMedia({
-          video: false,
-          audio: true,
-        });
-      } else {
-        throw e;
-      }
-    }
-    const localVideo = document.getElementById(
-      "local-video",
-    ) as HTMLVideoElement;
-    const localVideoContainer = document.getElementById(
-      "local-video-container",
-    );
-    const callVideoBtn = document.getElementById("call-video-btn");
-    const callSwitchCameraBtn = document.getElementById(
-      "call-switch-camera-btn",
-    );
-    if (localVideo) {
-      localVideo.srcObject = localStream;
-      localVideo
-        .play()
-        .catch((e) => console.warn("Error playing local video:", e));
-      if (!isVideo) {
-        localVideo.classList.add("hidden");
-        if (localVideoContainer) localVideoContainer.classList.add("hidden");
-        if (callVideoBtn) callVideoBtn.classList.add("hidden");
-        if (callSwitchCameraBtn) callSwitchCameraBtn.classList.add("hidden");
-      } else {
-        localVideo.classList.remove("hidden");
-        if (localVideoContainer) localVideoContainer.classList.remove("hidden");
-        if (callVideoBtn) callVideoBtn.classList.remove("hidden");
-        if (callSwitchCameraBtn) callSwitchCameraBtn.classList.remove("hidden");
-      }
-    }
-
-    pendingIceCandidates = [];
-    rtcPeerConnection = new RTCPeerConnection(rtcConfig);
-
-    remoteStream = new MediaStream();
-    const remoteVideo = document.getElementById(
-      "remote-video",
-    ) as HTMLVideoElement;
-    const remoteAudio = document.getElementById(
-      "remote-audio",
-    ) as HTMLAudioElement;
-
-    if (localStream) {
-      localStream
-        .getAudioTracks()
-        .forEach((track) => rtcPeerConnection!.addTrack(track, localStream!));
-      localStream
-        .getVideoTracks()
-        .forEach((track) => rtcPeerConnection!.addTrack(track, localStream!));
-    }
-
-    rtcPeerConnection.ontrack = (event) => {
-      if (event.streams && event.streams[0]) {
-        remoteStream = event.streams[0];
-      } else if (
-        !remoteStream!.getTracks().find((t) => t.id === event.track.id)
-      ) {
-        remoteStream!.addTrack(event.track);
-      }
-
-      const attemptPlay = () => {
-        if (isVideo && remoteVideo) {
-          if (remoteVideo.srcObject !== remoteStream) {
-            remoteVideo.srcObject = remoteStream;
-            const p = remoteVideo.play();
-            if (p)
-              p.catch((e) => {
-                if (e.name !== "AbortError")
-                  console.warn("Error playing remote video:", e);
-              });
-          }
-          document
-            .getElementById("call-avatar-container")
-            ?.classList.add("hidden");
-          remoteVideo.classList.remove("hidden");
-        } else if (!isVideo && remoteAudio) {
-          if (remoteAudio.srcObject !== remoteStream) {
-            remoteAudio.srcObject = remoteStream;
-            const p = remoteAudio.play();
-            if (p)
-              p.catch((e) => {
-                if (e.name !== "AbortError")
-                  console.warn("Error playing remote audio:", e);
-              });
-          }
-        }
-      };
-
-      if (event.track.muted) {
-        event.track.onunmute = attemptPlay;
-      } else {
-        attemptPlay();
-      }
-    };
-
-    rtcPeerConnection.onicecandidate = (event) => {
-      if (event.candidate) {
-        queueIceCandidate(targetUser.id, event.candidate);
-      } else {
-        queueIceCandidate(targetUser.id, null);
-      }
-    };
-
-    rtcPeerConnection.onicegatheringstatechange = () => {
-      console.log("ICE Gathering state:", rtcPeerConnection?.iceGatheringState);
-    };
-
-    rtcPeerConnection.oniceconnectionstatechange = () => {
-      console.log(
-        "ICE Connection state:",
-        rtcPeerConnection?.iceConnectionState,
-      );
-      if (rtcPeerConnection?.iceConnectionState === "failed") {
-        endVideoCall(false);
-      }
-    };
-
-    const offer = await rtcPeerConnection.createOffer();
-    await rtcPeerConnection.setLocalDescription(offer);
-
-    callChannel.send({
-      type: "broadcast",
-      event: "call-offer",
-      payload: {
-        targetUserId: state.activeChatOtherUser.id,
-        callerId: state.currentUser.id,
-        callerName:
-          state.currentProfile.display_name || state.currentProfile.username,
-        callerAvatar: state.currentProfile.avatar_url,
-        offer,
-        isVideo,
-        senderTabId: tabSessionId,
-      },
-    });
-  } catch (err) {
-    console.error("Error starting call:", err);
-    alert(
-      "Не удалось получить доступ к микрофону" + (isVideo ? " или камере" : ""),
-    );
-    endVideoCall(false);
-  }
+  callChannel.send({
+    type: "broadcast",
+    event: "call-offer",
+    payload: {
+      targetUserId: state.activeChatOtherUser.id,
+      callerId: state.currentUser.id,
+      callerName:
+        state.currentProfile.display_name || state.currentProfile.username,
+      callerAvatar: state.currentProfile.avatar_url,
+      roomName: currentRoomName,
+      isVideo,
+      senderTabId: tabSessionId,
+    },
+  });
 }
 
 export async function answerCall(
   callerId: string,
-  offer: any,
-  callerName: string,
-  isVideo: boolean = true,
-  callerAvatar?: string,
+  roomName: string,
+  isVideo: boolean = true
 ) {
   await initWebRTC();
 
   currentCallPeerId = callerId;
+  currentRoomName = roomName;
 
-  document.getElementById("call-name")!.innerText = callerName;
+  mountJitsi(currentRoomName, isVideo);
 
-  const avatarEl = document.getElementById("call-avatar");
-  if (avatarEl) {
-    if (callerAvatar) {
-      avatarEl.innerHTML = `<img src="${callerAvatar}" class="w-full h-full object-cover rounded-full border border-gray-700">`;
-    } else {
-      avatarEl.innerText = callerName[0].toUpperCase();
-    }
-  }
-
-  document.getElementById("call-status")!.innerText = "Соединение...";
-  document.getElementById("video-call-modal")!.classList.remove("hidden");
-
-  try {
-    try {
-      localStream = await navigator.mediaDevices.getUserMedia({
-        video: isVideo,
-        audio: true,
-      });
-    } catch (e) {
-      console.warn("Failed to get video, trying audio only", e);
-      if (isVideo) {
-        isVideo = false;
-        localStream = await navigator.mediaDevices.getUserMedia({
-          video: false,
-          audio: true,
-        });
-      } else {
-        throw e;
-      }
-    }
-    const localVideo = document.getElementById(
-      "local-video",
-    ) as HTMLVideoElement;
-    const localVideoContainer = document.getElementById(
-      "local-video-container",
-    );
-    const callVideoBtn = document.getElementById("call-video-btn");
-    const callSwitchCameraBtn = document.getElementById(
-      "call-switch-camera-btn",
-    );
-    if (localVideo) {
-      localVideo.srcObject = localStream;
-      localVideo.play().catch((e) => {
-        if (e.name !== "AbortError")
-          console.warn("Error playing local video:", e);
-      });
-      if (!isVideo) {
-        localVideo.classList.add("hidden");
-        if (localVideoContainer) localVideoContainer.classList.add("hidden");
-        if (callVideoBtn) callVideoBtn.classList.add("hidden");
-        if (callSwitchCameraBtn) callSwitchCameraBtn.classList.add("hidden");
-      } else {
-        localVideo.classList.remove("hidden");
-        if (localVideoContainer) localVideoContainer.classList.remove("hidden");
-        if (callVideoBtn) callVideoBtn.classList.remove("hidden");
-        if (callSwitchCameraBtn) callSwitchCameraBtn.classList.remove("hidden");
-      }
-    }
-
-    rtcPeerConnection = new RTCPeerConnection(rtcConfig);
-
-    remoteStream = new MediaStream();
-    const remoteVideo = document.getElementById(
-      "remote-video",
-    ) as HTMLVideoElement;
-    const remoteAudio = document.getElementById(
-      "remote-audio",
-    ) as HTMLAudioElement;
-
-    rtcPeerConnection.ontrack = (event) => {
-      if (event.streams && event.streams[0]) {
-        remoteStream = event.streams[0];
-      } else if (
-        !remoteStream!.getTracks().find((t) => t.id === event.track.id)
-      ) {
-        remoteStream!.addTrack(event.track);
-      }
-
-      const attemptPlay = () => {
-        if (isVideo && remoteVideo) {
-          if (remoteVideo.srcObject !== remoteStream) {
-            remoteVideo.srcObject = remoteStream;
-            const p = remoteVideo.play();
-            if (p)
-              p.catch((e) => {
-                if (e.name !== "AbortError")
-                  console.warn("Error playing remote video:", e);
-              });
-          }
-          document
-            .getElementById("call-avatar-container")
-            ?.classList.add("hidden");
-          remoteVideo.classList.remove("hidden");
-        } else if (!isVideo && remoteAudio) {
-          if (remoteAudio.srcObject !== remoteStream) {
-            remoteAudio.srcObject = remoteStream;
-            const p = remoteAudio.play();
-            if (p)
-              p.catch((e) => {
-                if (e.name !== "AbortError")
-                  console.warn("Error playing remote audio:", e);
-              });
-          }
-        }
-      };
-
-      if (event.track.muted) {
-        event.track.onunmute = attemptPlay;
-      } else {
-        attemptPlay();
-      }
-    };
-
-    rtcPeerConnection.onicecandidate = (event) => {
-      if (event.candidate) {
-        queueIceCandidate(callerId, event.candidate);
-      } else {
-        queueIceCandidate(callerId, null);
-      }
-    };
-
-    rtcPeerConnection.onicegatheringstatechange = () => {
-      console.log("ICE Gathering state:", rtcPeerConnection?.iceGatheringState);
-    };
-
-    rtcPeerConnection.oniceconnectionstatechange = () => {
-      console.log(
-        "ICE Connection state:",
-        rtcPeerConnection?.iceConnectionState,
-      );
-      if (rtcPeerConnection?.iceConnectionState === "failed") {
-        endVideoCall(false);
-      }
-    };
-
-    await rtcPeerConnection.setRemoteDescription(
-      new RTCSessionDescription(offer),
-    );
-
-    if (localStream) {
-      localStream
-        .getAudioTracks()
-        .forEach((track) => rtcPeerConnection!.addTrack(track, localStream!));
-      localStream
-        .getVideoTracks()
-        .forEach((track) => rtcPeerConnection!.addTrack(track, localStream!));
-    }
-
-    while (pendingIceCandidates.length > 0) {
-      const candidate = pendingIceCandidates.shift();
-      console.log(
-        "AnswerCall: Processing queued ICE candidate",
-        candidate?.candidate || "end",
-      );
-      await rtcPeerConnection
-        .addIceCandidate(candidate || undefined)
-        .then(() => console.log("AnswerCall: Successfully added queued ICE"))
-        .catch((e) => console.error("Error adding queued ICE:", e));
-    }
-
-    const answer = await rtcPeerConnection.createAnswer();
-    await rtcPeerConnection.setLocalDescription(answer);
-
-    callChannel.send({
-      type: "broadcast",
-      event: "call-answer",
-      payload: { targetUserId: callerId, answer, senderTabId: tabSessionId },
-    });
-
-    document.getElementById("call-status")!.innerText =
-      "Соединение установлено";
-  } catch (err) {
-    console.error("Error answering call:", err);
-    endVideoCall(false);
-  }
+  callChannel.send({
+    type: "broadcast",
+    event: "call-answer",
+    payload: { targetUserId: callerId, senderTabId: tabSessionId },
+  });
 }
 
 let isEndingCall = false;
@@ -677,7 +251,6 @@ export async function endVideoCall(broadcast = true) {
   isEndingCall = true;
   try {
     stopRingtone();
-    pendingIceCandidates = [];
     if (broadcast && currentCallPeerId && callChannel) {
       callChannel.send({
         type: "broadcast",
@@ -689,12 +262,8 @@ export async function endVideoCall(broadcast = true) {
         },
       });
 
-      // Push a call ended message to the active chat
       if (state.activeChatId) {
-        const isMissed =
-          document.getElementById("call-status")?.innerText === "Вызов..." ||
-          document.getElementById("call-status")?.innerText === "Отклонен";
-        const content = isMissed ? "Пропущенный звонок" : "Звонок завершен";
+        const content = "Звонок завершен";
 
         try {
           await supabase.from("messages").insert({
@@ -708,148 +277,34 @@ export async function endVideoCall(broadcast = true) {
         }
       }
     }
+    
     currentCallPeerId = null;
+    currentRoomName = null;
 
-    if (rtcPeerConnection) {
-      rtcPeerConnection.close();
-      rtcPeerConnection = null;
-    }
-    if (localStream) {
-      localStream.getTracks().forEach((track) => track.stop());
-      localStream = null;
+    if (jitsiApi) {
+      try {
+        jitsiApi.dispose();
+      } catch (e) {}
+      jitsiApi = null;
     }
 
     document.getElementById("video-call-modal")!.classList.add("hidden");
-    document.getElementById("call-status")!.innerText = "Вызов...";
-    document
-      .getElementById("call-avatar-container")
-      ?.classList.remove("hidden");
+    const container = document.getElementById("jitsi-container");
+    if (container) container.innerHTML = "";
 
-    const remoteVideo = document.getElementById(
-      "remote-video",
-    ) as HTMLVideoElement;
-    const remoteAudio = document.getElementById(
-      "remote-audio",
-    ) as HTMLAudioElement;
-    if (remoteVideo) {
-      remoteVideo.srcObject = null;
-      remoteVideo.classList.add("hidden");
-    }
-    if (remoteAudio) {
-      remoteAudio.srcObject = null;
-    }
-    const localVideo = document.getElementById(
-      "local-video",
-    ) as HTMLVideoElement;
-    const localVideoContainer = document.getElementById(
-      "local-video-container",
-    );
-    if (localVideo) localVideo.srcObject = null;
-    if (localVideoContainer) localVideoContainer.classList.remove("hidden");
-    const callVideoBtn = document.getElementById("call-video-btn");
-    if (callVideoBtn) callVideoBtn.classList.remove("hidden");
   } finally {
     isEndingCall = false;
   }
 }
 
 export function toggleCallAudio() {
-  if (localStream) {
-    const audioTrack = localStream.getAudioTracks()[0];
-    if (audioTrack) {
-      audioTrack.enabled = !audioTrack.enabled;
-      const btn = document.getElementById("call-audio-btn")!;
-      if (audioTrack.enabled) {
-        btn.classList.remove("bg-red-500", "hover:bg-red-600");
-        btn.classList.add("bg-gray-700", "hover:bg-gray-600");
-      } else {
-        btn.classList.remove("bg-gray-700", "hover:bg-gray-600");
-        btn.classList.add("bg-red-500", "hover:bg-red-600");
-      }
-    }
-  }
+  if (jitsiApi) jitsiApi.executeCommand("toggleAudio");
 }
 
 export function toggleCallVideo() {
-  if (localStream) {
-    const videoTrack = localStream.getVideoTracks()[0];
-    if (videoTrack) {
-      videoTrack.enabled = !videoTrack.enabled;
-      const btn = document.getElementById("call-video-btn")!;
-      if (videoTrack.enabled) {
-        btn.classList.remove("bg-red-500", "hover:bg-red-600");
-        btn.classList.add("bg-gray-700", "hover:bg-gray-600");
-      } else {
-        btn.classList.remove("bg-gray-700", "hover:bg-gray-600");
-        btn.classList.add("bg-red-500", "hover:bg-red-600");
-      }
-    }
-  }
+  if (jitsiApi) jitsiApi.executeCommand("toggleVideo");
 }
 
 export async function switchCallCamera() {
-  if (!localStream) return;
-  const videoTracks = localStream.getVideoTracks();
-  if (videoTracks.length === 0) return;
-
-  try {
-    let newConstraint: any = { facingMode: "user" };
-    try {
-      const currentSettings = videoTracks[0].getSettings();
-      const isFront = currentSettings.facingMode === "user";
-      newConstraint = isFront
-        ? { facingMode: { exact: "environment" } }
-        : { facingMode: "user" };
-    } catch (e) {}
-
-    let newStream: MediaStream | null = null;
-    try {
-      newStream = await navigator.mediaDevices.getUserMedia({
-        video: newConstraint,
-      });
-    } catch (e) {
-      try {
-        const fallbackConstraint =
-          newConstraint.facingMode?.exact === "environment"
-            ? { facingMode: "environment" }
-            : { facingMode: "user" };
-        newStream = await navigator.mediaDevices.getUserMedia({
-          video: fallbackConstraint,
-        });
-      } catch (e2) {
-        console.warn("Fallback camera switch failed");
-      }
-    }
-
-    if (!newStream) return;
-    const newVideoTrack = newStream.getVideoTracks()[0];
-
-    if (rtcPeerConnection) {
-      const sender = rtcPeerConnection
-        .getSenders()
-        .find((s) => s.track?.kind === "video");
-      if (sender) {
-        await sender.replaceTrack(newVideoTrack);
-      }
-    }
-
-    videoTracks[0].stop();
-    localStream.removeTrack(videoTracks[0]);
-    localStream.addTrack(newVideoTrack);
-
-    const callVideoBtn = document.getElementById("call-video-btn");
-    if (callVideoBtn && callVideoBtn.classList.contains("bg-red-500")) {
-      newVideoTrack.enabled = false;
-    }
-
-    const localVideo = document.getElementById(
-      "local-video",
-    ) as HTMLVideoElement;
-    if (localVideo) {
-      localVideo.srcObject = localStream;
-      localVideo.play().catch(() => {});
-    }
-  } catch (e) {
-    console.error("Error switching camera:", e);
-  }
+  if (jitsiApi) jitsiApi.executeCommand("toggleCamera");
 }
