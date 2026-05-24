@@ -277,17 +277,6 @@ export function openSettings(modeOrSkip: 'full' | 'profile' | boolean = 'full', 
                 <svg class="w-5 h-5 text-gray-400 group-open:rotate-180 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
             </summary>
             <div class="border-t border-gray-100 dark:border-gray-700 bg-white dark:bg-gray-800/80 p-3 space-y-2">
-                <label class="flex items-center justify-between w-full py-3 px-4 hover:bg-gray-100 dark:hover:bg-gray-700/50 transition-colors rounded-xl font-semibold cursor-pointer text-gray-800 dark:text-gray-100">
-                    <div class="flex items-center gap-3">
-                        <svg class="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"></path></svg>
-                        Полноэкранный режим
-                    </div>
-                    <div class="relative inline-block w-10 mr-2 align-middle select-none transition duration-200 ease-in">
-                        <input type="checkbox" id="settings-fullscreen" class="sr-only peer" ${localStorage.getItem('vibegram_fullscreen') === 'true' ? 'checked' : ''} onchange="window.toggleFullscreenApp(this.checked)">
-                        <div class="w-11 h-6 bg-gray-300 dark:bg-gray-600 rounded-full peer peer-checked:bg-blue-500 transition-colors"></div>
-                        <div class="absolute left-1 top-1 bg-white w-4 h-4 rounded-full transition-transform peer-checked:translate-x-5 shadow-sm"></div>
-                    </div>
-                </label>
                 ${state.isAdminStatus || (window as any).originalAdminUser ? '' : `
                 <button onclick="logout()" class="w-full py-3 bg-red-50 dark:bg-red-900/20 hover:bg-red-100 dark:hover:bg-red-900/40 transition-colors text-red-600 dark:text-red-400 rounded-xl font-semibold flex items-center gap-3 px-4">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3-3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"></path></svg>
@@ -634,10 +623,7 @@ function updateBonusProgress() {
     const p365 = s365 ? parseInt(s365.value) || 300 : 300;
 
     modal.innerHTML = `
-        <div class="p-6 relative">
-            <button onclick="window.showPremiumBenefits()" class="absolute top-4 right-4 text-gray-400 hover:text-indigo-500 transition-colors p-2 bg-gray-50 dark:bg-gray-800 rounded-full shadow-sm border border-gray-200 dark:border-gray-700" title="О премиуме">
-                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-            </button>
+        <div class="p-6">
             <div class="text-center mb-6">
                 <div class="w-20 h-20 mx-auto bg-gradient-to-br from-indigo-100 to-white rounded-full flex items-center justify-center p-4 shadow-lg shadow-indigo-500/30 mb-4"><img src="./image/Google-Gemini-Logo-Transparent.png" class="w-full h-full object-contain" alt="Premium"></div>
                 <h3 class="text-2xl font-bold dark:text-white">VIBEGRAM PREMIUM</h3>
@@ -668,28 +654,6 @@ function updateBonusProgress() {
             </div>
             
             <button onclick="window.closeModal()" class="w-full py-3 bg-gray-100 hover:bg-gray-200 dark:bg-gray-800 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-xl font-medium transition-colors">Отмена</button>
-        </div>
-    `;
-};
-
-(window as any).showPremiumBenefits = () => {
-    const modal = document.getElementById('modal-content')!;
-    modal.innerHTML = `
-        <div class="p-6 relative">
-            <h3 class="text-2xl font-bold dark:text-white mb-6 pr-8">Преимущества Premium</h3>
-            <ul class="space-y-4 text-sm text-gray-700 dark:text-gray-300">
-                <li class="flex gap-3 items-start"><span class="text-xl">✨</span> <span><b>Эксклюзивные обои</b> с плавной анимацией для чатов.</span></li>
-                <li class="flex gap-3 items-start"><span class="text-xl">📝</span> <span><b>Голосовые сообщения</b>: безлимитное преобразование в текст с помощью AI.</span></li>
-                <li class="flex gap-3 items-start"><span class="text-xl">💸</span> <span><b>Монетизация</b>: Установка цены за отправку сообщений вам от других пользователей.</span></li>
-                <li class="flex gap-3 items-start"><span class="text-xl">🌟</span> <span><b>Значок Premium</b> — эксклюзивный статус рядом с вашим именем во всех чатах.</span></li>
-                <li class="flex gap-3 items-start"><span class="text-xl">🎙️</span> <span>Возможность отправки <b>кружочков (видеосообщений) без ограничений</b>.</span></li>
-                <li class="flex gap-3 items-start"><span class="text-xl">🚀</span> <span><b>Увеличенные лимиты</b> для загружаемых файлов и медиа.</span></li>
-                <li class="flex gap-3 items-start"><span class="text-xl">🎮</span> <span>Разработка и <b>создание безлимитного количества собственных мини-приложений</b> в каталоге.</span></li>
-            </ul>
-            <div class="mt-8 flex justify-end gap-3">
-                <button onclick="window.closeModal()" class="px-4 py-2 bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 rounded-xl font-medium transition-colors hover:bg-gray-200 dark:hover:bg-gray-700">Отмена</button>
-                <button onclick="window.buyPremiumModal()" class="bg-gradient-to-r from-yellow-400 to-orange-500 hover:from-yellow-300 hover:to-orange-400 text-yellow-900 px-6 py-2 rounded-xl font-bold shadow-lg shadow-orange-500/20 transition-transform active:scale-95">К покупке</button>
-            </div>
         </div>
     `;
 };
