@@ -50,11 +50,7 @@ const rtcConfig: RTCConfiguration = {
         { urls: 'stun:stun.l.google.com:19302' },
         { urls: 'stun:stun1.l.google.com:19302' },
         { urls: 'stun:stun.cloudflare.com:3478' },
-        { urls: 'stun:stun.miwifi.com:3478' },
-        { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
-        { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
-        { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' },
-        { urls: 'turn:freestun.net:3478', username: 'free', credential: 'free' }
+        { urls: 'stun:stun.miwifi.com:3478' }
     ]
 };
 
@@ -335,22 +331,6 @@ async function startCall(isVideo: boolean) {
         const offer = await rtcPeerConnection.createOffer();
         await rtcPeerConnection.setLocalDescription(offer);
         
-        // Wait up to 1.5 seconds for ICE gathering, boosting chances of success
-        await new Promise((resolve) => {
-            if (rtcPeerConnection!.iceGatheringState === 'complete') return resolve(true);
-            const checkState = () => {
-                if (rtcPeerConnection!.iceGatheringState === 'complete') {
-                    rtcPeerConnection!.removeEventListener('icegatheringstatechange', checkState);
-                    resolve(true);
-                }
-            };
-            rtcPeerConnection!.addEventListener('icegatheringstatechange', checkState);
-            setTimeout(() => {
-                rtcPeerConnection!.removeEventListener('icegatheringstatechange', checkState);
-                resolve(true);
-            }, 1500);
-        });
-        
         callChannel.send({
             type: 'broadcast', event: 'call-offer',
             payload: { 
@@ -488,22 +468,6 @@ export async function answerCall(callerId: string, offer: any, callerName: strin
         
         const answer = await rtcPeerConnection.createAnswer();
         await rtcPeerConnection.setLocalDescription(answer);
-        
-        // Wait up to 1.5 seconds for ICE gathering, boosting chances of success
-        await new Promise((resolve) => {
-            if (rtcPeerConnection!.iceGatheringState === 'complete') return resolve(true);
-            const checkState = () => {
-                if (rtcPeerConnection!.iceGatheringState === 'complete') {
-                    rtcPeerConnection!.removeEventListener('icegatheringstatechange', checkState);
-                    resolve(true);
-                }
-            };
-            rtcPeerConnection!.addEventListener('icegatheringstatechange', checkState);
-            setTimeout(() => {
-                rtcPeerConnection!.removeEventListener('icegatheringstatechange', checkState);
-                resolve(true);
-            }, 1500);
-        });
         
         callChannel.send({
             type: 'broadcast', event: 'call-answer',
