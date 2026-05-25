@@ -49,14 +49,10 @@ const rtcConfig: RTCConfiguration = {
     iceServers: [
         { urls: 'stun:stun.l.google.com:19302' },
         { urls: 'stun:stun1.l.google.com:19302' },
-        { urls: 'turn:freestun.net:3478', username: 'free', credential: 'free' },
-        { urls: 'turn:turn.bistri.com:80', username: 'homeo', credential: 'homeo' },
         { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
         { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
         { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' }
-    ],
-    iceCandidatePoolSize: 10,
-    iceTransportPolicy: 'all'
+    ]
 };
 
 let pendingIceCandidates: any[] = [];
@@ -314,6 +310,10 @@ async function startCall(isVideo: boolean) {
             }
         };
         
+        rtcPeerConnection.onicecandidateerror = (event: any) => {
+            console.error('[WebRTC Caller] ICE Candidate Error:', event.errorText || event.errorCode || event);
+        };
+        
         rtcPeerConnection.oniceconnectionstatechange = () => {
              console.log('[WebRTC Caller] ICE Connection state:', rtcPeerConnection?.iceConnectionState);
              const statusEl = document.getElementById('call-status');
@@ -454,6 +454,10 @@ export async function answerCall(callerId: string, offer: any, callerName: strin
             } else {
                 console.log('[WebRTC Answerer] ICE Candidate gathering completed.');
             }
+        };
+        
+        rtcPeerConnection.onicecandidateerror = (event: any) => {
+            console.error('[WebRTC Answerer] ICE Candidate Error:', event.errorText || event.errorCode || event);
         };
         
         rtcPeerConnection.oniceconnectionstatechange = () => {
