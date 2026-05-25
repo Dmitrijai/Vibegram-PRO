@@ -49,8 +49,8 @@ const rtcConfig: RTCConfiguration = {
     iceServers: [
         { urls: 'stun:stun.l.google.com:19302' },
         { urls: 'stun:stun1.l.google.com:19302' },
-        { urls: 'stun:stun2.l.google.com:19302' },
         { urls: 'stun:stun.cloudflare.com:3478' },
+        { urls: 'stun:stun.miwifi.com:3478' },
         { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
         { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
         { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' },
@@ -321,13 +321,35 @@ async function startCall(isVideo: boolean) {
         
         rtcPeerConnection.oniceconnectionstatechange = () => {
              console.log('ICE Connection state:', rtcPeerConnection?.iceConnectionState);
+             const statusEl = document.getElementById('call-status');
              if (rtcPeerConnection?.iceConnectionState === 'failed') {
-                 endVideoCall(false);
+                 if (statusEl) statusEl.innerText = 'Ошибка соединения (проверьте VPN/сеть)';
+                 setTimeout(() => endVideoCall(true), 4000);
+             } else if (rtcPeerConnection?.iceConnectionState === 'disconnected') {
+                 if (statusEl) statusEl.innerText = 'Обрыв связи...';
+             } else if (rtcPeerConnection?.iceConnectionState === 'connected') {
+                 if (statusEl) statusEl.innerText = 'Соединено';
              }
         };
 
         const offer = await rtcPeerConnection.createOffer();
         await rtcPeerConnection.setLocalDescription(offer);
+        
+        // Wait up to 1.5 seconds for ICE gathering, boosting chances of success
+        await new Promise((resolve) => {
+            if (rtcPeerConnection!.iceGatheringState === 'complete') return resolve(true);
+            const checkState = () => {
+                if (rtcPeerConnection!.iceGatheringState === 'complete') {
+                    rtcPeerConnection!.removeEventListener('icegatheringstatechange', checkState);
+                    resolve(true);
+                }
+            };
+            rtcPeerConnection!.addEventListener('icegatheringstatechange', checkState);
+            setTimeout(() => {
+                rtcPeerConnection!.removeEventListener('icegatheringstatechange', checkState);
+                resolve(true);
+            }, 1500);
+        });
         
         callChannel.send({
             type: 'broadcast', event: 'call-offer',
@@ -336,7 +358,7 @@ async function startCall(isVideo: boolean) {
                 callerId: state.currentUser.id,
                 callerName: state.currentProfile.display_name || state.currentProfile.username,
                 callerAvatar: state.currentProfile.avatar_url,
-                offer,
+                offer: { type: offer.type, sdp: rtcPeerConnection!.localDescription!.sdp },
                 isVideo
             }
         });
@@ -447,8 +469,14 @@ export async function answerCall(callerId: string, offer: any, callerName: strin
         
         rtcPeerConnection.oniceconnectionstatechange = () => {
              console.log('ICE Connection state:', rtcPeerConnection?.iceConnectionState);
+             const statusEl = document.getElementById('call-status');
              if (rtcPeerConnection?.iceConnectionState === 'failed') {
-                 endVideoCall(false);
+                 if (statusEl) statusEl.innerText = 'Ошибка соединения (проверьте VPN/сеть)';
+                 setTimeout(() => endVideoCall(true), 4000);
+             } else if (rtcPeerConnection?.iceConnectionState === 'disconnected') {
+                 if (statusEl) statusEl.innerText = 'Обрыв связи...';
+             } else if (rtcPeerConnection?.iceConnectionState === 'connected') {
+                 if (statusEl) statusEl.innerText = 'Соединено';
              }
         };
 
@@ -461,9 +489,25 @@ export async function answerCall(callerId: string, offer: any, callerName: strin
         const answer = await rtcPeerConnection.createAnswer();
         await rtcPeerConnection.setLocalDescription(answer);
         
+        // Wait up to 1.5 seconds for ICE gathering, boosting chances of success
+        await new Promise((resolve) => {
+            if (rtcPeerConnection!.iceGatheringState === 'complete') return resolve(true);
+            const checkState = () => {
+                if (rtcPeerConnection!.iceGatheringState === 'complete') {
+                    rtcPeerConnection!.removeEventListener('icegatheringstatechange', checkState);
+                    resolve(true);
+                }
+            };
+            rtcPeerConnection!.addEventListener('icegatheringstatechange', checkState);
+            setTimeout(() => {
+                rtcPeerConnection!.removeEventListener('icegatheringstatechange', checkState);
+                resolve(true);
+            }, 1500);
+        });
+        
         callChannel.send({
             type: 'broadcast', event: 'call-answer',
-            payload: { targetUserId: callerId, answer }
+            payload: { targetUserId: callerId, answer: { type: answer.type, sdp: rtcPeerConnection!.localDescription!.sdp } }
         });
         
         document.getElementById('call-status')!.innerText = 'Соединение установлено';
