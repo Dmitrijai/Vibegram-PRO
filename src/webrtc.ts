@@ -60,19 +60,10 @@ let iceCandidateTimer: any = null;
 let vibrateInterval: any = null;
 
 function queueIceCandidate(targetId: string, candidate: any) {
-    iceCandidateQueue.push(candidate);
-    if (!iceCandidateTimer) {
-        iceCandidateTimer = setTimeout(() => {
-            if (iceCandidateQueue.length > 0) {
-                callChannel.send({
-                    type: 'broadcast', event: 'ice-candidates-batch',
-                    payload: { targetUserId: targetId, candidates: [...iceCandidateQueue] }
-                });
-                iceCandidateQueue = [];
-            }
-            iceCandidateTimer = null;
-        }, 400); // 400ms accumulates STUN/TURN candidates to prevent 10msg/sec drop
-    }
+    callChannel.send({
+        type: 'broadcast', event: 'ice-candidate',
+        payload: { targetUserId: targetId, candidate: candidate }
+    }).catch((e: any) => console.error("Error sending ICE candidate:", e));
 }
 
 export async function initWebRTC() {
@@ -291,19 +282,15 @@ async function startCall(isVideo: boolean) {
 
             const attemptPlay = () => {
                 if (isVideo && remoteVideo) {
-                    if (remoteVideo.srcObject !== remoteStream) {
-                        remoteVideo.srcObject = remoteStream;
-                        const p = remoteVideo.play();
-                        if (p) p.catch(e => { if (e.name !== 'AbortError') console.warn('Error playing remote video:', e); });
-                    }
+                    remoteVideo.srcObject = remoteStream;
+                    const p = remoteVideo.play();
+                    if (p) p.catch(e => { if (e.name !== 'AbortError') console.warn('Error playing remote video:', e); });
                     document.getElementById('call-avatar-container')?.classList.add('hidden');
                     remoteVideo.classList.remove('hidden');
                 } else if (!isVideo && remoteAudio) {
-                    if (remoteAudio.srcObject !== remoteStream) {
-                        remoteAudio.srcObject = remoteStream;
-                        const p = remoteAudio.play();
-                        if (p) p.catch(e => { if (e.name !== 'AbortError') console.warn('Error playing remote audio:', e); });
-                    }
+                    remoteAudio.srcObject = remoteStream;
+                    const p = remoteAudio.play();
+                    if (p) p.catch(e => { if (e.name !== 'AbortError') console.warn('Error playing remote audio:', e); });
                 }
             };
             
@@ -437,19 +424,15 @@ export async function answerCall(callerId: string, offer: any, callerName: strin
 
             const attemptPlay = () => {
                 if (isVideo && remoteVideo) {
-                    if (remoteVideo.srcObject !== remoteStream) {
-                        remoteVideo.srcObject = remoteStream;
-                        const p = remoteVideo.play();
-                        if (p) p.catch(e => { if (e.name !== 'AbortError') console.warn('Error playing remote video:', e); });
-                    }
+                    remoteVideo.srcObject = remoteStream;
+                    const p = remoteVideo.play();
+                    if (p) p.catch(e => { if (e.name !== 'AbortError') console.warn('Error playing remote video:', e); });
                     document.getElementById('call-avatar-container')?.classList.add('hidden');
                     remoteVideo.classList.remove('hidden');
                 } else if (!isVideo && remoteAudio) {
-                    if (remoteAudio.srcObject !== remoteStream) {
-                        remoteAudio.srcObject = remoteStream;
-                        const p = remoteAudio.play();
-                        if (p) p.catch(e => { if (e.name !== 'AbortError') console.warn('Error playing remote audio:', e); });
-                    }
+                    remoteAudio.srcObject = remoteStream;
+                    const p = remoteAudio.play();
+                    if (p) p.catch(e => { if (e.name !== 'AbortError') console.warn('Error playing remote audio:', e); });
                 }
             };
             
