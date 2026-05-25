@@ -47,18 +47,10 @@ function stopRingtone() {
 
 const rtcConfig: RTCConfiguration = {
     iceServers: [
-        { urls: [
-            'stun:stun.l.google.com:19302',
-            'stun:stun1.l.google.com:19302',
-            'stun:stun2.l.google.com:19302',
-            'stun:stun3.l.google.com:19302',
-            'stun:stun4.l.google.com:19302',
-            'stun:stun.cloudflare.com:3478'
-        ]},
-        { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
-        { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
-        { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' },
-        { urls: 'turn:turn.bistri.com:80', username: 'homeo', credential: 'homeo' }
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun1.l.google.com:19302' },
+        { urls: 'stun:stun2.l.google.com:19302' },
+        { urls: 'stun:stun.cloudflare.com:3478' }
     ]
 };
 
@@ -198,7 +190,14 @@ export async function initWebRTC() {
         }
     });
 
-    callChannel.subscribe();
+    await new Promise((resolve) => {
+        callChannel.subscribe((status: string) => {
+            if (status === 'SUBSCRIBED' || status === 'CLOSED' || status === 'CHANNEL_ERROR') {
+                resolve(true);
+            }
+        });
+        setTimeout(resolve, 3000);
+    });
 }
 
 export async function startAudioCall() {
