@@ -48,10 +48,7 @@ function stopRingtone() {
 const rtcConfig: RTCConfiguration = {
     iceServers: [
         { urls: 'stun:stun.l.google.com:19302' },
-        { urls: 'stun:stun1.l.google.com:19302' },
-        { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
-        { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
-        { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' }
+        { urls: 'stun:stun1.l.google.com:19302' }
     ]
 };
 
@@ -319,13 +316,17 @@ async function startCall(isVideo: boolean) {
              const statusEl = document.getElementById('call-status');
              if (rtcPeerConnection?.iceConnectionState === 'failed') {
                  if (statusEl) statusEl.innerText = 'Ошибка соединения (проверьте VPN/сеть)';
-                 console.error('[WebRTC Caller] ICE Connection Failed - usually this means a TURN server is required for this specific network setup.');
+                 console.error('[WebRTC Caller] ICE Connection Failed');
                  setTimeout(() => endVideoCall(true), 4000);
              } else if (rtcPeerConnection?.iceConnectionState === 'disconnected') {
                  if (statusEl) statusEl.innerText = 'Обрыв связи...';
              } else if (rtcPeerConnection?.iceConnectionState === 'connected') {
                  if (statusEl) statusEl.innerText = 'Соединено';
              }
+        };
+
+        rtcPeerConnection.onicegatheringstatechange = () => {
+             console.log('[WebRTC Caller] ICE Gathering state:', rtcPeerConnection?.iceGatheringState);
         };
         
         rtcPeerConnection.onconnectionstatechange = () => {
@@ -338,6 +339,8 @@ async function startCall(isVideo: boolean) {
 
         const offer = await rtcPeerConnection.createOffer();
         await rtcPeerConnection.setLocalDescription(offer);
+        
+        console.log('[WebRTC Caller] Local SDP:', offer.sdp);
         
         callChannel.send({
             type: 'broadcast', event: 'call-offer',
@@ -465,13 +468,17 @@ export async function answerCall(callerId: string, offer: any, callerName: strin
              const statusEl = document.getElementById('call-status');
              if (rtcPeerConnection?.iceConnectionState === 'failed') {
                  if (statusEl) statusEl.innerText = 'Ошибка соединения (проверьте VPN/сеть)';
-                 console.error('[WebRTC Answerer] ICE Connection Failed - usually this means a TURN server is required for this specific network setup.');
+                 console.error('[WebRTC Answerer] ICE Connection Failed');
                  setTimeout(() => endVideoCall(true), 4000);
              } else if (rtcPeerConnection?.iceConnectionState === 'disconnected') {
                  if (statusEl) statusEl.innerText = 'Обрыв связи...';
              } else if (rtcPeerConnection?.iceConnectionState === 'connected') {
                  if (statusEl) statusEl.innerText = 'Соединено';
              }
+        };
+
+        rtcPeerConnection.onicegatheringstatechange = () => {
+             console.log('[WebRTC Answerer] ICE Gathering state:', rtcPeerConnection?.iceGatheringState);
         };
         
         rtcPeerConnection.onconnectionstatechange = () => {
@@ -490,6 +497,8 @@ export async function answerCall(callerId: string, offer: any, callerName: strin
         
         const answer = await rtcPeerConnection.createAnswer();
         await rtcPeerConnection.setLocalDescription(answer);
+        
+        console.log('[WebRTC Answerer] Local SDP:', answer.sdp);
         
         callChannel.send({
             type: 'broadcast', event: 'call-answer',
