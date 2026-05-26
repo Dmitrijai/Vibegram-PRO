@@ -8,6 +8,7 @@ import { getMediaObserver, clearFile } from "./messages-media";
 import { cancelReply } from "./messages-actions";
 
 export let currentMessageLimit = 50;
+let isSendingMessage = false;
 export let isLoadingMore = false;
 export let hasMoreMessages = true;
 export let messageScrollListener: any = null;
@@ -107,56 +108,6 @@ function setupMessageScrollListener() {
             currentMessageLimit += 50;
             await loadMessages(state.activeChatId!);
             isLoadingMore = false;
-        }
-
-        const floatingDate = document.getElementById('floating-date');
-        if (floatingDate) {
-            const elements = list.children;
-            let topMsgOrDivider: HTMLElement | null = null;
-            for (let i = 0; i < elements.length; i++) {
-                const el = elements[i] as HTMLElement;
-                if ((el.classList.contains('msg-wrapper') || el.classList.contains('msg-date-divider')) && el.offsetTop >= list.scrollTop) {
-                    topMsgOrDivider = el;
-                    break;
-                }
-            }
-
-            if (topMsgOrDivider) {
-                let dateStr = '';
-                if (topMsgOrDivider.classList.contains('msg-date-divider')) {
-                    dateStr = topMsgOrDivider.dataset.date || '';
-                } else {
-                    let prev = topMsgOrDivider.previousElementSibling;
-                    while (prev) {
-                        if (prev.classList.contains('msg-date-divider')) {
-                            dateStr = (prev as HTMLElement).dataset.date || '';
-                            break;
-                        }
-                        prev = prev.previousElementSibling;
-                    }
-                }
-                
-                if (dateStr) {
-                    if (floatingDate.textContent !== dateStr) {
-                        floatingDate.textContent = dateStr;
-                    }
-                    floatingDate.classList.remove('hidden');
-                    // Small delay to allow display:block to apply before changing opacity
-                    requestAnimationFrame(() => {
-                        floatingDate.classList.remove('opacity-0');
-                    });
-                    
-                    if (floatingDateTimeout) clearTimeout(floatingDateTimeout);
-                    floatingDateTimeout = setTimeout(() => {
-                        floatingDate.classList.add('opacity-0');
-                        setTimeout(() => {
-                            if (floatingDate.classList.contains('opacity-0')) {
-                                floatingDate.classList.add('hidden');
-                            }
-                        }, 300);
-                    }, 1500);
-                }
-            }
         }
     };
     
@@ -283,9 +234,9 @@ export function renderMessages(messages: any[], isInitialLoad = false) {
             const dateId = `date-divider-${msgDateObj.toISOString().split('T')[0]}`;
             let dateDiv = document.createElement('div');
             dateDiv.id = dateId;
-            dateDiv.className = 'w-full flex justify-center my-3 msg-date-divider shrink-0';
+            dateDiv.className = 'w-full flex justify-center my-3 msg-date-divider shrink-0 sticky top-2 z-[35]';
             dateDiv.dataset.date = dateStr;
-            dateDiv.innerHTML = `<span class="bg-black/20 dark:bg-black/40 text-white text-[11px] font-semibold px-3 py-1 rounded-full shadow-sm backdrop-blur-sm">${dateStr}</span>`;
+            dateDiv.innerHTML = `<span class="bg-black/60 dark:bg-black/70 text-white text-[11px] font-semibold px-3 py-1 rounded-full shadow border border-white/5 backdrop-blur-md">${dateStr}</span>`;
             
             list.insertBefore(dateDiv, list.children[domIndex] || null);
             domIndex++;
@@ -891,12 +842,18 @@ const getMediaAspectRatio = (file: File): Promise<string> => {
 };
 
 export async function sendMessage() {
+    if (isSendingMessage) return;
     if(!state.activeChatId) return;
     const input = document.getElementById('message-input') as HTMLTextAreaElement;
     if (!input) return;
     const text = input.value.trim();
     const files = [...state.selectedFiles];
     if(!text && files.length === 0) return;
+    
+    isSendingMessage = true;
+    setTimeout(() => {
+        isSendingMessage = false;
+    }, 400);
     
     // Check Paid Messages feature
     if (!state.activeChatIsGroup && state.activeChatOtherUser && !state.isTechSupportChat && !state.isAdminStatus) {
@@ -940,6 +897,7 @@ export async function sendMessage() {
                 } catch (err: any) {
                     customAlert('Не удалось оплатить сообщение: ' + err.message);
                 }
+            }, () => {
             });
             return;
         }

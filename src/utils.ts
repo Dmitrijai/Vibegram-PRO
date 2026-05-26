@@ -34,7 +34,7 @@ export function getStatusText(isOnline: boolean, lastSeenStr: string | null | un
     return `был(а) ${new Date(lastSeenStr).toLocaleDateString('ru-RU')}`;
 }
 
-export function confirmPaidMessageModal(price: number, nickname: string, onConfirm: () => void) {
+export function confirmPaidMessageModal(price: number, nickname: string, onConfirm: () => void, onCancel?: () => void) {
     const overlay = document.getElementById('modal-overlay')!;
     const content = document.getElementById('modal-content')!;
     overlay.classList.remove('hidden');
@@ -56,7 +56,12 @@ export function confirmPaidMessageModal(price: number, nickname: string, onConfi
         </div>
     `;
     
-    document.getElementById('cancel-paid-msg')!.onclick = () => closeModal();
+    document.getElementById('cancel-paid-msg')!.onclick = () => {
+        closeModal();
+        if (onCancel) onCancel();
+    };
+    (window as any).__currentPaidModalCancel = onCancel;
+    
     const btn = document.getElementById('confirm-paid-msg')!;
     let isConfirmed = false;
     btn.onclick = () => {
@@ -77,6 +82,11 @@ export function confirmPaidMessageModal(price: number, nickname: string, onConfi
 }
 
 export function closeModal(e?: any, skipHistoryBack = false) { 
+    if ((window as any).__currentPaidModalCancel) {
+        (window as any).__currentPaidModalCancel();
+        (window as any).__currentPaidModalCancel = null;
+    }
+
     if(e && e.target && e.target.id === 'modal-overlay') {
         const content = document.getElementById('modal-content');
         if (content && content.hasAttribute('data-prevent-bg-close')) {
@@ -133,12 +143,24 @@ function getAudioContext() {
 }
 
 // Resume context on any click to bypass autoplay
-document.addEventListener('click', () => {
-    getAudioContext();
-}, { once: true });
-document.addEventListener('touchstart', () => {
-    getAudioContext();
-}, { once: true });
+function unlockAudioContext() {
+    const ctx = getAudioContext();
+    if (ctx && ctx.state === 'suspended') {
+        // iOS requires actual playback to unlock, not just resume()
+        try {
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            gain.gain.value = 0;
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            osc.start(0);
+            osc.stop(0.01);
+            ctx.resume();
+        } catch(e) {}
+    }
+}
+document.addEventListener('click', unlockAudioContext, { once: true });
+document.addEventListener('touchstart', unlockAudioContext, { once: true });
 
 export function playNotificationSound() {
     try {
