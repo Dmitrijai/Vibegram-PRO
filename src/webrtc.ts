@@ -47,8 +47,18 @@ function stopRingtone() {
 
 const rtcConfig: RTCConfiguration = {
     iceServers: [
-        { urls: 'stun:stun.l.google.com:19302' },
-        { urls: 'stun:stun1.l.google.com:19302' }
+        { urls: [
+            'stun:stun.l.google.com:19302',
+            'stun:stun1.l.google.com:19302',
+            'stun:stun2.l.google.com:19302',
+            'stun:stun3.l.google.com:19302',
+            'stun:stun4.l.google.com:19302',
+            'stun:stun.cloudflare.com:3478'
+        ]},
+        { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
+        { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
+        { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' },
+        { urls: 'turn:turn.bistri.com:80', username: 'homeo', credential: 'homeo' }
     ]
 };
 
@@ -58,10 +68,19 @@ let iceCandidateTimer: any = null;
 let vibrateInterval: any = null;
 
 function queueIceCandidate(targetId: string, candidate: any) {
-    callChannel.send({
-        type: 'broadcast', event: 'ice-candidate',
-        payload: { targetUserId: targetId, candidate: candidate }
-    }).catch((e: any) => console.error("Error sending ICE candidate:", e));
+    iceCandidateQueue.push(candidate);
+    if (!iceCandidateTimer) {
+        iceCandidateTimer = setTimeout(() => {
+            if (iceCandidateQueue.length > 0) {
+                callChannel.send({
+                    type: 'broadcast', event: 'ice-candidates-batch',
+                    payload: { targetUserId: targetId, candidates: [...iceCandidateQueue] }
+                });
+                iceCandidateQueue = [];
+            }
+            iceCandidateTimer = null;
+        }, 400); // 400ms accumulates STUN/TURN candidates to prevent 10msg/sec drop
+    }
 }
 
 export async function initWebRTC() {
@@ -69,7 +88,6 @@ export async function initWebRTC() {
     callChannel = supabase.channel('video-calls');
     
     callChannel.on('broadcast', { event: 'call-offer' }, async (payload: any) => {
-        console.log('[WebRTC] Received call-offer:', payload);
         const data = payload.payload;
         if (data.targetUserId === state.currentUser.id) {
             playRingtone();
@@ -115,7 +133,6 @@ export async function initWebRTC() {
     });
 
     callChannel.on('broadcast', { event: 'call-answer' }, async (payload: any) => {
-        console.log('[WebRTC] Received call-answer:', payload);
         const data = payload.payload;
         if (data.targetUserId === state.currentUser.id && rtcPeerConnection) {
             stopRingtone();
@@ -157,7 +174,6 @@ export async function initWebRTC() {
     });
 
     callChannel.on('broadcast', { event: 'call-ended' }, (payload: any) => {
-        console.log('[WebRTC] Received call-ended:', payload);
         const data = payload.payload;
         if (data.targetUserId === state.currentUser.id || data.callerId === state.currentUser.id) {
             document.getElementById('incoming-call-modal')?.classList.add('hidden');
@@ -182,14 +198,7 @@ export async function initWebRTC() {
         }
     });
 
-    await new Promise((resolve) => {
-        callChannel.subscribe((status: string) => {
-            if (status === 'SUBSCRIBED' || status === 'CLOSED' || status === 'CHANNEL_ERROR') {
-                resolve(true);
-            }
-        });
-        setTimeout(resolve, 3000);
-    });
+    callChannel.subscribe();
 }
 
 export async function startAudioCall() {
@@ -267,11 +276,9 @@ async function startCall(isVideo: boolean) {
         const remoteVideo = document.getElementById('remote-video') as HTMLVideoElement;
         const remoteAudio = document.getElementById('remote-audio') as HTMLAudioElement;
         
-        console.log('[WebRTC Caller] Adding tracks:', localStream!.getTracks());
         localStream.getTracks().forEach(track => rtcPeerConnection!.addTrack(track, localStream!));
         
         rtcPeerConnection.ontrack = event => {
-            console.log('[WebRTC Caller] Received tracking event:', event.track.kind);
             if (event.streams && event.streams[0]) {
                 remoteStream = event.streams[0];
             } else if (!remoteStream!.getTracks().find(t => t.id === event.track.id)) {
@@ -280,67 +287,44 @@ async function startCall(isVideo: boolean) {
 
             const attemptPlay = () => {
                 if (isVideo && remoteVideo) {
-                    remoteVideo.srcObject = remoteStream;
-                    const p = remoteVideo.play();
-                    if (p) p.catch(e => { if (e.name !== 'AbortError') console.warn('Error playing remote video:', e); });
+                    if (remoteVideo.srcObject !== remoteStream) {
+                        remoteVideo.srcObject = remoteStream;
+                        const p = remoteVideo.play();
+                        if (p) p.catch(e => { if (e.name !== 'AbortError') console.warn('Error playing remote video:', e); });
+                    }
                     document.getElementById('call-avatar-container')?.classList.add('hidden');
                     remoteVideo.classList.remove('hidden');
                 } else if (!isVideo && remoteAudio) {
-                    remoteAudio.srcObject = remoteStream;
-                    const p = remoteAudio.play();
-                    if (p) p.catch(e => { if (e.name !== 'AbortError') console.warn('Error playing remote audio:', e); });
+                    if (remoteAudio.srcObject !== remoteStream) {
+                        remoteAudio.srcObject = remoteStream;
+                        const p = remoteAudio.play();
+                        if (p) p.catch(e => { if (e.name !== 'AbortError') console.warn('Error playing remote audio:', e); });
+                    }
                 }
             };
             
             if (event.track.muted) {
                 event.track.onunmute = attemptPlay;
+            } else {
+                attemptPlay();
             }
-            attemptPlay();
         };
         
         rtcPeerConnection.onicecandidate = event => {
             if (event.candidate) {
-                console.log('[WebRTC Caller] Generated new ICE Candidate:', event.candidate.candidate);
-                queueIceCandidate(targetUser.id, event.candidate.toJSON());
-            } else {
-                console.log('[WebRTC Caller] ICE Candidate gathering completed.');
+                queueIceCandidate(targetUser.id, event.candidate);
             }
         };
         
-        rtcPeerConnection.onicecandidateerror = (event: any) => {
-            console.error('[WebRTC Caller] ICE Candidate Error:', event.errorText || event.errorCode || event);
-        };
-        
         rtcPeerConnection.oniceconnectionstatechange = () => {
-             console.log('[WebRTC Caller] ICE Connection state:', rtcPeerConnection?.iceConnectionState);
-             const statusEl = document.getElementById('call-status');
+             console.log('ICE Connection state:', rtcPeerConnection?.iceConnectionState);
              if (rtcPeerConnection?.iceConnectionState === 'failed') {
-                 if (statusEl) statusEl.innerText = 'Ошибка соединения (проверьте VPN/сеть)';
-                 console.error('[WebRTC Caller] ICE Connection Failed');
-                 setTimeout(() => endVideoCall(true), 4000);
-             } else if (rtcPeerConnection?.iceConnectionState === 'disconnected') {
-                 if (statusEl) statusEl.innerText = 'Обрыв связи...';
-             } else if (rtcPeerConnection?.iceConnectionState === 'connected') {
-                 if (statusEl) statusEl.innerText = 'Соединено';
+                 endVideoCall(false);
              }
-        };
-
-        rtcPeerConnection.onicegatheringstatechange = () => {
-             console.log('[WebRTC Caller] ICE Gathering state:', rtcPeerConnection?.iceGatheringState);
-        };
-        
-        rtcPeerConnection.onconnectionstatechange = () => {
-            console.log('[WebRTC Caller] Connection state:', rtcPeerConnection?.connectionState);
-        };
-        
-        rtcPeerConnection.onsignalingstatechange = () => {
-             console.log('[WebRTC Caller] Signaling state:', rtcPeerConnection?.signalingState);
         };
 
         const offer = await rtcPeerConnection.createOffer();
         await rtcPeerConnection.setLocalDescription(offer);
-        
-        console.log('[WebRTC Caller] Local SDP:', offer.sdp);
         
         callChannel.send({
             type: 'broadcast', event: 'call-offer',
@@ -349,11 +333,10 @@ async function startCall(isVideo: boolean) {
                 callerId: state.currentUser.id,
                 callerName: state.currentProfile.display_name || state.currentProfile.username,
                 callerAvatar: state.currentProfile.avatar_url,
-                offer: { type: offer.type, sdp: rtcPeerConnection!.localDescription!.sdp },
+                offer,
                 isVideo
             }
-        }).then(res => console.log('[WebRTC] Call offer broadcast response:', res))
-          .catch(err => console.error('[WebRTC] Failed to broadcast call offer:', err));
+        });
         
     } catch (err) {
         console.error('Error starting call:', err);
@@ -419,11 +402,9 @@ export async function answerCall(callerId: string, offer: any, callerName: strin
         const remoteVideo = document.getElementById('remote-video') as HTMLVideoElement;
         const remoteAudio = document.getElementById('remote-audio') as HTMLAudioElement;
         
-        console.log('[WebRTC Answerer] Adding tracks:', localStream!.getTracks());
         localStream.getTracks().forEach(track => rtcPeerConnection!.addTrack(track, localStream!));
         
         rtcPeerConnection.ontrack = event => {
-            console.log('[WebRTC Answerer] Received tracking event:', event.track.kind);
             if (event.streams && event.streams[0]) {
                 remoteStream = event.streams[0];
             } else if (!remoteStream!.getTracks().find(t => t.id === event.track.id)) {
@@ -432,61 +413,40 @@ export async function answerCall(callerId: string, offer: any, callerName: strin
 
             const attemptPlay = () => {
                 if (isVideo && remoteVideo) {
-                    remoteVideo.srcObject = remoteStream;
-                    const p = remoteVideo.play();
-                    if (p) p.catch(e => { if (e.name !== 'AbortError') console.warn('Error playing remote video:', e); });
+                    if (remoteVideo.srcObject !== remoteStream) {
+                        remoteVideo.srcObject = remoteStream;
+                        const p = remoteVideo.play();
+                        if (p) p.catch(e => { if (e.name !== 'AbortError') console.warn('Error playing remote video:', e); });
+                    }
                     document.getElementById('call-avatar-container')?.classList.add('hidden');
                     remoteVideo.classList.remove('hidden');
                 } else if (!isVideo && remoteAudio) {
-                    remoteAudio.srcObject = remoteStream;
-                    const p = remoteAudio.play();
-                    if (p) p.catch(e => { if (e.name !== 'AbortError') console.warn('Error playing remote audio:', e); });
+                    if (remoteAudio.srcObject !== remoteStream) {
+                        remoteAudio.srcObject = remoteStream;
+                        const p = remoteAudio.play();
+                        if (p) p.catch(e => { if (e.name !== 'AbortError') console.warn('Error playing remote audio:', e); });
+                    }
                 }
             };
             
             if (event.track.muted) {
                 event.track.onunmute = attemptPlay;
+            } else {
+                attemptPlay();
             }
-            attemptPlay();
         };
         
         rtcPeerConnection.onicecandidate = event => {
             if (event.candidate) {
-                console.log('[WebRTC Answerer] Generated new ICE Candidate:', event.candidate.candidate);
-                queueIceCandidate(callerId, event.candidate.toJSON());
-            } else {
-                console.log('[WebRTC Answerer] ICE Candidate gathering completed.');
+                queueIceCandidate(callerId, event.candidate);
             }
         };
         
-        rtcPeerConnection.onicecandidateerror = (event: any) => {
-            console.error('[WebRTC Answerer] ICE Candidate Error:', event.errorText || event.errorCode || event);
-        };
-        
         rtcPeerConnection.oniceconnectionstatechange = () => {
-             console.log('[WebRTC Answerer] ICE Connection state:', rtcPeerConnection?.iceConnectionState);
-             const statusEl = document.getElementById('call-status');
+             console.log('ICE Connection state:', rtcPeerConnection?.iceConnectionState);
              if (rtcPeerConnection?.iceConnectionState === 'failed') {
-                 if (statusEl) statusEl.innerText = 'Ошибка соединения (проверьте VPN/сеть)';
-                 console.error('[WebRTC Answerer] ICE Connection Failed');
-                 setTimeout(() => endVideoCall(true), 4000);
-             } else if (rtcPeerConnection?.iceConnectionState === 'disconnected') {
-                 if (statusEl) statusEl.innerText = 'Обрыв связи...';
-             } else if (rtcPeerConnection?.iceConnectionState === 'connected') {
-                 if (statusEl) statusEl.innerText = 'Соединено';
+                 endVideoCall(false);
              }
-        };
-
-        rtcPeerConnection.onicegatheringstatechange = () => {
-             console.log('[WebRTC Answerer] ICE Gathering state:', rtcPeerConnection?.iceGatheringState);
-        };
-        
-        rtcPeerConnection.onconnectionstatechange = () => {
-            console.log('[WebRTC Answerer] Connection state:', rtcPeerConnection?.connectionState);
-        };
-        
-        rtcPeerConnection.onsignalingstatechange = () => {
-             console.log('[WebRTC Answerer] Signaling state:', rtcPeerConnection?.signalingState);
         };
 
         await rtcPeerConnection.setRemoteDescription(new RTCSessionDescription(offer));
@@ -498,13 +458,10 @@ export async function answerCall(callerId: string, offer: any, callerName: strin
         const answer = await rtcPeerConnection.createAnswer();
         await rtcPeerConnection.setLocalDescription(answer);
         
-        console.log('[WebRTC Answerer] Local SDP:', answer.sdp);
-        
         callChannel.send({
             type: 'broadcast', event: 'call-answer',
-            payload: { targetUserId: callerId, answer: { type: answer.type, sdp: rtcPeerConnection!.localDescription!.sdp } }
-        }).then(res => console.log('[WebRTC] Call answer broadcast response:', res))
-          .catch(err => console.error('[WebRTC] Failed to broadcast call answer:', err));
+            payload: { targetUserId: callerId, answer }
+        });
         
         document.getElementById('call-status')!.innerText = 'Соединение установлено';
         
