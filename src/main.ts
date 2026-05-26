@@ -289,10 +289,12 @@ function setupRealtime() {
                         }
                         
                         if (document.hidden && "Notification" in window && Notification.permission === "granted" && !isCommentChat) {
-                            const { data: sender } = await supabase.from('profiles').select('display_name, username').eq('id', payload.new.sender_id).single();
-                            const senderName = sender?.display_name || sender?.username || 'Пользователь';
-                            const text = payload.new.content || (payload.new.message_type === 'voice' ? '🎤 Голосовое сообщение' : 'Медиа сообщение');
-                            new Notification(`Новое сообщение от ${senderName}`, { body: text });
+                            try {
+                                const { data: sender } = await supabase.from('profiles').select('display_name, username').eq('id', payload.new.sender_id).single();
+                                const senderName = sender?.display_name || sender?.username || 'Пользователь';
+                                const text = payload.new.content || (payload.new.message_type === 'voice' ? '🎤 Голосовое сообщение' : 'Медиа сообщение');
+                                new Notification(`Новое сообщение от ${senderName}`, { body: text });
+                            } catch(e) { console.error("Notification API failed:", e); }
                         }
                     }
                 } else {
@@ -311,7 +313,9 @@ function setupRealtime() {
                             if ((window as any).logic?.playNotificationSound) (window as any).logic.playNotificationSound();
                             
                             if (document.hidden && "Notification" in window && Notification.permission === "granted") {
-                                new Notification(`Новое сообщение от ${senderName}`, { body: text });
+                                try {
+                                    new Notification(`Новое сообщение от ${senderName}`, { body: text });
+                                } catch(e) { console.error("Notification API failed:", e); }
                             }
                             
                             if (state.activeChatId !== payload.new.chat_id) {

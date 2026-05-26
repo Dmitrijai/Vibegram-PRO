@@ -146,21 +146,21 @@ function getAudioContext() {
 function unlockAudioContext() {
     const ctx = getAudioContext();
     if (ctx && ctx.state === 'suspended') {
-        // iOS requires actual playback to unlock, not just resume()
         try {
             const osc = ctx.createOscillator();
             const gain = ctx.createGain();
-            gain.gain.value = 0;
+            // Just slightly above zero to trick iOS
+            gain.gain.value = 0.001;
             osc.connect(gain);
             gain.connect(ctx.destination);
             osc.start(0);
-            osc.stop(0.01);
+            osc.stop(0.05);
             ctx.resume();
         } catch(e) {}
     }
 }
-document.addEventListener('click', unlockAudioContext, { once: true });
-document.addEventListener('touchstart', unlockAudioContext, { once: true });
+document.addEventListener('click', unlockAudioContext, { capture: true });
+document.addEventListener('touchstart', unlockAudioContext, { capture: true });
 
 export function playNotificationSound() {
     try {
@@ -169,6 +169,10 @@ export function playNotificationSound() {
         }
         const ctx = getAudioContext();
         if (!ctx) return;
+        
+        if (ctx.state === 'suspended') {
+            ctx.resume();
+        }
         
         const osc = ctx.createOscillator();
         const gain = ctx.createGain();

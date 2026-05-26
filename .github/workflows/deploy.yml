@@ -48,7 +48,7 @@ jobs:
           CLOUDINARY_API_SECRET: ${{ secrets.CLOUDINARY_API_SECRET }}
 
       - name: Настройка GitHub Pages
-        uses: actions/configure-pages@v4
+        uses: actions/configure-pages@v5
 
       - name: Загрузка собранных файлов (Upload artifact)
         uses: actions/upload-pages-artifact@v3
