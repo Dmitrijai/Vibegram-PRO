@@ -610,8 +610,20 @@
                 <textarea id="miniapp-desc" placeholder="Описание..." class="w-full bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-white rounded-xl p-3 outline-none focus:ring-2 ring-blue-500 mb-4 h-20 resize-none" maxlength="200"></textarea>
                 
                 <div class="mb-4">
-                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">HTML файл проекта (обязательно)</label>
-                    <input type="file" id="miniapp-file" accept=".html" class="block w-full text-sm text-gray-500 dark:text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 dark:file:bg-blue-900/30 dark:file:text-blue-400">
+                    <div class="flex items-center gap-2 mb-2 p-1 bg-gray-100 dark:bg-gray-800 rounded-xl">
+                        <button onclick="document.getElementById('miniapp-file-panel').classList.remove('hidden'); document.getElementById('miniapp-url-panel').classList.add('hidden'); this.classList.add('bg-white','shadow','dark:bg-gray-700','text-gray-900','dark:text-white'); this.classList.remove('text-gray-500','dark:text-gray-400'); this.nextElementSibling.classList.remove('bg-white','shadow','dark:bg-gray-700','text-gray-900','dark:text-white'); this.nextElementSibling.classList.add('text-gray-500','dark:text-gray-400');" class="flex-1 py-1.5 text-sm rounded-lg font-medium transition bg-white shadow dark:bg-gray-700 text-gray-900 dark:text-white">HTML Файл</button>
+                        <button onclick="document.getElementById('miniapp-url-panel').classList.remove('hidden'); document.getElementById('miniapp-file-panel').classList.add('hidden'); this.classList.add('bg-white','shadow','dark:bg-gray-700','text-gray-900','dark:text-white'); this.classList.remove('text-gray-500','dark:text-gray-400'); this.previousElementSibling.classList.remove('bg-white','shadow','dark:bg-gray-700','text-gray-900','dark:text-white'); this.previousElementSibling.classList.add('text-gray-500','dark:text-gray-400');" class="flex-1 py-1.5 text-sm rounded-lg font-medium transition text-gray-500 dark:text-gray-400">URL Ссылка</button>
+                    </div>
+                    
+                    <div id="miniapp-file-panel">
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">HTML файл проекта</label>
+                        <input type="file" id="miniapp-file" accept=".html" class="block w-full text-sm text-gray-500 dark:text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 dark:file:bg-blue-900/30 dark:file:text-blue-400">
+                    </div>
+                    
+                    <div id="miniapp-url-panel" class="hidden">
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Ссылка на веб-сайт</label>
+                        <input type="url" id="miniapp-url" placeholder="https://..." class="w-full bg-slate-200/50 dark:bg-gray-800 text-gray-900 dark:text-white rounded-xl p-3 outline-none focus:ring-2 ring-blue-500">
+                    </div>
                 </div>
                 
                 <div class="mb-4">
@@ -643,8 +655,20 @@
                 <textarea id="edit-miniapp-desc" placeholder="Описание..." class="w-full bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-white rounded-xl p-3 outline-none focus:ring-2 ring-blue-500 mb-4 h-20 resize-none" maxlength="200"></textarea>
                 
                 <div class="mb-4">
-                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">HTML файл (оставьте пустым, чтобы не изменять)</label>
-                    <input type="file" id="edit-miniapp-file" accept=".html" class="block w-full text-sm text-gray-500 dark:text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 dark:file:bg-blue-900/30 dark:file:text-blue-400">
+                    <div class="flex items-center gap-2 mb-2 p-1 bg-gray-100 dark:bg-gray-800 rounded-xl">
+                        <button onclick="document.getElementById('edit-miniapp-file-panel').classList.remove('hidden'); document.getElementById('edit-miniapp-url-panel').classList.add('hidden'); this.classList.add('bg-white','shadow','dark:bg-gray-700','text-gray-900','dark:text-white'); this.classList.remove('text-gray-500','dark:text-gray-400'); this.nextElementSibling.classList.remove('bg-white','shadow','dark:bg-gray-700','text-gray-900','dark:text-white'); this.nextElementSibling.classList.add('text-gray-500','dark:text-gray-400');" class="flex-1 py-1.5 text-sm rounded-lg font-medium transition bg-white shadow dark:bg-gray-700 text-gray-900 dark:text-white">HTML Файл</button>
+                        <button onclick="document.getElementById('edit-miniapp-url-panel').classList.remove('hidden'); document.getElementById('edit-miniapp-file-panel').classList.add('hidden'); this.classList.add('bg-white','shadow','dark:bg-gray-700','text-gray-900','dark:text-white'); this.classList.remove('text-gray-500','dark:text-gray-400'); this.previousElementSibling.classList.remove('bg-white','shadow','dark:bg-gray-700','text-gray-900','dark:text-white'); this.previousElementSibling.classList.add('text-gray-500','dark:text-gray-400');" class="flex-1 py-1.5 text-sm rounded-lg font-medium transition text-gray-500 dark:text-gray-400">URL Ссылка</button>
+                    </div>
+                    
+                    <div id="edit-miniapp-file-panel">
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">HTML файл (оставьте пустым, чтобы не изменять)</label>
+                        <input type="file" id="edit-miniapp-file" accept=".html" class="block w-full text-sm text-gray-500 dark:text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 dark:file:bg-blue-900/30 dark:file:text-blue-400">
+                    </div>
+
+                    <div id="edit-miniapp-url-panel" class="hidden">
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Ссылка на веб-сайт (оставьте пустым, чтобы не изменять)</label>
+                        <input type="url" id="edit-miniapp-url" placeholder="https://..." class="w-full bg-slate-200/50 dark:bg-gray-800 text-gray-900 dark:text-white rounded-xl p-3 outline-none focus:ring-2 ring-blue-500">
+                    </div>
                 </div>
 
                 <div class="mb-4">

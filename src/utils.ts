@@ -162,8 +162,13 @@ function unlockAudioContext() {
 document.addEventListener('click', unlockAudioContext, { capture: true });
 document.addEventListener('touchstart', unlockAudioContext, { capture: true });
 
+let lastSoundPlayedAt = 0;
 export function playNotificationSound() {
     try {
+        const now = Date.now();
+        if (now - lastSoundPlayedAt < 500) return; // debounce 500ms
+        lastSoundPlayedAt = now;
+
         if (navigator.vibrate) {
             try { navigator.vibrate([100, 50, 100]); } catch (e) {}
         }
@@ -182,20 +187,15 @@ export function playNotificationSound() {
         
         osc.type = 'sine';
         
-        // Soft double "pop" ping
-        osc.frequency.setValueAtTime(800, ctx.currentTime);
-        osc.frequency.setValueAtTime(1000, ctx.currentTime + 0.1);
+        // Soft single "pop" ping
+        osc.frequency.setValueAtTime(900, ctx.currentTime);
         
         gain.gain.setValueAtTime(0, ctx.currentTime);
-        gain.gain.linearRampToValueAtTime(1.5, ctx.currentTime + 0.01);
-        gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.1);
-        
-        gain.gain.setValueAtTime(0, ctx.currentTime + 0.1);
-        gain.gain.linearRampToValueAtTime(1.5, ctx.currentTime + 0.11);
-        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.2);
+        gain.gain.linearRampToValueAtTime(1.2, ctx.currentTime + 0.02);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.3);
         
         osc.start(ctx.currentTime);
-        osc.stop(ctx.currentTime + 0.25);
+        osc.stop(ctx.currentTime + 0.4);
     } catch (e) {
         console.warn('Audio play blocked or not supported', e);
     }

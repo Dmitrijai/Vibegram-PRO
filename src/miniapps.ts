@@ -443,16 +443,23 @@ export async function submitMiniApp() {
     const titleBtn = document.getElementById('miniapp-title') as HTMLInputElement;
     const descBtn = document.getElementById('miniapp-desc') as HTMLTextAreaElement;
     const fileInput = document.getElementById('miniapp-file') as HTMLInputElement;
+    const urlInput = document.getElementById('miniapp-url') as HTMLInputElement;
     const isPublic = (document.getElementById('miniapp-public-toggle') as HTMLInputElement).checked;
     const iconInput = document.getElementById('miniapp-icon') as HTMLInputElement;
     
     if (!titleBtn.value.trim()) return customToast('Укажите название проекта');
     if (titleBtn.value.trim().length > 25) return customToast('Название не должно превышать 25 символов');
     if (descBtn.value.trim().length > 200) return customToast('Описание не должно превышать 200 символов');
-    if (!fileInput.files || fileInput.files.length === 0) return customToast('Выберите HTML файл');
 
-    const file = fileInput.files[0];
-    if (file.size > 2 * 1024 * 1024) return customToast('Файл слишком большой (> 2 МБ)');
+    const filePanel = document.getElementById('miniapp-file-panel');
+    const isFileMode = filePanel && !filePanel.classList.contains('hidden');
+
+    if (isFileMode) {
+        if (!fileInput.files || fileInput.files.length === 0) return customToast('Выберите HTML файл');
+        if (fileInput.files[0].size > 2 * 1024 * 1024) return customToast('Файл слишком большой (> 2 МБ)');
+    } else {
+        if (!urlInput.value.trim()) return customToast('Укажите ссылку на сайт');
+    }
 
     let iconFile: File | null = null;
     if (iconInput.files && iconInput.files.length > 0) {
@@ -465,56 +472,63 @@ export async function submitMiniApp() {
     btn.textContent = 'Загрузка...';
 
     try {
-        const text = await file.text();
+        let htmlUrl = '';
         
-        // Basic check
-        if (!text.includes('<html') && !text.includes('<body')) {
-            throw new Error("Файл не похож на HTML.");
-        }
+        if (isFileMode) {
+            const file = fileInput.files![0];
+            const text = await file.text();
+            
+            // Basic check
+            if (!text.includes('<html') && !text.includes('<body')) {
+                throw new Error("Файл не похож на HTML.");
+            }
 
-        // Add script injection before upload
-        const scriptInjection = `
-            <script>
-                window.VibeAPI = {
-                    ready: function() {
-                        window.parent.postMessage({ type: 'vibe_ready' }, '*');
-                    },
-                    getUser: function() {
-                        return new Promise((resolve) => {
-                            const id = Math.random().toString(36).substring(7);
-                            const handler = (e) => {
-                                if(e.data && e.data.type === 'vibe_user_data' && e.data.reqId === id) {
-                                    window.removeEventListener('message', handler);
-                                    resolve(e.data.user);
-                                }
-                            };
-                            window.addEventListener('message', handler);
-                            window.parent.postMessage({ type: 'vibe_get_user', reqId: id }, '*');
-                        });
-                    },
-                    showAlert: function(msg) {
-                        window.parent.postMessage({ type: 'vibe_show_alert', message: msg }, '*');
-                    },
-                    close: function() {
-                        window.parent.postMessage({ type: 'vibe_close' }, '*');
-                    }
-                };
-            </script>
-        `;
+            // Add script injection before upload
+            const scriptInjection = `
+                <script>
+                    window.VibeAPI = {
+                        ready: function() {
+                            window.parent.postMessage({ type: 'vibe_ready' }, '*');
+                        },
+                        getUser: function() {
+                            return new Promise((resolve) => {
+                                const id = Math.random().toString(36).substring(7);
+                                const handler = (e) => {
+                                    if(e.data && e.data.type === 'vibe_user_data' && e.data.reqId === id) {
+                                        window.removeEventListener('message', handler);
+                                        resolve(e.data.user);
+                                    }
+                                };
+                                window.addEventListener('message', handler);
+                                window.parent.postMessage({ type: 'vibe_get_user', reqId: id }, '*');
+                            });
+                        },
+                        showAlert: function(msg) {
+                            window.parent.postMessage({ type: 'vibe_show_alert', message: msg }, '*');
+                        },
+                        close: function() {
+                            window.parent.postMessage({ type: 'vibe_close' }, '*');
+                        }
+                    };
+                </script>
+            `;
 
-        let htmlToLoad = text;
-        if (htmlToLoad.includes('<head>')) {
-             htmlToLoad = htmlToLoad.replace('<head>', '<head>' + scriptInjection);
-        } else if (htmlToLoad.includes('<body>')) {
-             htmlToLoad = htmlToLoad.replace('<body>', '<body>' + scriptInjection);
+            let htmlToLoad = text;
+            if (htmlToLoad.includes('<head>')) {
+                 htmlToLoad = htmlToLoad.replace('<head>', '<head>' + scriptInjection);
+            } else if (htmlToLoad.includes('<body>')) {
+                 htmlToLoad = htmlToLoad.replace('<body>', '<body>' + scriptInjection);
+            } else {
+                 htmlToLoad = scriptInjection + htmlToLoad;
+            }
+
+            // Upload to Cloudinary
+            const modifiedBlob = new Blob([htmlToLoad], { type: 'text/html' });
+            const modifiedFile = new File([modifiedBlob], 'index.html', { type: 'text/html' });
+            htmlUrl = await uploadToCloudinary(modifiedFile);
         } else {
-             htmlToLoad = scriptInjection + htmlToLoad;
+            htmlUrl = urlInput.value.trim();
         }
-
-        // Upload to Cloudinary
-        const modifiedBlob = new Blob([htmlToLoad], { type: 'text/html' });
-        const modifiedFile = new File([modifiedBlob], 'index.html', { type: 'text/html' });
-        const htmlUrl = await uploadToCloudinary(modifiedFile);
         
         let iconUrl = null;
         if (iconFile) {
@@ -579,6 +593,7 @@ export async function submitEditMiniApp() {
     const titleBtn = document.getElementById('edit-miniapp-title') as HTMLInputElement;
     const descBtn = document.getElementById('edit-miniapp-desc') as HTMLTextAreaElement;
     const fileInput = document.getElementById('edit-miniapp-file') as HTMLInputElement;
+    const urlInput = document.getElementById('edit-miniapp-url') as HTMLInputElement;
     const iconInput = document.getElementById('edit-miniapp-icon') as HTMLInputElement;
     const isPublic = (document.getElementById('edit-miniapp-public-toggle') as HTMLInputElement).checked;
 
@@ -594,6 +609,9 @@ export async function submitEditMiniApp() {
         customToast('Описание не должно превышать 200 символов');
         return;
     }
+
+    const filePanel = document.getElementById('edit-miniapp-file-panel');
+    const isFileMode = filePanel && !filePanel.classList.contains('hidden');
 
     let iconFile: File | null = null;
     if (iconInput.files && iconInput.files.length > 0) {
@@ -611,36 +629,41 @@ export async function submitEditMiniApp() {
 
     try {
         let htmlUrl = undefined;
-        let htmlContent = undefined;
 
-        if (fileInput.files && fileInput.files.length > 0) {
-            const file = fileInput.files[0];
-            let htmlToLoad = await file.text();
-            
-            // basic injection
-            if (!htmlToLoad.includes('vibegram_sdk')) {
-                 const scriptInjection = `<script>
-                    window.vibegram_sdk = true;
-                    // Mock simple functions for test inside window
-                    window.getUserProfile = () => {
-                        return new Promise((resolve) => {
-                            window.parent.postMessage({ type: 'vibe_get_user' }, '*');
-                            window.addEventListener('message', function handler(e) {
-                                if (e.data && e.data.type === 'vibe_user_data') {
-                                    window.removeEventListener('message', handler);
-                                    resolve(e.data.user);
-                                }
+        if (isFileMode) {
+            if (fileInput.files && fileInput.files.length > 0) {
+                const file = fileInput.files[0];
+                let htmlToLoad = await file.text();
+                
+                // basic injection
+                if (!htmlToLoad.includes('vibegram_sdk')) {
+                     const scriptInjection = `<script>
+                        window.vibegram_sdk = true;
+                        // Mock simple functions for test inside window
+                        window.getUserProfile = () => {
+                            return new Promise((resolve) => {
+                                window.parent.postMessage({ type: 'vibe_get_user' }, '*');
+                                window.addEventListener('message', function handler(e) {
+                                    if (e.data && e.data.type === 'vibe_user_data') {
+                                        window.removeEventListener('message', handler);
+                                        resolve(e.data.user);
+                                    }
+                                });
                             });
-                        });
-                    };
-                 </script>\n`;
-                 htmlToLoad = scriptInjection + htmlToLoad;
-            }
+                        };
+                     </script>\n`;
+                     htmlToLoad = scriptInjection + htmlToLoad;
+                }
 
-            // Upload new file to Cloudinary
-            const modifiedBlob = new Blob([htmlToLoad], { type: 'text/html' });
-            const modifiedFile = new File([modifiedBlob], 'index.html', { type: 'text/html' });
-            htmlUrl = await uploadToCloudinary(modifiedFile);
+                // Upload new file to Cloudinary
+                const modifiedBlob = new Blob([htmlToLoad], { type: 'text/html' });
+                const modifiedFile = new File([modifiedBlob], 'index.html', { type: 'text/html' });
+                htmlUrl = await uploadToCloudinary(modifiedFile);
+            }
+        } else {
+            if (urlInput.value.trim()) {
+                htmlUrl = urlInput.value.trim();
+            }
         }
 
         const updateData: any = {
