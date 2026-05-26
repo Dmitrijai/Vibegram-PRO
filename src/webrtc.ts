@@ -50,10 +50,11 @@ const rtcConfig: RTCConfiguration = {
         { urls: [
             'stun:stun.l.google.com:19302',
             'stun:stun1.l.google.com:19302',
-            'stun:stun.yandex.ru:3478',
-            'stun:stun.cloudflare.com:3478',
-            'stun:stun.mail.ru:3478'
-        ]}
+            'stun:stun.cloudflare.com:3478'
+        ]},
+        { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
+        { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
+        { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' }
     ]
 };
 
