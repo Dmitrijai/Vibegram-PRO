@@ -316,35 +316,89 @@ export function showInAppNotification(chatId: string, title: string, text: strin
 
     let clickCount = 0;
     let clickTimer: any;
+    let startX = 0;
+    let currentX = 0;
+    let isSwiping = false;
 
-    notif.onclick = (e) => {
-        const isMobile = window.innerWidth <= 768;
-        if (isMobile) {
-            clickCount++;
-            if (clickCount === 1) {
-                clickTimer = setTimeout(() => {
-                    clickCount = 0;
-                }, 400); // Wait 400ms for a second tap
-                return;
-            } else {
-                clearTimeout(clickTimer);
-                clickCount = 0;
-            }
+    notif.addEventListener('touchstart', (e) => {
+        startX = e.touches[0].clientX;
+        isSwiping = true;
+        notif.style.transition = 'none';
+        clearTimeout(clickTimer);
+    }, {passive: true});
+
+    notif.addEventListener('touchmove', (e) => {
+        if (!isSwiping) return;
+        currentX = e.touches[0].clientX - startX;
+        notif.style.transform = `translate3d(${currentX}px, 0, 0)`;
+        notif.style.opacity = `${Math.max(0, 1 - Math.abs(currentX) / (window.innerWidth * 0.8))}`;
+    }, {passive: true});
+
+    notif.addEventListener('touchend', (e) => {
+        if (!isSwiping) return;
+        isSwiping = false;
+        notif.style.transition = 'all 0.3s ease';
+        
+        if (Math.abs(currentX) > 60) {
+            // Dismiss
+            const screenW = window.innerWidth;
+            notif.style.transform = `translate3d(${currentX > 0 ? screenW : -screenW}px, 0, 0)`;
+            notif.style.opacity = '0';
+            setTimeout(() => notif.remove(), 300);
+            return;
+        } else {
+            // Snap back
+            notif.style.transform = '';
+            notif.style.opacity = '1';
         }
         
-        const chatElement = document.querySelector(`div[data-chat-id="${chatId}"]`) as HTMLElement;
-        if (chatElement) {
-            chatElement.click();
-        } else {
-            // Fallback load chat if it's not rendered in the list yet
-            if ((window as any).logic?.loadChats) {
-                (window as any).logic.loadChats().then(() => {
-                    const el = document.querySelector(`div[data-chat-id="${chatId}"]`) as HTMLElement;
-                    if (el) el.click();
-                });
+        if (Math.abs(currentX) < 10) {
+            // Treat as click if it was just a tap without movement
+            const isMobile = window.innerWidth <= 768;
+            if (isMobile) {
+                clickCount++;
+                if (clickCount === 1) {
+                    clickTimer = setTimeout(() => {
+                        clickCount = 0;
+                    }, 400); // Wait 400ms for a second tap
+                    return;
+                } else {
+                    clickCount = 0;
+                }
             }
+            
+            const chatElement = document.querySelector(`div[data-chat-id="${chatId}"]`) as HTMLElement;
+            if (chatElement) {
+                chatElement.click();
+            } else {
+                if ((window as any).logic?.loadChats) {
+                    (window as any).logic.loadChats().then(() => {
+                        const el = document.querySelector(`div[data-chat-id="${chatId}"]`) as HTMLElement;
+                        if (el) el.click();
+                    });
+                }
+            }
+            notif.remove();
         }
-        notif.remove();
+        currentX = 0;
+    });
+
+    notif.onclick = (e) => {
+        // Desktop click fallback
+        if (window.innerWidth > 768) {
+            const chatElement = document.querySelector(`div[data-chat-id="${chatId}"]`) as HTMLElement;
+            if (chatElement) {
+                chatElement.click();
+            } else {
+                if ((window as any).logic?.loadChats) {
+                    (window as any).logic.loadChats().then(() => {
+                        const el = document.querySelector(`div[data-chat-id="${chatId}"]`) as HTMLElement;
+                        if (el) el.click();
+                    });
+                }
+            }
+            notif.remove();
+        }
     };
 
     container.appendChild(notif);

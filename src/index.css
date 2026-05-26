@@ -25,24 +25,24 @@ body { font-family: 'Inter', sans-serif; background-color: #f3f4f6; -webkit-tap-
 
 /* Custom Backgrounds */
 .bg-anim-1 {
-    background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 50%, #f5f7fa 100%);
+    background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 25%, #f5f7fa 50%, #c3cfe2 75%, #f5f7fa 100%);
     background-size: 200% 200%;
-    animation: bgFlow 14s ease-in-out infinite;
+    animation: linearFlow 14s linear infinite;
 }
 .dark .bg-anim-1 {
-    background: linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0f172a 100%);
+    background: linear-gradient(135deg, #0f172a 0%, #1e293b 25%, #0f172a 50%, #1e293b 75%, #0f172a 100%);
     background-size: 200% 200%;
-    animation: bgFlow 14s ease-in-out infinite;
+    animation: linearFlow 14s linear infinite;
 }
 .bg-anim-2 {
-    background: linear-gradient(to top, #accbee 0%, #e7f0fd 50%, #accbee 100%);
+    background: linear-gradient(to top, #accbee 0%, #e7f0fd 25%, #accbee 50%, #e7f0fd 75%, #accbee 100%);
     background-size: 200% 200%;
-    animation: bgFlow 16s ease-in-out infinite;
+    animation: linearFlow 16s linear infinite;
 }
 .dark .bg-anim-2 {
-    background: linear-gradient(to top, #020617 0%, #0f172a 50%, #020617 100%);
+    background: linear-gradient(to top, #020617 0%, #0f172a 25%, #020617 50%, #0f172a 75%, #020617 100%);
     background-size: 200% 200%;
-    animation: bgFlow 16s ease-in-out infinite;
+    animation: linearFlow 16s linear infinite;
 }
 .bg-anim-3 {
     background-color: #f8fafc;
@@ -57,14 +57,14 @@ body { font-family: 'Inter', sans-serif; background-color: #f3f4f6; -webkit-tap-
     animation: bgOrbs 20s ease-in-out infinite;
 }
 .bg-anim-4 {
-    background: linear-gradient(-45deg, #e3ebe8 0%, #e3eeff 50%, #e3ebe8 100%);
+    background: linear-gradient(-45deg, #e3ebe8 0%, #e3eeff 25%, #e3ebe8 50%, #e3eeff 75%, #e3ebe8 100%);
     background-size: 200% 200%;
-    animation: bgFlow 15s ease-in-out infinite;
+    animation: linearFlow 15s linear infinite;
 }
 .dark .bg-anim-4 {
-    background: linear-gradient(-45deg, #1e1b4b 0%, #111827 50%, #1e1b4b 100%);
+    background: linear-gradient(-45deg, #1e1b4b 0%, #111827 25%, #1e1b4b 50%, #111827 75%, #1e1b4b 100%);
     background-size: 200% 200%;
-    animation: bgFlow 15s ease-in-out infinite;
+    animation: linearFlow 15s linear infinite;
 }
 .bg-anim-5 {
     background: radial-gradient(circle at top left, #fff1eb 0%, #ace0f9 100%);
@@ -77,14 +77,14 @@ body { font-family: 'Inter', sans-serif; background-color: #f3f4f6; -webkit-tap-
     animation: bgFlow 18s ease-in-out infinite;
 }
 .bg-anim-6 {
-    background: linear-gradient(120deg, #f6d365 0%, #fda085 50%, #f6d365 100%);
+    background: linear-gradient(120deg, #f6d365 0%, #fda085 25%, #f6d365 50%, #fda085 75%, #f6d365 100%);
     background-size: 200% 100%;
-    animation: bgFlow 12s ease-in-out infinite;
+    animation: linearFlow 12s linear infinite;
 }
 .dark .bg-anim-6 {
-    background: linear-gradient(120deg, #4c1d95 0%, #2a0a4a 50%, #4c1d95 100%);
+    background: linear-gradient(120deg, #4c1d95 0%, #2a0a4a 25%, #4c1d95 50%, #2a0a4a 75%, #4c1d95 100%);
     background-size: 200% 100%;
-    animation: bgFlow 12s ease-in-out infinite;
+    animation: linearFlow 12s linear infinite;
 }
 .bg-anim-7 {
     background-color: #fcfcfc;
@@ -115,14 +115,14 @@ body { font-family: 'Inter', sans-serif; background-color: #f3f4f6; -webkit-tap-
 
 /* Premium Animated Backgrounds */
 .bg-premium-1 {
-    background: linear-gradient(-45deg, #ff9a9e 0%, #fecfef 30%, #a1c4fd 60%, #ff9a9e 100%);
-    background-size: 300% 300%;
-    animation: premiumFlow 15s ease-in-out infinite;
+    background: linear-gradient(-45deg, #ff9a9e 0%, #fecfef 25%, #a1c4fd 50%, #fecfef 75%, #ff9a9e 100%);
+    background-size: 200% 200%;
+    animation: linearFlow 15s linear infinite;
 }
 .dark .bg-premium-1 {
-    background: linear-gradient(-45deg, #2a0845 0%, #6441A5 40%, #0f172a 70%, #2a0845 100%);
-    background-size: 300% 300%;
-    animation: premiumFlow 15s ease-in-out infinite;
+    background: linear-gradient(-45deg, #2a0845 0%, #6441A5 25%, #0f172a 50%, #6441A5 75%, #2a0845 100%);
+    background-size: 200% 200%;
+    animation: linearFlow 15s linear infinite;
 }
 .bg-premium-2 {
     background: radial-gradient(circle at 10% 20%, #a8edea 0%, transparent 60%),
@@ -141,14 +141,19 @@ body { font-family: 'Inter', sans-serif; background-color: #f3f4f6; -webkit-tap-
     animation: premiumOrbs 20s ease-in-out infinite;
 }
 .bg-premium-3 {
-    background: linear-gradient(120deg, #d4fc79 0%, #96e6a1 50%, #84fab0 70%, #d4fc79 100%);
-    background-size: 250% 250%;
-    animation: premiumAurora 15s ease-in-out infinite;
+    background: linear-gradient(120deg, #d4fc79 0%, #96e6a1 25%, #84fab0 50%, #96e6a1 75%, #d4fc79 100%);
+    background-size: 200% 200%;
+    animation: linearFlow 15s linear infinite;
 }
 .dark .bg-premium-3 {
-    background: linear-gradient(120deg, #064e3b 0%, #0f766e 40%, #075985 70%, #064e3b 100%);
-    background-size: 250% 250%;
-    animation: premiumAurora 15s ease-in-out infinite;
+    background: linear-gradient(120deg, #064e3b 0%, #0f766e 25%, #075985 50%, #0f766e 75%, #064e3b 100%);
+    background-size: 200% 200%;
+    animation: linearFlow 15s linear infinite;
+}
+
+@keyframes linearFlow {
+    0% { background-position: 0% 50%; }
+    100% { background-position: 100% 50%; }
 }
 
 @keyframes bgFlow {
