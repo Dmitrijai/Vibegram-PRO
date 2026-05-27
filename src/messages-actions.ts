@@ -205,9 +205,52 @@ export async function confirmForward(msgId: string, content: string, senderName:
     closeModal();
     customToast(`Сообщение переслано (${state.forwardSelectedChats.length})`);
     
+    const title = state.currentUser?.display_name || state.currentUser?.username || "Vibegram";
+    const bodyContent = 'Пересланное сообщение';
+
     // Broadcast for all
     state.forwardSelectedChats.forEach(chatId => {
         import('./supabase').then(s => s.broadcastUpdate(chatId, 'message'));
+        
+        // Push notification
+        supabase.from('chats').select('is_group').eq('id', chatId).single().then(({ data: chatData }) => {
+            if (chatData) {
+                if (!chatData.is_group) {
+                    supabase.from('chats').select('user1_id, user2_id').eq('id', chatId).single().then(({ data: directChat }) => {
+                        if (directChat) {
+                            const otherUserId = directChat.user1_id === state.currentUser.id ? directChat.user2_id : directChat.user1_id;
+                            if (otherUserId) {
+                                supabase.from('profiles').select('push_token').eq('id', otherUserId).single().then(({ data: profile }) => {
+                                    if (profile?.push_token) {
+                                        supabase.functions.invoke('send-push', {
+                                            body: { token: profile.push_token, title, body: bodyContent }
+                                        }).catch(e => console.warn('Push error', e));
+                                    }
+                                });
+                            }
+                        }
+                    });
+                } else {
+                    supabase.from('chat_members').select('user_id').eq('chat_id', chatId).then(({ data: members }) => {
+                        if (members) {
+                            const memberIds = members.map((m: any) => m.user_id).filter((id: string) => id !== state.currentUser?.id);
+                            if (memberIds.length > 0) {
+                                supabase.from('profiles').select('push_token').in('id', memberIds).then(({ data: profiles }) => {
+                                    if (profiles) {
+                                        const tokens = profiles.map((p: any) => p.push_token).filter((t: any) => t);
+                                        if (tokens.length > 0) {
+                                            supabase.functions.invoke('send-push', {
+                                                body: { tokens: tokens, title, body: bodyContent }
+                                            }).catch(e => console.warn('Group Push error', e));
+                                        }
+                                    }
+                                });
+                            }
+                        }
+                    });
+                }
+            }
+        });
     });
     
     // If current chat is one of the recipients, reload messages
