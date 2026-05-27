@@ -285,29 +285,34 @@ export async function confirmForwardMultiple() {
         }
         customToast('Сообщения пересланы');
 
-        const title = state.currentUser?.display_name || state.currentUser?.username || "Vibegram";
-        const bodyContent = 'Пересланные сообщения';
+        const senderName = state.currentUser?.display_name || state.currentUser?.username || "Vibegram";
+        const rawBodyContent = 'Пересланные сообщения';
 
         state.forwardSelectedChats.forEach(chatId => {
             // Push notification
-            supabase.from('chats').select('is_group').eq('id', chatId).single().then(({ data: chatData }) => {
+            supabase.from('chats').select('is_group, title, username, user1_id, user2_id').eq('id', chatId).single().then(({ data: chatData }) => {
                 if (chatData) {
+                    const pushData = { chatId };
+                    
                     if (!chatData.is_group) {
-                        supabase.from('chats').select('user1_id, user2_id').eq('id', chatId).single().then(({ data: directChat }) => {
-                            if (directChat) {
-                                const otherUserId = directChat.user1_id === state.currentUser.id ? directChat.user2_id : directChat.user1_id;
-                                if (otherUserId) {
-                                    supabase.from('profiles').select('push_token').eq('id', otherUserId).single().then(({ data: profile }) => {
-                                        if (profile?.push_token) {
-                                            supabase.functions.invoke('send-push', {
-                                                body: { token: profile.push_token, title, body: bodyContent }
-                                            }).catch(e => console.warn('Push error', e));
-                                        }
-                                    });
+                        const pushTitle = senderName;
+                        const pushBody = rawBodyContent;
+                        
+                        const otherUserId = chatData.user1_id === state.currentUser.id ? chatData.user2_id : chatData.user1_id;
+                        if (otherUserId) {
+                            supabase.from('profiles').select('push_token').eq('id', otherUserId).single().then(({ data: profile }) => {
+                                if (profile?.push_token) {
+                                    supabase.functions.invoke('send-push', {
+                                        body: { token: profile.push_token, title: pushTitle, body: pushBody, data: pushData }
+                                    }).catch(e => console.warn('Push error', e));
                                 }
-                            }
-                        });
+                            });
+                        }
                     } else {
+                        const groupName = chatData.title || chatData.username || 'Группа';
+                        const pushTitle = groupName;
+                        const pushBody = `${senderName}: ${rawBodyContent}`;
+                        
                         supabase.from('chat_members').select('user_id').eq('chat_id', chatId).then(({ data: members }) => {
                             if (members) {
                                 const memberIds = members.map((m: any) => m.user_id).filter((id: string) => id !== state.currentUser?.id);
@@ -317,7 +322,7 @@ export async function confirmForwardMultiple() {
                                             const tokens = profiles.map((p: any) => p.push_token).filter((t: any) => t);
                                             if (tokens.length > 0) {
                                                 supabase.functions.invoke('send-push', {
-                                                    body: { tokens: tokens, title, body: bodyContent }
+                                                    body: { tokens: tokens, title: pushTitle, body: pushBody, data: pushData }
                                                 }).catch(e => console.warn('Group Push error', e));
                                             }
                                         }

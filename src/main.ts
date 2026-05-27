@@ -573,3 +573,45 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 setupMiniApps();
+
+import { Capacitor } from '@capacitor/core';
+import { PushNotifications } from '@capacitor/push-notifications';
+
+if (Capacitor.isNativePlatform()) {
+    PushNotifications.requestPermissions().then(result => {
+        if (result.receive === 'granted') {
+            PushNotifications.register();
+        }
+    });
+
+    PushNotifications.addListener('pushNotificationReceived', (notification) => {
+        // No custom alerts or toasts here as requested, handled by system natively when backgrounded
+        console.log('Push received: ', notification);
+    });
+
+    PushNotifications.addListener('pushNotificationActionPerformed', (action) => {
+        const chatId = action.notification.data?.chatId;
+        console.log('Push action performed, chatId:', chatId);
+        if (chatId) {
+            import('./chat').then(m => {
+                // Open chat. Note: to get proper chatName etc we might need a db fetch, but openChat requires them.
+                // Alternatively, logic.openChat might be available, or we fetch chat details first.
+                supabase.from('chats').select('*').eq('id', chatId).single().then(({ data: chatData }) => {
+                    if (chatData) {
+                        m.openChat(chatId, chatData.title || chatData.username || 'Чат', '?', chatData.is_group || false, chatData.type || 'direct', []);
+                    } else {
+                         // fallback
+                         m.openChat(chatId, 'Чат', '?', false, 'direct', []);
+                    }
+                });
+            });
+            // If mobile view, hide sidebar
+            if (window.innerWidth < 768) {
+                const chatArea = document.getElementById('chat-area');
+                const sidebar = document.getElementById('sidebar');
+                if (chatArea) chatArea.classList.remove('hidden');
+                if (sidebar) sidebar.classList.add('hidden');
+            }
+        }
+    });
+}

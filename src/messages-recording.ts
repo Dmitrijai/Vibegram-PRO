@@ -256,15 +256,20 @@ export async function toggleRecording(type: 'voice' | 'video') {
                         customAlert('Ошибка отправки сообщения');
                     } else {
                         // Push Notification Logic
-                        const title = state.currentUser?.display_name || state.currentUser?.username || "Vibegram";
-                        const bodyContent = type === 'voice' ? 'Голосовое сообщение' : 'Видеосообщение';
+                        const senderName = state.currentUser?.display_name || state.currentUser?.username || "Vibegram";
+                        const rawBodyContent = type === 'voice' ? 'Голосовое сообщение' : 'Видеосообщение';
+                        
+                        const isGroup = state.activeChatIsGroup;
+                        const pushTitle = isGroup ? (document.getElementById('current-chat-name')?.innerText || 'Группа') : senderName;
+                        const pushBody = isGroup ? `${senderName}: ${rawBodyContent}` : rawBodyContent;
+                        const pushData = { chatId: state.activeChatId };
                         
                         if (!state.activeChatIsGroup && state.activeChatOtherUser) {
                             const otherUserId = state.activeChatOtherUser.user_id || state.activeChatOtherUser.id;
                             supabase.from('profiles').select('push_token').eq('id', otherUserId).single().then(({ data }) => {
                                 if (data?.push_token) {
                                     supabase.functions.invoke('send-push', {
-                                        body: { token: data.push_token, title, body: bodyContent }
+                                        body: { token: data.push_token, title: pushTitle, body: pushBody, data: pushData }
                                     }).catch(e => console.warn('Push error', e));
                                 }
                             });
@@ -277,10 +282,8 @@ export async function toggleRecording(type: 'voice' | 'video') {
                                             if (profiles) {
                                                 const tokens = profiles.map((p: any) => p.push_token).filter((t: any) => t);
                                                 if (tokens.length > 0) {
-                                                    const chatName = document.getElementById('current-chat-name')?.innerText || 'Группа';
-                                                    const groupTitle = chatName ? `${chatName} (${title})` : title;
                                                     supabase.functions.invoke('send-push', {
-                                                        body: { tokens: tokens, title: groupTitle, body: bodyContent }
+                                                        body: { tokens: tokens, title: pushTitle, body: pushBody, data: pushData }
                                                     }).catch(e => console.warn('Group Push error', e));
                                                 }
                                             }
