@@ -1059,19 +1059,22 @@ async function actuallySend(text: string, files: File[], input: HTMLTextAreaElem
         // Push Notification Logic
         const senderName = state.currentUser?.display_name || state.currentUser?.username || "Vibegram";
         
-        let mediaText = 'Отправлен файл';
+        let mediaText = '📎 Файл';
         if (actualMediaCount > 0) {
             const firstMediaType = mediaArr[0]?.type || '';
-            if (firstMediaType.startsWith('image')) mediaText = 'Фотография';
-            else if (firstMediaType.startsWith('video')) mediaText = 'Видеосообщение';
+            if (firstMediaType.startsWith('image')) mediaText = '📷 Фотография';
+            else if (firstMediaType.startsWith('video')) mediaText = '📹 Видео';
         }
         
         const rawBodyContent = text || (actualMediaCount > 0 ? mediaText : 'Новое сообщение');
         
         const isGroup = state.activeChatIsGroup;
-        const pushTitle = isGroup ? (document.getElementById('current-chat-name')?.innerText || 'Группа') : senderName;
-        const pushBody = isGroup ? `${senderName}: ${rawBodyContent}` : rawBodyContent;
-        const pushData = { chatId: state.activeChatId };
+        const isChannel = state.activeChatType === 'channel';
+        const groupName = document.getElementById('current-chat-name')?.innerText || 'Группа';
+        
+        const pushTitle = isGroup ? groupName : senderName;
+        const pushBody = isGroup && !isChannel ? `${senderName}: ${rawBodyContent}` : rawBodyContent;
+        const pushData = { chatId: String(state.activeChatId) };
         
         if (!state.activeChatIsGroup && state.activeChatOtherUser) {
             const otherUserId = state.activeChatOtherUser.user_id || state.activeChatOtherUser.id;

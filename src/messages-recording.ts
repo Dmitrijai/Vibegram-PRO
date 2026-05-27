@@ -257,12 +257,15 @@ export async function toggleRecording(type: 'voice' | 'video') {
                     } else {
                         // Push Notification Logic
                         const senderName = state.currentUser?.display_name || state.currentUser?.username || "Vibegram";
-                        const rawBodyContent = type === 'voice' ? 'Голосовое сообщение' : 'Видеосообщение';
+                        const rawBodyContent = type === 'voice' ? '🎤 Голосовое сообщение' : '📹 Видеосообщение';
                         
                         const isGroup = state.activeChatIsGroup;
-                        const pushTitle = isGroup ? (document.getElementById('current-chat-name')?.innerText || 'Группа') : senderName;
-                        const pushBody = isGroup ? `${senderName}: ${rawBodyContent}` : rawBodyContent;
-                        const pushData = { chatId: state.activeChatId };
+                        const isChannel = state.activeChatType === 'channel';
+                        const groupName = document.getElementById('current-chat-name')?.innerText || 'Группа';
+                        
+                        const pushTitle = isGroup ? groupName : senderName;
+                        const pushBody = isGroup && !isChannel ? `${senderName}: ${rawBodyContent}` : rawBodyContent;
+                        const pushData = { chatId: String(state.activeChatId) };
                         
                         if (!state.activeChatIsGroup && state.activeChatOtherUser) {
                             const otherUserId = state.activeChatOtherUser.user_id || state.activeChatOtherUser.id;

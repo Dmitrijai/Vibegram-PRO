@@ -286,13 +286,13 @@ export async function confirmForwardMultiple() {
         customToast('Сообщения пересланы');
 
         const senderName = state.currentUser?.display_name || state.currentUser?.username || "Vibegram";
-        const rawBodyContent = 'Пересланные сообщения';
+        const rawBodyContent = '🔄 Пересланные сообщения';
 
         state.forwardSelectedChats.forEach(chatId => {
             // Push notification
-            supabase.from('chats').select('is_group, title, username, user1_id, user2_id').eq('id', chatId).single().then(({ data: chatData }) => {
+            supabase.from('chats').select('is_group, type, title, username, user1_id, user2_id').eq('id', chatId).single().then(({ data: chatData }) => {
                 if (chatData) {
-                    const pushData = { chatId };
+                    const pushData = { chatId: String(chatId) };
                     
                     if (!chatData.is_group) {
                         const pushTitle = senderName;
@@ -309,9 +309,10 @@ export async function confirmForwardMultiple() {
                             });
                         }
                     } else {
+                        const isChannel = chatData.type === 'channel';
                         const groupName = chatData.title || chatData.username || 'Группа';
                         const pushTitle = groupName;
-                        const pushBody = `${senderName}: ${rawBodyContent}`;
+                        const pushBody = isChannel ? rawBodyContent : `${senderName}: ${rawBodyContent}`;
                         
                         supabase.from('chat_members').select('user_id').eq('chat_id', chatId).then(({ data: members }) => {
                             if (members) {
