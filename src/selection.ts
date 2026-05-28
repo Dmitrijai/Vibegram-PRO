@@ -285,7 +285,13 @@ export async function confirmForwardMultiple() {
         }
         customToast('Сообщения пересланы');
 
-        const senderName = state.currentUser?.display_name || state.currentUser?.username || "Vibegram";
+        let forwardSenderName = state.currentProfile?.display_name || state.currentProfile?.username || state.currentUser?.user_metadata?.full_name;
+        if (!forwardSenderName) {
+            const { data: p } = await supabase.from('profiles').select('display_name, username').eq('id', state.currentUser.id).single();
+            if (p) forwardSenderName = p.display_name || p.username;
+        }
+        forwardSenderName = forwardSenderName || "Vibegram";
+        
         const rawBodyContent = '🔄 Пересланные сообщения';
 
         state.forwardSelectedChats.forEach(chatId => {
@@ -295,15 +301,24 @@ export async function confirmForwardMultiple() {
                     const pushData = { chatId: String(chatId) };
                     
                     if (!chatData.is_group) {
-                        const pushTitle = senderName;
+                        const pushTitle = forwardSenderName;
                         const pushBody = rawBodyContent;
+                        
+                        const pushPayloadBase = { 
+                            title: pushTitle, 
+                            body: pushBody,
+                            chat_id: String(chatId),
+                            text: rawBodyContent,
+                            sender_name: forwardSenderName,
+                            data: pushData
+                        };
                         
                         const otherUserId = chatData.user1_id === state.currentUser.id ? chatData.user2_id : chatData.user1_id;
                         if (otherUserId) {
                             supabase.from('profiles').select('push_token').eq('id', otherUserId).single().then(({ data: profile }) => {
                                 if (profile?.push_token) {
                                     supabase.functions.invoke('send-push', {
-                                        body: { token: profile.push_token, title: pushTitle, body: pushBody, data: pushData }
+                                        body: { token: profile.push_token, ...pushPayloadBase }
                                     }).catch(e => console.warn('Push error', e));
                                 }
                             });
@@ -312,7 +327,16 @@ export async function confirmForwardMultiple() {
                         const isChannel = chatData.type === 'channel';
                         const groupName = chatData.title || chatData.username || 'Группа';
                         const pushTitle = groupName;
-                        const pushBody = isChannel ? rawBodyContent : `${senderName}: ${rawBodyContent}`;
+                        const pushBody = isChannel ? rawBodyContent : `${forwardSenderName}: ${rawBodyContent}`;
+                        
+                        const pushPayloadBase = { 
+                            title: pushTitle, 
+                            body: pushBody,
+                            chat_id: String(chatId),
+                            text: rawBodyContent,
+                            sender_name: forwardSenderName,
+                            data: pushData
+                        };
                         
                         supabase.from('chat_members').select('user_id').eq('chat_id', chatId).then(({ data: members }) => {
                             if (members) {
@@ -323,7 +347,7 @@ export async function confirmForwardMultiple() {
                                             const tokens = profiles.map((p: any) => p.push_token).filter((t: any) => t);
                                             if (tokens.length > 0) {
                                                 supabase.functions.invoke('send-push', {
-                                                    body: { tokens: tokens, title: pushTitle, body: pushBody, data: pushData }
+                                                    body: { tokens: tokens, ...pushPayloadBase }
                                                 }).catch(e => console.warn('Group Push error', e));
                                             }
                                         }

@@ -256,7 +256,13 @@ export async function toggleRecording(type: 'voice' | 'video') {
                         customAlert('Ошибка отправки сообщения');
                     } else {
                         // Push Notification Logic
-                        const senderName = state.currentUser?.display_name || state.currentUser?.username || "Vibegram";
+                        let senderName = state.currentProfile?.display_name || state.currentProfile?.username || state.currentUser?.user_metadata?.full_name;
+                        if (!senderName) {
+                            const { data: p } = await supabase.from('profiles').select('display_name, username').eq('id', state.currentUser.id).single();
+                            if (p) senderName = p.display_name || p.username;
+                        }
+                        senderName = senderName || "Vibegram";
+                        
                         const rawBodyContent = type === 'voice' ? '🎤 Голосовое сообщение' : '📹 Видеосообщение';
                         
                         const isGroup = state.activeChatIsGroup;
@@ -267,12 +273,21 @@ export async function toggleRecording(type: 'voice' | 'video') {
                         const pushBody = isGroup && !isChannel ? `${senderName}: ${rawBodyContent}` : rawBodyContent;
                         const pushData = { chatId: String(state.activeChatId) };
                         
+                        const pushPayloadBase = { 
+                            title: pushTitle, 
+                            body: pushBody,
+                            chat_id: String(state.activeChatId),
+                            text: rawBodyContent,
+                            sender_name: senderName,
+                            data: pushData
+                        };
+                        
                         if (!state.activeChatIsGroup && state.activeChatOtherUser) {
                             const otherUserId = state.activeChatOtherUser.user_id || state.activeChatOtherUser.id;
                             supabase.from('profiles').select('push_token').eq('id', otherUserId).single().then(({ data }) => {
                                 if (data?.push_token) {
                                     supabase.functions.invoke('send-push', {
-                                        body: { token: data.push_token, title: pushTitle, body: pushBody, data: pushData }
+                                        body: { token: data.push_token, ...pushPayloadBase }
                                     }).catch(e => console.warn('Push error', e));
                                 }
                             });
@@ -286,7 +301,7 @@ export async function toggleRecording(type: 'voice' | 'video') {
                                                 const tokens = profiles.map((p: any) => p.push_token).filter((t: any) => t);
                                                 if (tokens.length > 0) {
                                                     supabase.functions.invoke('send-push', {
-                                                        body: { tokens: tokens, title: pushTitle, body: pushBody, data: pushData }
+                                                        body: { tokens: tokens, ...pushPayloadBase }
                                                     }).catch(e => console.warn('Group Push error', e));
                                                 }
                                             }
