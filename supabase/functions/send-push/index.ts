@@ -10,7 +10,6 @@ serve(async (req) => {
             return new Response(JSON.stringify({ error: 'No tokens provided' }), { status: 400 });
         }
         
-        // ВАЖНО: Добавлен блок android.notification.icon: 'ic_launcher_foreground'
         const createFcmMessage = (targetToken: string) => ({
             message: {
                 token: targetToken,
@@ -20,7 +19,7 @@ serve(async (req) => {
                 },
                 android: {
                     notification: {
-                        icon: 'ic_launcher_foreground'
+                        color: '#111827'
                     }
                 },
                 data: {
