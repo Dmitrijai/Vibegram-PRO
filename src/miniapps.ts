@@ -295,8 +295,16 @@ async function loadMiniApps(tab: string) {
             *,
             creator:creator_id(username, display_name, avatar_url)
         `,
-      )
-      .order("created_at", { ascending: false });
+      );
+
+    if (tab === "public" && !currentAuthorFilter && !currentSearchQuery) {
+      query = query
+        .order("likes_count", { ascending: false })
+        .order("views_count", { ascending: false })
+        .order("created_at", { ascending: false });
+    } else {
+      query = query.order("created_at", { ascending: false });
+    }
 
     if (currentAuthorFilter) {
       query = query
