@@ -862,23 +862,9 @@ export async function runMiniApp(id: string) {
     if (data.html_content && data.html_content.trim().startsWith("<")) {
       iframe.srcdoc = data.html_content;
     } else if (data.html_content && data.html_content.startsWith("https://")) {
-      try {
-        const res = await fetch(data.html_content);
-        if (!res.ok) throw new Error("Fetch failed");
-        const text = await res.text();
-        iframe.srcdoc = text;
-      } catch (err) {
-        iframe.src = data.html_content;
-      }
+      iframe.src = data.html_content;
     } else if (data.html_url) {
-      try {
-        const res = await fetch(data.html_url);
-        if (!res.ok) throw new Error("Fetch failed");
-        const text = await res.text();
-        iframe.srcdoc = text;
-      } catch (err) {
-        iframe.src = data.html_url;
-      }
+      iframe.src = data.html_url;
     } else if (data.html_content) {
       iframe.srcdoc = data.html_content;
     }
@@ -918,6 +904,7 @@ export function closeMiniApp() {
         "mini-app-frame",
       ) as HTMLIFrameElement;
       iframe.srcdoc = "";
+      iframe.removeAttribute("src");
       currentRunningAppId = null;
       miniAppContentData = null;
     }, 300);
@@ -966,23 +953,9 @@ export async function runStandaloneMiniApp(id: string) {
     if (data.html_content && data.html_content.trim().startsWith("<")) {
       iframe.srcdoc = data.html_content;
     } else if (data.html_content && data.html_content.startsWith("https://")) {
-      try {
-        const res = await fetch(data.html_content);
-        if (!res.ok) throw new Error("Fetch failed");
-        const text = await res.text();
-        iframe.srcdoc = text;
-      } catch (err) {
-        iframe.src = data.html_content;
-      }
+      iframe.src = data.html_content;
     } else if (data.html_url) {
-      try {
-        const res = await fetch(data.html_url);
-        if (!res.ok) throw new Error("Fetch failed");
-        const text = await res.text();
-        iframe.srcdoc = text;
-      } catch (err) {
-        iframe.src = data.html_url;
-      }
+      iframe.src = data.html_url;
     } else if (data.html_content) {
       iframe.srcdoc = data.html_content;
     }
