@@ -831,6 +831,23 @@ export async function submitEditMiniApp() {
   }
 }
 
+async function fetchAndInjectBase(url: string): Promise<string> {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error("Fetch failed");
+  let text = await res.text();
+  const urlObj = new URL(url);
+  urlObj.pathname = urlObj.pathname.substring(0, urlObj.pathname.lastIndexOf('/') + 1);
+  const baseTag = `<base href="${urlObj.href}">`;
+  if (/<head[^>]*>/i.test(text)) {
+    text = text.replace(/(<head[^>]*>)/i, `$1${baseTag}`);
+  } else if (/<html[^>]*>/i.test(text)) {
+    text = text.replace(/(<html[^>]*>)/i, `$1<head>${baseTag}</head>`);
+  } else {
+    text = `<head>${baseTag}</head>` + text;
+  }
+  return text;
+}
+
 export async function runMiniApp(id: string) {
   customToast("Загрузка приложения...");
 
@@ -862,9 +879,17 @@ export async function runMiniApp(id: string) {
     if (data.html_content && data.html_content.trim().startsWith("<")) {
       iframe.srcdoc = data.html_content;
     } else if (data.html_content && data.html_content.startsWith("https://")) {
-      iframe.src = data.html_content;
+      try {
+        iframe.srcdoc = await fetchAndInjectBase(data.html_content);
+      } catch (err) {
+        iframe.src = data.html_content;
+      }
     } else if (data.html_url) {
-      iframe.src = data.html_url;
+      try {
+        iframe.srcdoc = await fetchAndInjectBase(data.html_url);
+      } catch (err) {
+        iframe.src = data.html_url;
+      }
     } else if (data.html_content) {
       iframe.srcdoc = data.html_content;
     }
@@ -953,9 +978,17 @@ export async function runStandaloneMiniApp(id: string) {
     if (data.html_content && data.html_content.trim().startsWith("<")) {
       iframe.srcdoc = data.html_content;
     } else if (data.html_content && data.html_content.startsWith("https://")) {
-      iframe.src = data.html_content;
+      try {
+        iframe.srcdoc = await fetchAndInjectBase(data.html_content);
+      } catch (err) {
+        iframe.src = data.html_content;
+      }
     } else if (data.html_url) {
-      iframe.src = data.html_url;
+      try {
+        iframe.srcdoc = await fetchAndInjectBase(data.html_url);
+      } catch (err) {
+        iframe.src = data.html_url;
+      }
     } else if (data.html_content) {
       iframe.srcdoc = data.html_content;
     }
