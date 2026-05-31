@@ -43,11 +43,21 @@ export async function loadChats() {
             return (dB || 0) - (dA || 0);
         });
 
-        // Find Saved Messages
-        let savedMessagesIdx = chats.findIndex((c: any) => !c.type.includes('group') && !c.type.includes('channel') && (!c.chat_members || c.chat_members.filter((m: any) => m.user_id !== state.currentUser.id).length === 0));
+        // Find designated Saved Messages
+        let savedMessagesIdx = chats.findIndex((c: any) => c.description === 'SAVED_MESSAGES');
+        if (savedMessagesIdx === -1) {
+            // fallback for older accounts
+            savedMessagesIdx = chats.findIndex((c: any) => !c.type.includes('group') && !c.type.includes('channel') && (!c.chat_members || c.chat_members.filter((m: any) => m.user_id !== state.currentUser.id).length === 0));
+        }
+        
         let savedMessagesChat = null;
         if (savedMessagesIdx !== -1) {
             savedMessagesChat = chats.splice(savedMessagesIdx, 1)[0];
+            // Lock this chat explicitly as Saved Messages to prevent future duplicates shifting
+            if (savedMessagesChat.description !== 'SAVED_MESSAGES') {
+                savedMessagesChat.description = 'SAVED_MESSAGES';
+                supabase.from('chats').update({ description: 'SAVED_MESSAGES', title: 'Избранное' }).eq('id', savedMessagesChat.id).then();
+            }
         }
 
         const showSavedMessages = state.currentProfile?.settings?.show_saved_messages !== false;
@@ -63,8 +73,8 @@ export async function loadChats() {
                     created_at: new Date().toISOString(),
                     type: 'private',
                     title: 'Избранное',
+                    description: 'SAVED_MESSAGES',
                     avatar_url: null,
-                    description: '',
                     is_public: false,
                     chat_members: [{ user_id: state.currentUser.id, role: 'admin', profiles: state.currentProfile }],
                     messages: []
@@ -78,9 +88,9 @@ export async function loadChats() {
             if (chat.description === 'POST_COMMENTS' || (chat.title === 'Комментарии' && chat.type === 'group' && chat.is_public)) return;
             
             let isGroup = chat.type === 'group' || chat.type === 'channel';
-            let isSavedMsgs = !isGroup && (!chat.chat_members || chat.chat_members.filter((m: any) => m.user_id !== state.currentUser.id).length === 0);
+            let isSavedMsgs = chat.description === 'SAVED_MESSAGES' || chat.id === 'new_saved_messages';
             
-            // Skip empty direct chats (ghost chats) unless it's currently active or it's saved messages
+            // Skip empty direct/ghost chats unless it's currently active or it's the designated saved messages chat
             if ((chat.type === 'direct' || chat.type === 'private') && (!chat.messages || chat.messages.length === 0) && chat.id !== state.activeChatId && chat.id !== 'new_saved_messages' && !isSavedMsgs) {
                 return;
             }
@@ -93,22 +103,27 @@ export async function loadChats() {
                 chatName = 'Служба поддержки';
                 isGroup = false; 
             } else if (!isGroup) {
-                const others = chat.chat_members?.filter((m: any) => m.user_id !== state.currentUser.id);
-                if (!others || others.length === 0) {
+                if (isSavedMsgs) {
                     isSavedMessages = true;
                     chatName = 'Избранное';
                 } else {
-                    const other = others[0];
-                    if(other?.profiles) {
-                        chatName = other.profiles.display_name || other.profiles.username;
-                        const isTechSupport = other.profiles.settings?.is_tech_support === true;
-                        if (isTechSupport) {
-                            isOnline = false;
-                        } else {
-                            isOnline = other.profiles.is_online;
-                            if (isOnline && other.profiles.last_seen) {
-                                if (new Date().getTime() - new Date(other.profiles.last_seen).getTime() > 3 * 60 * 1000) {
-                                    isOnline = false;
+                    const others = chat.chat_members?.filter((m: any) => m.user_id !== state.currentUser.id);
+                    if (!others || others.length === 0) {
+                        // This is a ghost chat (the other user left / deleted the chat)
+                        chatName = 'Удалённый аккаунт';
+                    } else {
+                        const other = others[0];
+                        if(other?.profiles) {
+                            chatName = other.profiles.display_name || other.profiles.username;
+                            const isTechSupport = other.profiles.settings?.is_tech_support === true;
+                            if (isTechSupport) {
+                                isOnline = false;
+                            } else {
+                                isOnline = other.profiles.is_online;
+                                if (isOnline && other.profiles.last_seen) {
+                                    if (new Date().getTime() - new Date(other.profiles.last_seen).getTime() > 3 * 60 * 1000) {
+                                        isOnline = false;
+                                    }
                                 }
                             }
                         }

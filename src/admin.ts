@@ -653,9 +653,17 @@ function renderChatsList(chats: any[]) {
         }
         
         if (!confirm('Are you strictly sure? This deletes the user and cascades data.')) return;
-        // Will only work if RLS allows it, or we bypass. 
-        const { error } = await supabase.from('profiles').delete().eq('id', userId);
-        if (error) throw error;
+        // Используем RPC вместо прямого удаления из profiles, чтобы удалить из auth.users
+        const { error } = await supabase.rpc('admin_delete_user', { target_user_id: userId });
+        
+        // Резервный вариант, если SQL скрипт не был выполнен, попробуем старый метод
+        if (error && error.message.includes('function admin_delete_user does not exist')) {
+            const { error: fallbackError } = await supabase.from('profiles').delete().eq('id', userId);
+            if (fallbackError) throw fallbackError;
+        } else if (error) {
+            throw error;
+        }
+        
         loadAdminData();
     } catch(e: any) {
         alert('Force deletion error (might be restricted by RLS): ' + e.message);
