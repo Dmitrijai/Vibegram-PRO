@@ -876,6 +876,9 @@ export async function runMiniApp(id: string) {
       "mini-app-frame",
     ) as HTMLIFrameElement;
 
+    iframe.removeAttribute("srcdoc");
+    iframe.removeAttribute("src");
+
     if (data.html_content && data.html_content.trim().startsWith("<")) {
       iframe.srcdoc = data.html_content;
     } else if (data.html_content && data.html_content.startsWith("https://")) {
@@ -936,7 +939,7 @@ export function closeMiniApp() {
       const iframe = document.getElementById(
         "mini-app-frame",
       ) as HTMLIFrameElement;
-      iframe.srcdoc = "";
+      iframe.removeAttribute("srcdoc");
       iframe.removeAttribute("src");
       currentRunningAppId = null;
       miniAppContentData = null;
@@ -982,6 +985,9 @@ export async function runStandaloneMiniApp(id: string) {
     const iframe = document.getElementById(
       "standalone-miniapp-frame",
     ) as HTMLIFrameElement;
+
+    iframe.removeAttribute("srcdoc");
+    iframe.removeAttribute("src");
 
     if (data.html_content && data.html_content.trim().startsWith("<")) {
       iframe.srcdoc = data.html_content;
