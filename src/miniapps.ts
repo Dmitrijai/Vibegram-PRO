@@ -879,15 +879,23 @@ export async function runMiniApp(id: string) {
     if (data.html_content && data.html_content.trim().startsWith("<")) {
       iframe.srcdoc = data.html_content;
     } else if (data.html_content && data.html_content.startsWith("https://")) {
-      try {
-        iframe.srcdoc = await fetchAndInjectBase(data.html_content);
-      } catch (err) {
+      if (data.html_content.includes("res.cloudinary.com")) {
+        try {
+          iframe.srcdoc = await fetchAndInjectBase(data.html_content);
+        } catch (err) {
+          iframe.src = data.html_content;
+        }
+      } else {
         iframe.src = data.html_content;
       }
     } else if (data.html_url) {
-      try {
-        iframe.srcdoc = await fetchAndInjectBase(data.html_url);
-      } catch (err) {
+      if (data.html_url.includes("res.cloudinary.com")) {
+        try {
+          iframe.srcdoc = await fetchAndInjectBase(data.html_url);
+        } catch (err) {
+          iframe.src = data.html_url;
+        }
+      } else {
         iframe.src = data.html_url;
       }
     } else if (data.html_content) {
@@ -978,15 +986,23 @@ export async function runStandaloneMiniApp(id: string) {
     if (data.html_content && data.html_content.trim().startsWith("<")) {
       iframe.srcdoc = data.html_content;
     } else if (data.html_content && data.html_content.startsWith("https://")) {
-      try {
-        iframe.srcdoc = await fetchAndInjectBase(data.html_content);
-      } catch (err) {
+      if (data.html_content.includes("res.cloudinary.com")) {
+        try {
+          iframe.srcdoc = await fetchAndInjectBase(data.html_content);
+        } catch (err) {
+          iframe.src = data.html_content;
+        }
+      } else {
         iframe.src = data.html_content;
       }
     } else if (data.html_url) {
-      try {
-        iframe.srcdoc = await fetchAndInjectBase(data.html_url);
-      } catch (err) {
+      if (data.html_url.includes("res.cloudinary.com")) {
+        try {
+          iframe.srcdoc = await fetchAndInjectBase(data.html_url);
+        } catch (err) {
+          iframe.src = data.html_url;
+        }
+      } else {
         iframe.src = data.html_url;
       }
     } else if (data.html_content) {
