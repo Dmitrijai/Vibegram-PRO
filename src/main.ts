@@ -575,6 +575,46 @@ document.addEventListener('DOMContentLoaded', () => {
 
 setupMiniApps();
 
+// --- Handle WebPush PWA notification clicks ---
+function openChatFromPush(chatId: string) {
+    import('./chat').then(m => {
+        supabase.from('chats').select('*').eq('id', chatId).single().then(({ data: chatData }) => {
+            if (chatData) {
+                m.openChat(chatId, chatData.title || chatData.username || 'Чат', '?', chatData.is_group || false, chatData.type || 'direct', []);
+            } else {
+                m.openChat(chatId, 'Чат', '?', false, 'direct', []);
+            }
+        });
+    });
+    if (window.innerWidth < 768) {
+        const chatArea = document.getElementById('chat-area');
+        const sidebar = document.getElementById('sidebar');
+        if (chatArea) chatArea.classList.remove('hidden');
+        if (sidebar) sidebar.classList.add('hidden');
+    }
+}
+
+if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.addEventListener('message', (event) => {
+        if (event.data && event.data.type === 'OPEN_CHAT' && event.data.chatId) {
+            console.log('Received OPEN_CHAT from Service Worker:', event.data.chatId);
+            openChatFromPush(event.data.chatId);
+        }
+    });
+}
+const urlChatId = new URLSearchParams(window.location.search).get('chatId');
+if (urlChatId) {
+    // Retry looking for auth
+    const pushInterval = setInterval(() => {
+        if (state.currentUser) {
+            clearInterval(pushInterval);
+            openChatFromPush(urlChatId);
+        }
+    }, 500);
+    setTimeout(() => clearInterval(pushInterval), 5000);
+}
+// ---
+
 import { Capacitor } from '@capacitor/core';
 import { PushNotifications } from '@capacitor/push-notifications';
 
@@ -594,25 +634,7 @@ if (Capacitor.isNativePlatform()) {
         const chatId = action.notification.data?.chatId;
         console.log('Push action performed, chatId:', chatId);
         if (chatId) {
-            import('./chat').then(m => {
-                // Open chat. Note: to get proper chatName etc we might need a db fetch, but openChat requires them.
-                // Alternatively, logic.openChat might be available, or we fetch chat details first.
-                supabase.from('chats').select('*').eq('id', chatId).single().then(({ data: chatData }) => {
-                    if (chatData) {
-                        m.openChat(chatId, chatData.title || chatData.username || 'Чат', '?', chatData.is_group || false, chatData.type || 'direct', []);
-                    } else {
-                         // fallback
-                         m.openChat(chatId, 'Чат', '?', false, 'direct', []);
-                    }
-                });
-            });
-            // If mobile view, hide sidebar
-            if (window.innerWidth < 768) {
-                const chatArea = document.getElementById('chat-area');
-                const sidebar = document.getElementById('sidebar');
-                if (chatArea) chatArea.classList.remove('hidden');
-                if (sidebar) sidebar.classList.add('hidden');
-            }
+            openChatFromPush(chatId);
         }
     });
 }
