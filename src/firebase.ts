@@ -34,7 +34,8 @@ export async function requestWebPushPermission() {
     if (permission === 'granted') {
       console.log('Notification permission granted.');
       
-      const registration = await navigator.serviceWorker.register('/firebase-messaging-sw.js');
+      const swPath = (import.meta as any).env?.BASE_URL ? (import.meta as any).env.BASE_URL + 'firebase-messaging-sw.js' : './firebase-messaging-sw.js';
+      const registration = await navigator.serviceWorker.register(swPath);
       console.log('Service Worker registered with scope:', registration.scope);
 
       const currentToken = await getToken(messaging, { 
