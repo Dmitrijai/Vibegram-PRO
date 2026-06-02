@@ -1092,10 +1092,11 @@ async function actuallySend(text: string, files: File[], input: HTMLTextAreaElem
         
         if (!state.activeChatIsGroup && state.activeChatOtherUser) {
             const otherUserId = state.activeChatOtherUser.user_id || state.activeChatOtherUser.id;
-            supabase.from('profiles').select('push_token').eq('id', otherUserId).single().then(({ data }) => {
-                if (data?.push_token) {
+            supabase.from('profiles').select('push_token, fcm_web_token').eq('id', otherUserId).single().then(({ data }) => {
+                const combinedTokens = [data?.push_token, data?.fcm_web_token].filter(Boolean);
+                if (combinedTokens.length > 0) {
                     supabase.functions.invoke('send-push', {
-                        body: { token: data.push_token, ...pushPayloadBase }
+                        body: { tokens: combinedTokens, ...pushPayloadBase }
                     }).catch(e => console.warn('Push error', e));
                 }
             });
@@ -1104,9 +1105,9 @@ async function actuallySend(text: string, files: File[], input: HTMLTextAreaElem
                 if (members) {
                     const memberIds = members.map((m: any) => m.user_id).filter((id: string) => id !== state.currentUser?.id);
                     if (memberIds.length > 0) {
-                        supabase.from('profiles').select('push_token').in('id', memberIds).then(({ data: profiles }) => {
+                        supabase.from('profiles').select('push_token, fcm_web_token').in('id', memberIds).then(({ data: profiles }) => {
                             if (profiles) {
-                                const tokens = profiles.map((p: any) => p.push_token).filter((t: any) => t);
+                                const tokens = profiles.flatMap((p: any) => [p.push_token, p.fcm_web_token]).filter(Boolean);
                                 if (tokens.length > 0) {
                                     supabase.functions.invoke('send-push', {
                                         body: { tokens: tokens, ...pushPayloadBase }

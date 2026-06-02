@@ -3,8 +3,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <link rel="apple-touch-icon" href="./apple-touch-icon.png">
+    <link rel="manifest" href="./manifest.json">
     <title>Vibegram</title>
-    <link rel="icon" href="./image/Gemini_Generated_Image_fpoqbdfpoqbdfpoq (1).png" />
+    <link rel="icon" href="./apple-touch-icon.png" />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <script>
         if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
@@ -722,6 +726,37 @@
     </div>
     <!-- Floating in-app notifications container -->
     <div id="in-app-notifications" class="fixed top-2 left-1/2 -translate-x-1/2 z-[9999999] flex flex-col items-center gap-2 pointer-events-none w-[90%] max-w-[400px]" style="padding-top: env(safe-area-inset-top);"></div>
+
+    <!-- iOS PWA Install Prompt -->
+    <div id="ios-pwa-prompt" class="hidden fixed bottom-6 left-1/2 -translate-x-1/2 w-[90%] max-w-sm bg-white dark:bg-gray-800 rounded-2xl shadow-2xl border border-gray-200 dark:border-gray-700 p-4 z-[999999] flex flex-col items-center text-center">
+        <button onclick="document.getElementById('ios-pwa-prompt').classList.add('hidden')" class="absolute top-2 right-2 text-gray-400 hover:text-gray-600 dark:hover:text-white">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+        </button>
+        <div class="w-12 h-12 bg-blue-100 dark:bg-blue-900 rounded-2xl flex flex-col items-center justify-center mb-3 text-blue-500 shadow-sm border border-blue-200 dark:border-blue-700 mx-auto">
+            <img src="./apple-touch-icon.png" class="w-10 h-10 rounded-xl" alt="App Icon">
+        </div>
+        <h3 class="font-bold text-gray-900 dark:text-white mb-1">Установите Vibegram</h3>
+        <p class="text-sm text-gray-500 dark:text-gray-400 mb-4 px-2">Установите это приложение на экран «Домой» для быстрого и удобного доступа без браузера.</p>
+        <div class="text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-50 dark:bg-gray-700/50 rounded-xl p-3 w-full border border-gray-100 dark:border-gray-600">
+            Нажмите <svg class="inline-block w-5 h-5 text-blue-500 mx-1 vertical-middle" viewBox="0 -3 28 28" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 15V3m0 0l4 4m-4-4L8 7" stroke-linecap="round" stroke-linejoin="round"/><rect x="4" y="11" width="16" height="10" rx="2" stroke-linecap="round" stroke-linejoin="round"/></svg> <b>Поделиться</b><br>затем <b>На экран «Домой»</b> <svg class="inline-block w-5 h-5 ml-1 text-gray-500 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v3m0 0v3m0-3h3m-3 0H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+        </div>
+    </div>
+    <script>
+        document.addEventListener("DOMContentLoaded", () => {
+            const isIos = () => {
+                const userAgent = window.navigator.userAgent.toLowerCase();
+                return /iphone|ipad|ipod/.test(userAgent);
+            };
+            const isInStandaloneMode = () => ('standalone' in window.navigator) && window.navigator.standalone;
+            
+            if (isIos() && !isInStandaloneMode()) {
+                setTimeout(() => {
+                    const prompt = document.getElementById('ios-pwa-prompt');
+                    if (prompt) prompt.classList.remove('hidden');
+                }, 3000);
+            }
+        });
+    </script>
 
     <script type="module" src="/src/main.ts"></script>
 </body>

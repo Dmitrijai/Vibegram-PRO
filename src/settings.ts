@@ -255,14 +255,21 @@ export function openSettings(modeOrSkip: 'full' | 'profile' | boolean = 'full', 
                             <option value="nobody" ${settings.privacy === 'nobody' ? 'selected' : ''}>Никто</option>
                         </select>
                     </div>
-                    <div class="flex items-center justify-between p-3">
+                    <div class="flex items-center justify-between p-3 border-b border-gray-200 dark:border-gray-700 border-dashed">
                         <div class="flex items-center gap-3">
-                            <span class="font-medium text-gray-700 dark:text-gray-200">Уведомления</span>
+                            <span class="font-medium text-gray-700 dark:text-gray-200">Уведомления в приложении</span>
                         </div>
                         <label class="relative inline-flex items-center cursor-pointer">
                             <input type="checkbox" id="settings-notif" class="sr-only peer" ${settings.notifications ? 'checked' : ''} onchange="saveSettings()">
                             <div class="w-11 h-6 bg-gray-200 dark:bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 dark:after:border-gray-600 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-500"></div>
                         </label>
+                    </div>
+                    <div class="flex items-center justify-between p-3">
+                        <div class="flex flex-col max-w-[70%]">
+                            <span class="font-medium text-gray-700 dark:text-gray-200">Системные Push-уведомления</span>
+                            <span class="text-[10px] text-gray-500 mt-0.5 leading-tight">Для работы в фоне (нужен iOS 16.4+ и приложение на экране Домой)</span>
+                        </div>
+                        <button onclick="window.requestWebPushPermission && window.requestWebPushPermission()" class="bg-blue-50 text-blue-600 hover:bg-blue-100 dark:bg-blue-900/30 dark:text-blue-400 dark:hover:bg-blue-900/50 text-[11px] font-bold py-1.5 px-3 rounded-lg transition-colors border border-blue-200 dark:border-blue-800 uppercase tracking-wider">Включить</button>
                     </div>
                 </div>
             </details>

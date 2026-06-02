@@ -1,6 +1,7 @@
 import './index.css';
 import { supabase, state } from './supabase';
 import * as logic from './logic';
+import './firebase';
 import './ai';
 import './shorts'; // Add Shorts support
 import { setupMiniApps, runStandaloneMiniApp } from './miniapps';
