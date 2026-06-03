@@ -10,50 +10,77 @@ const firebaseConfig = {
   appId: "1:1067656273348:web:8ad7a2c87f2112e21c9891"
 };
 
-firebase.initializeApp(firebaseConfig);
-const messaging = firebase.messaging();
+// Инициализируем Firebase, он нужен для обновления токенов,
+// но мы не будем завязываться на его onBackgroundMessage
+try {
+  firebase.initializeApp(firebaseConfig);
+  firebase.messaging();
+} catch(e) {
+  console.log("Firebase SW init skip", e);
+}
 
-messaging.onBackgroundMessage((payload) => {
-  console.log('[firebase-messaging-sw.js] Received background message ', payload);
-  const notificationTitle = payload.notification?.title || 'Новое сообщение';
+// 1. ПОЛНЫЙ ПЕРЕХВАТ PUSH-СОБЫТИЙ
+// Это решает ВСЕ проблемы с iOS Safari и PWA. Firebase SDK на iOS часто крашится 
+// из-за доступа к IndexedDB в фоне, не вызывая showNotification, что приводит к 
+// бану уведомлений со стороны Apple.
+self.addEventListener('push', function(event) {
+  // Важно: останавливаем дальнейшую обработку (чтобы код Firebase не дублировал уведомление)
+  event.stopImmediatePropagation(); 
+
+  let payload = {};
+  if (event.data) {
+    try {
+      payload = event.data.json();
+    } catch(e) { 
+      console.error('push json decode error', e); 
+    }
+  }
+
+  // Берем данные из блока notification или data
+  const notificationTitle = payload?.notification?.title || payload?.data?.title || 'Vibegram';
   const notificationOptions = {
-    body: payload.notification?.body,
+    body: (payload?.notification?.body || payload?.data?.body) || 'Новое сообщение',
     icon: '/apple-touch-icon.png',
-    data: payload.data
+    badge: '/apple-touch-icon.png', // Маленькая монохромная иконка для статус бара на Android
+    data: payload?.data || {},
+    vibrate: [200, 100, 200, 100, 200]
   };
 
-  self.registration.showNotification(notificationTitle, notificationOptions);
+  // Обязательный синхронный вызов для iOS PWA: мы обещаем Apple сразу показать уведомление.
+  event.waitUntil(
+    self.registration.showNotification(notificationTitle, notificationOptions)
+  );
 });
 
+// 2. ОБРАБОТКА КЛИКА ПО УВЕДОМЛЕНИЮ
 self.addEventListener('notificationclick', function(event) {
-  console.log('[firebase-messaging-sw.js] Notification click received.');
+  console.log('[firebase-messaging-sw.js] Notification click received.', event);
   event.notification.close();
 
-  // Try to find the chat URL inside data or fallback to root
-  const chatId = event.notification.data?.chatId || event.notification.data?.chat_id;
+  const data = event.notification.data || {};
+  const chatId = data.chatId || data.chat_id;
   
-  // URL to open if no window is already open. Adding query param.
-  let targetUrl = '/'; 
+  // Определяем URL родительского scope 
+  const scopeUrl = self.registration.scope;
+  let targetUrl = scopeUrl; 
   if (chatId) {
-    // We can append a hash or query param so the app can detect it and open the specific chat on cold start
-    targetUrl = `/?chatId=${chatId}`;
+    targetUrl = scopeUrl + `?chatId=${chatId}`;
   }
   
   event.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true }).then(function(windowClients) {
-      // Check if there is already a window/tab open with the target URL
+      // Ищем открытую вкладку с нашим мессенджером
       for (let i = 0; i < windowClients.length; i++) {
         let client = windowClients[i];
-        // If so, just focus it
-        if (client.url.indexOf(self.registration.scope) !== -1 && 'focus' in client) {
-          // Send data to the client to open specific chat
+        if (client.url.indexOf(scopeUrl) !== -1 && 'focus' in client) {
+          // Если нашли - отправляем туда сообщение (чтобы SPA переключил чат без перезагрузки)
           if (chatId) {
              client.postMessage({ type: 'OPEN_CHAT', chatId });
           }
           return client.focus();
         }
       }
-      // If not, then open the target URL
+      // Если клиент закрыт - открываем новую вкладку по URL с параметром (роутинг React разберет это)
       if (clients.openWindow) {
         return clients.openWindow(targetUrl);
       }

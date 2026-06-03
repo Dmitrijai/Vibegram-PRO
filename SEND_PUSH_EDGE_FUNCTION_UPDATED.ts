@@ -180,8 +180,19 @@ serve(async (req) => {
 
     console.log("Processed Push notification payload server-side:", { title, bodyText });
     
+    // Подготовим URL на который нужно перенаправить при клике.
+    const requestOrigin = req.headers.get('origin') || Deno.env.get('FRONTEND_URL') || "https://vibegram.web.app";
+    let targetLink = requestOrigin + "/";
+    if (chatId) {
+        targetLink = `${requestOrigin}/?chatId=${chatId}`;
+    }
+
     // FCM v1 строго требует, чтобы ВСЕ значения внутри объекта "data" были строками
-    const pushData: Record<string, string> = {};
+    const pushData: Record<string, string> = {
+        title: title,
+        body: bodyText,
+        chatId: String(chatId || "")
+    };
     if (reqData.data && typeof reqData.data === 'object') {
       for (const [key, value] of Object.entries(reqData.data)) {
         pushData[key] = String(value);
@@ -204,14 +215,16 @@ serve(async (req) => {
       const fcmMessage: any = {
         message: {
           token: token,
+          // Основной notification блок необходим для iOS APNs и системного wake.
           notification: {
             title: title,
             body: bodyText
           },
           android: {
+            priority: "high",
             notification: {
-              icon: "ic_launcher_foreground",
-              color: "#111827"
+               // Для Android лучше использовать default или абсолютный путь. 
+               // Но чтобы не было сбоев с иконками, проще оставить пустым (будет использована иконка из PWA)
             }
           },
           webpush: {
@@ -221,10 +234,6 @@ serve(async (req) => {
             notification: {
               icon: "/apple-touch-icon.png", 
               badge: "/apple-touch-icon.png", 
-              requireInteraction: true 
-            },
-            fcm_options: {
-              // link: "https://dmitrijnewai.github.io/YOUR_REPO_NAME/"
             }
           },
           data: pushData
