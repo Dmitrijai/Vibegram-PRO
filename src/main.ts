@@ -1,10 +1,12 @@
 import './index.css';
 import { supabase, state } from './supabase';
 import * as logic from './logic';
-import './firebase';
 import './ai';
 import './shorts'; // Add Shorts support
 import { setupMiniApps, runStandaloneMiniApp } from './miniapps';
+import { requestPushPermissionAndToken } from './push';
+
+(window as any).enablePushNotifications = requestPushPermissionAndToken;
 
 window.addEventListener('popstate', (e) => {
     const hash = window.location.hash;
@@ -288,6 +290,15 @@ function setupRealtime() {
                         if (!mutedChats.includes(payload.new.chat_id) && settings.notifications !== false && !isCommentChat) {
                             if ((window as any).logic?.playNotificationSound) (window as any).logic.playNotificationSound();
                         }
+                        
+                        if (document.hidden && "Notification" in window && Notification.permission === "granted" && !isCommentChat) {
+                            try {
+                                const { data: sender } = await supabase.from('profiles').select('display_name, username').eq('id', payload.new.sender_id).single();
+                                const senderName = sender?.display_name || sender?.username || 'Пользователь';
+                                const text = payload.new.content || (payload.new.message_type === 'voice' ? '🎤 Голосовое сообщение' : 'Медиа сообщение');
+                                new Notification(`Новое сообщение от ${senderName}`, { body: text });
+                            } catch(e) { console.error("Notification API failed:", e); }
+                        }
                     }
                 } else {
                     if (payload.new.sender_id !== state.currentUser?.id) {
@@ -303,6 +314,12 @@ function setupRealtime() {
                             const text = payload.new.content || (payload.new.message_type === 'voice' ? '🎤 Голосовое сообщение' : 'Медиа сообщение');
                             
                             if ((window as any).logic?.playNotificationSound) (window as any).logic.playNotificationSound();
+                            
+                            if (document.hidden && "Notification" in window && Notification.permission === "granted") {
+                                try {
+                                    new Notification(`Новое сообщение от ${senderName}`, { body: text });
+                                } catch(e) { console.error("Notification API failed:", e); }
+                            }
                             
                             if (state.activeChatId !== payload.new.chat_id) {
                                 if ((window as any).logic?.showInAppNotification) {
@@ -560,46 +577,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
 setupMiniApps();
 
-// --- Handle WebPush PWA notification clicks ---
-function openChatFromPush(chatId: string) {
-    import('./chat').then(m => {
-        supabase.from('chats').select('*').eq('id', chatId).single().then(({ data: chatData }) => {
-            if (chatData) {
-                m.openChat(chatId, chatData.title || chatData.username || 'Чат', '?', chatData.is_group || false, chatData.type || 'direct', []);
-            } else {
-                m.openChat(chatId, 'Чат', '?', false, 'direct', []);
-            }
-        });
-    });
-    if (window.innerWidth < 768) {
-        const chatArea = document.getElementById('chat-area');
-        const sidebar = document.getElementById('sidebar');
-        if (chatArea) chatArea.classList.remove('hidden');
-        if (sidebar) sidebar.classList.add('hidden');
-    }
-}
-
-if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.addEventListener('message', (event) => {
-        if (event.data && event.data.type === 'OPEN_CHAT' && event.data.chatId) {
-            console.log('Received OPEN_CHAT from Service Worker:', event.data.chatId);
-            openChatFromPush(event.data.chatId);
-        }
-    });
-}
-const urlChatId = new URLSearchParams(window.location.search).get('chatId');
-if (urlChatId) {
-    // Retry looking for auth
-    const pushInterval = setInterval(() => {
-        if (state.currentUser) {
-            clearInterval(pushInterval);
-            openChatFromPush(urlChatId);
-        }
-    }, 500);
-    setTimeout(() => clearInterval(pushInterval), 5000);
-}
-// ---
-
 import { Capacitor } from '@capacitor/core';
 import { PushNotifications } from '@capacitor/push-notifications';
 
@@ -619,7 +596,25 @@ if (Capacitor.isNativePlatform()) {
         const chatId = action.notification.data?.chatId;
         console.log('Push action performed, chatId:', chatId);
         if (chatId) {
-            openChatFromPush(chatId);
+            import('./chat').then(m => {
+                // Open chat. Note: to get proper chatName etc we might need a db fetch, but openChat requires them.
+                // Alternatively, logic.openChat might be available, or we fetch chat details first.
+                supabase.from('chats').select('*').eq('id', chatId).single().then(({ data: chatData }) => {
+                    if (chatData) {
+                        m.openChat(chatId, chatData.title || chatData.username || 'Чат', '?', chatData.is_group || false, chatData.type || 'direct', []);
+                    } else {
+                         // fallback
+                         m.openChat(chatId, 'Чат', '?', false, 'direct', []);
+                    }
+                });
+            });
+            // If mobile view, hide sidebar
+            if (window.innerWidth < 768) {
+                const chatArea = document.getElementById('chat-area');
+                const sidebar = document.getElementById('sidebar');
+                if (chatArea) chatArea.classList.remove('hidden');
+                if (sidebar) sidebar.classList.add('hidden');
+            }
         }
     });
 }

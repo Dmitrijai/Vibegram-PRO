@@ -255,21 +255,24 @@ export function openSettings(modeOrSkip: 'full' | 'profile' | boolean = 'full', 
                             <option value="nobody" ${settings.privacy === 'nobody' ? 'selected' : ''}>Никто</option>
                         </select>
                     </div>
-                    <div class="flex items-center justify-between p-3 border-b border-gray-200 dark:border-gray-700 border-dashed">
+                    <div class="flex items-center justify-between p-3">
                         <div class="flex items-center gap-3">
-                            <span class="font-medium text-gray-700 dark:text-gray-200">Уведомления в приложении</span>
+                            <span class="font-medium text-gray-700 dark:text-gray-200">Уведомления (внутри)</span>
                         </div>
                         <label class="relative inline-flex items-center cursor-pointer">
                             <input type="checkbox" id="settings-notif" class="sr-only peer" ${settings.notifications ? 'checked' : ''} onchange="saveSettings()">
                             <div class="w-11 h-6 bg-gray-200 dark:bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 dark:after:border-gray-600 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-500"></div>
                         </label>
                     </div>
-                    <div class="flex items-center justify-between p-3">
-                        <div class="flex flex-col max-w-[70%]">
-                            <span class="font-medium text-gray-700 dark:text-gray-200">Системные Push-уведомления</span>
-                            <span class="text-[10px] text-gray-500 mt-0.5 leading-tight">Для работы в фоне (нужен iOS 16.4+ и приложение на экране Домой)</span>
+                    <div class="flex flex-col p-3 border-t border-gray-200 dark:border-gray-700 border-dashed">
+                        <div class="flex flex-col gap-1 mb-2">
+                            <span class="font-medium text-gray-700 dark:text-gray-200">Push-уведомления</span>
+                            <span class="text-xs text-gray-500 leading-tight">Получайте уведомления когда приложение закрыто (iOS 16.4+)</span>
                         </div>
-                        <button onclick="window.requestWebPushPermission && window.requestWebPushPermission()" class="bg-blue-50 text-blue-600 hover:bg-blue-100 dark:bg-blue-900/30 dark:text-blue-400 dark:hover:bg-blue-900/50 text-[11px] font-bold py-1.5 px-3 rounded-lg transition-colors border border-blue-200 dark:border-blue-800 uppercase tracking-wider">Включить</button>
+                        <button onclick="window.enablePushNotifications()" class="flex items-center justify-center gap-2 bg-blue-500 hover:bg-blue-600 text-white p-2.5 rounded-lg font-medium transition-colors text-sm w-full outline-none">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"></path></svg>
+                            Включить Push (В фоне)
+                        </button>
                     </div>
                 </div>
             </details>
