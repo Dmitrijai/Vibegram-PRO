@@ -15,28 +15,33 @@ const messaging = firebase.messaging();
 
 messaging.onBackgroundMessage((payload) => {
     console.log('[firebase-messaging-sw.js] Received background message ', payload);
-    const notificationTitle = payload.notification?.title || payload.data?.title || 'Новое сообщение';
-    const notificationOptions = {
-        body: payload.notification?.body || payload.data?.body,
-        icon: '/image/Gemini_Generated_Image_fpoqbdfpoqbdfpoq (1).png',
-        badge: '/image/Gemini_Generated_Image_fpoqbdfpoqbdfpoq (1).png',
-        data: payload.data
-    };
-    
-    self.registration.showNotification(notificationTitle, notificationOptions);
+    // Не вызываем self.registration.showNotification вручную.
+    // FCM SDK сам автоматически покажет уведомление, так как в payload есть объект notification.
 });
 
 self.addEventListener('notificationclick', (event) => {
     event.notification.close();
+    
+    // Получаем chatId из payload (отправляем из Edge функции)
+    const chatId = event.notification.data?.chat_id;
+    
+    // Формируем URL для открытия чата с учетом подпапки (например /Vibegram-PRO/)
+    let targetUrl = self.location.origin + self.location.pathname.replace('firebase-messaging-sw.js', '');
+    if (chatId && chatId !== "undefined") {
+        targetUrl += '#chat=' + chatId;
+    }
+
     event.waitUntil(
-        clients.matchAll({ type: 'window' }).then((clientList) => {
-            for (const client of clientList) {
-                if (client.url && 'focus' in client) {
+        clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windowClients) => {
+            for (let i = 0; i < windowClients.length; i++) {
+                const client = windowClients[i];
+                if (client.url.includes(self.location.hostname) && 'focus' in client) {
+                    client.navigate(targetUrl); // Обновляем URL
                     return client.focus();
                 }
             }
             if (clients.openWindow) {
-                return clients.openWindow('/');
+                return clients.openWindow(targetUrl);
             }
         })
     );
