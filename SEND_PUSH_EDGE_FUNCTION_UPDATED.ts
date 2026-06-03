@@ -232,8 +232,8 @@ serve(async (req) => {
               Urgency: "high"
             },
             notification: {
-              icon: "/apple-touch-icon.png", 
-              badge: "/apple-touch-icon.png", 
+              icon: `${requestOrigin}/apple-touch-icon.png`, 
+              badge: `${requestOrigin}/apple-touch-icon.png`, 
             }
           },
           data: pushData

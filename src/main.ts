@@ -288,15 +288,6 @@ function setupRealtime() {
                         if (!mutedChats.includes(payload.new.chat_id) && settings.notifications !== false && !isCommentChat) {
                             if ((window as any).logic?.playNotificationSound) (window as any).logic.playNotificationSound();
                         }
-                        
-                        if (document.hidden && "Notification" in window && Notification.permission === "granted" && !isCommentChat) {
-                            try {
-                                const { data: sender } = await supabase.from('profiles').select('display_name, username').eq('id', payload.new.sender_id).single();
-                                const senderName = sender?.display_name || sender?.username || 'Пользователь';
-                                const text = payload.new.content || (payload.new.message_type === 'voice' ? '🎤 Голосовое сообщение' : 'Медиа сообщение');
-                                new Notification(`Новое сообщение от ${senderName}`, { body: text });
-                            } catch(e) { console.error("Notification API failed:", e); }
-                        }
                     }
                 } else {
                     if (payload.new.sender_id !== state.currentUser?.id) {
@@ -312,12 +303,6 @@ function setupRealtime() {
                             const text = payload.new.content || (payload.new.message_type === 'voice' ? '🎤 Голосовое сообщение' : 'Медиа сообщение');
                             
                             if ((window as any).logic?.playNotificationSound) (window as any).logic.playNotificationSound();
-                            
-                            if (document.hidden && "Notification" in window && Notification.permission === "granted") {
-                                try {
-                                    new Notification(`Новое сообщение от ${senderName}`, { body: text });
-                                } catch(e) { console.error("Notification API failed:", e); }
-                            }
                             
                             if (state.activeChatId !== payload.new.chat_id) {
                                 if ((window as any).logic?.showInAppNotification) {
