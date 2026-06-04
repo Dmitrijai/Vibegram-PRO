@@ -91,19 +91,16 @@ async function updateTokenInSupabase(token: string) {
     } catch (e) { } // it's fine if the table doesn't exist
 }
 
-// Слушаем сообщения из нашего Service Worker (когда приложение в фокусе)
-if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.addEventListener('message', (event) => {
-        if (event.data && event.data.type === 'FCM_MSG') {
-            const payload = event.data.payload;
-            const title = payload.notification?.title || payload.data?.title || 'Новое сообщение';
-            const body = payload.notification?.body || payload.data?.body || '';
-            const chatId = payload.data?.chat_id;
-            
-            // Показываем внутренний Toast только если мы не находимся прямо сейчас в этом самом чате
-            if (!window.location.hash.includes(`chat=${chatId}`)) {
-                customToast(`💬 ${title}: ${body}`);
-            }
+// Слушаем сообщения от Firebase, когда приложение АКТИВНО (лежит на переднем плане)
+if (messaging) {
+    onMessage(messaging, (payload) => {
+        console.log('Message received in foreground: ', payload);
+        const title = payload.notification?.title || payload.data?.title || 'Новое сообщение';
+        const body = payload.notification?.body || payload.data?.body || '';
+        const chatId = payload.data?.chat_id;
+        
+        if (!window.location.hash.includes(`chat=${chatId}`)) {
+            customToast(`💬 ${title}: ${body}`);
         }
     });
 }

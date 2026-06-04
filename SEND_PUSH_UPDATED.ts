@@ -238,6 +238,9 @@ serve(async (req) => {
               icon: "pwa-icon.png",
               badge: "pwa-icon.png",
               requireInteraction: true
+            },
+            fcm_options: {
+              link: chatId ? `/#chat=${chatId}` : "/"
             }
           },
           // ДОБАВЛЕНО: Нативный APNs на всякий случай, если токен от iOS Capacitor
