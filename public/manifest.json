@@ -1,13 +1,13 @@
 {
   "name": "Vibegram",
   "short_name": "Vibegram",
-  "start_url": ".",
+  "start_url": "/",
   "display": "standalone",
   "background_color": "#ffffff",
   "theme_color": "#ffffff",
   "icons": [
     {
-      "src": "pwa-icon.png",
+      "src": "/image/Gemini_Generated_Image_fpoqbdfpoqbdfpoq (1).png",
       "sizes": "192x192 512x512",
       "type": "image/png",
       "purpose": "any maskable"

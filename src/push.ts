@@ -42,8 +42,9 @@ export async function requestPushPermissionAndToken() {
             // Register or wait for service worker to map it to correct root (needed for iOS / Safari if not auto-injected)
             let swRegistration = null;
             if ('serviceWorker' in navigator) {
-                const swUrl = import.meta.env.BASE_URL + 'firebase-messaging-sw.js';
-                swRegistration = await navigator.serviceWorker.register(swUrl);
+                swRegistration = await navigator.serviceWorker.register('/firebase-messaging-sw.js', {
+                    scope: '/'
+                });
             }
 
             const currentToken = await getToken(messaging, { 
@@ -95,12 +96,6 @@ async function updateTokenInSupabase(token: string) {
 if (messaging) {
     onMessage(messaging, (payload) => {
         console.log('Message received in foreground: ', payload);
-        const title = payload.notification?.title || 'Новое сообщение';
-        const body = payload.notification?.body || '';
-        const chatId = payload.data?.chat_id;
-        
-        if (!window.location.hash.includes(`chat=${chatId}`)) {
-            customToast(`💬 ${title}: ${body}`);
-        }
+        // Could show a toast here if chat is not open!
     });
 }

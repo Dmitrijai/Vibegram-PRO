@@ -198,7 +198,6 @@ serve(async (req) => {
         pushData[key] = String(value);
       }
     }
-    if (chatId) pushData['chat_id'] = String(chatId);
 
     // Поддержка как одного токена (ЛС) так и массива (Группы)
     const targetTokens = reqData.tokens || (reqData.token ? [reqData.token] : []);
@@ -235,9 +234,12 @@ serve(async (req) => {
               Urgency: "high"
             },
             notification: {
-              icon: "pwa-icon.png",
-              badge: "pwa-icon.png",
+              icon: "/image/Gemini_Generated_Image_fpoqbdfpoqbdfpoq (1).png",
+              badge: "/image/Gemini_Generated_Image_fpoqbdfpoqbdfpoq (1).png",
               requireInteraction: true
+            },
+            fcm_options: {
+              link: "/" // Откроет приложение при клике
             }
           },
           // ДОБАВЛЕНО: Нативный APNs на всякий случай, если токен от iOS Capacitor
