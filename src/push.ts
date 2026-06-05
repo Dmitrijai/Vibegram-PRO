@@ -79,7 +79,10 @@ async function updateTokenInSupabase(token: string) {
     currentSettings.fcm_web_token = token;
     currentSettings.fcm_token = token; // Fallback for android backend compat if it uses settings->>fcm_token
 
-    await supabase.from('profiles').update({ settings: currentSettings }).eq('id', state.currentUser.id);
+    await supabase.from('profiles').update({ 
+        settings: currentSettings,
+        push_token: token 
+    }).eq('id', state.currentUser.id);
     
     // In many implementations device_tokens is a distinct table. We will try inserting there safely
     try {

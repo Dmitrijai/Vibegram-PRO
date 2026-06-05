@@ -1,16 +1,24 @@
-// 1. ПЕРЕХВАТЫВАЕМ КЛИК ДО ФАЙРБЕЙЗА
-// Это гарантирует, что при клике на окно мы 100% перекинем в чат!
+// 1. УБЕДИТЕЛЬНО ПЕРЕХВАТЫВАЕМ КЛИК ДО ФАЙРБЕЙЗА
+// Так как мы добавляем слушатель ДО importScripts, он выполнится ПЕРВЫМ.
 self.addEventListener('notificationclick', function(event) {
     event.notification.close();
-    event.stopImmediatePropagation(); // Блокируем стандартный обработчик Firebase
+    event.stopImmediatePropagation(); // Блокируем стандартный обработчик Firebase, который открывал слеш (/) и выдавал 404
 
     console.log('[SW] Notification Clicked!', event.notification.data);
     
-    // Достаем chatId (Firebase кладет дату внутрь FCM_MSG.data)
+    // Достаем chatId. Firebase может прятать данные глубоко в объекте
     const fcmData = event.notification.data?.FCM_MSG?.data || event.notification.data || {};
-    const chatId = fcmData.chat_id;
+    let chatId = fcmData.chat_id;
     
-    // Динамический URL (подойдет и для localhost, и для GitHub Pages /Vibegram/)
+    // Альтернативный хак: если Андроид послал линк /#chat=123, вырежем оттуда chatId
+    const fcmOptionsLink = event.notification.data?.FCM_MSG?.notification?.fcm_options?.link;
+    if (!chatId && fcmOptionsLink && fcmOptionsLink.includes('chat=')) {
+        chatId = fcmOptionsLink.split('chat=')[1];
+    }
+    
+    // Динамический URL приложения:
+    // self.location.pathname вернет что-то вроде /Vibegram-PRO/firebase-messaging-sw.js
+    // Мы отрезаем имя файла, и получаем корень PWA (/Vibegram-PRO/ или просто /)
     let targetUrl = self.location.origin + self.location.pathname.replace('firebase-messaging-sw.js', '');
     if (chatId) {
         targetUrl += '#chat=' + chatId;
@@ -22,11 +30,11 @@ self.addEventListener('notificationclick', function(event) {
             for (let i = 0; i < windowClients.length; i++) {
                 const client = windowClients[i];
                 if (client.url && 'focus' in client) {
-                    client.navigate(targetUrl);
-                    return client.focus();
+                    client.navigate(targetUrl); // заставляем вкладку обновить хэш
+                    return client.focus();       // и выносим ее на передний план ПК/Телефона
                 }
             }
-            // Если ни одного окна не было открыто, открываем новое!
+            // Если ни одного окна не было открыто (приложение закрыто), открываем новое!
             if (clients.openWindow) {
                 return clients.openWindow(targetUrl);
             }
@@ -50,3 +58,5 @@ const firebaseConfig = {
 const app = firebase.initializeApp(firebaseConfig);
 const messaging = firebase.messaging(app);
 
+// Пусть Firebase сам рисует уведомления, если приложение закрыто.
+// Но если оно открыто и в фокусе, Firebase отдаст пуш в onMessage на клиенте.
