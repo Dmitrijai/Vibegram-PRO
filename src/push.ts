@@ -79,10 +79,7 @@ async function updateTokenInSupabase(token: string) {
     currentSettings.fcm_web_token = token;
     currentSettings.fcm_token = token; // Fallback for android backend compat if it uses settings->>fcm_token
 
-    await supabase.from('profiles').update({ 
-        settings: currentSettings,
-        push_token: token 
-    }).eq('id', state.currentUser.id);
+    await supabase.from('profiles').update({ settings: currentSettings }).eq('id', state.currentUser.id);
     
     // In many implementations device_tokens is a distinct table. We will try inserting there safely
     try {
@@ -94,12 +91,12 @@ async function updateTokenInSupabase(token: string) {
     } catch (e) { } // it's fine if the table doesn't exist
 }
 
-// Слушаем сообщения от Firebase, когда приложение АКТИВНО (лежит на переднем плане)
+// Optional: handle incoming foreground messages explicitly if desired
 if (messaging) {
     onMessage(messaging, (payload) => {
         console.log('Message received in foreground: ', payload);
-        const title = payload.notification?.title || payload.data?.title || 'Новое сообщение';
-        const body = payload.notification?.body || payload.data?.body || '';
+        const title = payload.notification?.title || 'Новое сообщение';
+        const body = payload.notification?.body || '';
         const chatId = payload.data?.chat_id;
         
         if (!window.location.hash.includes(`chat=${chatId}`)) {

@@ -238,14 +238,7 @@ serve(async (req) => {
               icon: "pwa-icon.png",
               badge: "pwa-icon.png",
               requireInteraction: true
-            },
-            // ВАЖНО: Если у вас PWA лежит в подпапке на GitHub (например /Vibegram-PRO/),
-            // fcm_options: { link:... } может баговать и открывать 404 (корень /).
-            // Лучше УДАЛИТЬ fcm_options вообще, так как Web клики всё равно обрабатываются 
-            // кастомным firebase-messaging-sw.js (написанным выше), который сам вычисляет правильный URL.
-            // fcm_options: {
-            //  link: chatId ? `/#chat=${chatId}` : "/"
-            // }
+            }
           },
           // ДОБАВЛЕНО: Нативный APNs на всякий случай, если токен от iOS Capacitor
           apns: {
