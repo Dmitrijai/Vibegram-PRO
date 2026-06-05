@@ -198,6 +198,7 @@ serve(async (req) => {
         pushData[key] = String(value);
       }
     }
+    if (chatId) pushData['chat_id'] = String(chatId);
 
     // Поддержка как одного токена (ЛС) так и массива (Группы)
     const targetTokens = reqData.tokens || (reqData.token ? [reqData.token] : []);
@@ -234,13 +235,17 @@ serve(async (req) => {
               Urgency: "high"
             },
             notification: {
-              icon: "/image/Gemini_Generated_Image_fpoqbdfpoqbdfpoq (1).png",
-              badge: "/image/Gemini_Generated_Image_fpoqbdfpoqbdfpoq (1).png",
+              icon: "pwa-icon.png",
+              badge: "pwa-icon.png",
               requireInteraction: true
             },
-            fcm_options: {
-              link: "/" // Откроет приложение при клике
-            }
+            // ВАЖНО: Если у вас PWA лежит в подпапке на GitHub (например /Vibegram-PRO/),
+            // fcm_options: { link:... } может баговать и открывать 404 (корень /).
+            // Лучше УДАЛИТЬ fcm_options вообще, так как Web клики всё равно обрабатываются 
+            // кастомным firebase-messaging-sw.js (написанным выше), который сам вычисляет правильный URL.
+            // fcm_options: {
+            //  link: chatId ? `/#chat=${chatId}` : "/"
+            // }
           },
           // ДОБАВЛЕНО: Нативный APNs на всякий случай, если токен от iOS Capacitor
           apns: {

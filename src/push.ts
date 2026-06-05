@@ -42,9 +42,8 @@ export async function requestPushPermissionAndToken() {
             // Register or wait for service worker to map it to correct root (needed for iOS / Safari if not auto-injected)
             let swRegistration = null;
             if ('serviceWorker' in navigator) {
-                swRegistration = await navigator.serviceWorker.register('/firebase-messaging-sw.js', {
-                    scope: '/'
-                });
+                const swUrl = import.meta.env.BASE_URL + 'firebase-messaging-sw.js';
+                swRegistration = await navigator.serviceWorker.register(swUrl);
             }
 
             const currentToken = await getToken(messaging, { 
@@ -80,7 +79,10 @@ async function updateTokenInSupabase(token: string) {
     currentSettings.fcm_web_token = token;
     currentSettings.fcm_token = token; // Fallback for android backend compat if it uses settings->>fcm_token
 
-    await supabase.from('profiles').update({ settings: currentSettings }).eq('id', state.currentUser.id);
+    await supabase.from('profiles').update({ 
+        settings: currentSettings,
+        push_token: token 
+    }).eq('id', state.currentUser.id);
     
     // In many implementations device_tokens is a distinct table. We will try inserting there safely
     try {
@@ -92,10 +94,16 @@ async function updateTokenInSupabase(token: string) {
     } catch (e) { } // it's fine if the table doesn't exist
 }
 
-// Optional: handle incoming foreground messages explicitly if desired
+// Слушаем сообщения от Firebase, когда приложение АКТИВНО (лежит на переднем плане)
 if (messaging) {
     onMessage(messaging, (payload) => {
         console.log('Message received in foreground: ', payload);
-        // Could show a toast here if chat is not open!
+        const title = payload.notification?.title || payload.data?.title || 'Новое сообщение';
+        const body = payload.notification?.body || payload.data?.body || '';
+        const chatId = payload.data?.chat_id;
+        
+        if (!window.location.hash.includes(`chat=${chatId}`)) {
+            customToast(`💬 ${title}: ${body}`);
+        }
     });
 }
