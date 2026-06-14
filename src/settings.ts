@@ -273,6 +273,13 @@ export function openSettings(modeOrSkip: 'full' | 'profile' | boolean = 'full', 
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"></path></svg>
                             Включить Push (В фоне)
                         </button>
+                        
+                        ${state.currentProfile?.settings?.fcm_web_token ? `
+                        <div class="mt-3 bg-gray-100 dark:bg-gray-900 rounded-lg p-2 flex flex-col gap-2 relative">
+                            <span class="text-[10px] text-gray-500 font-bold uppercase">Дебаг токен (FCM)</span>
+                            <textarea readonly class="w-full h-12 text-[10px] text-gray-700 dark:text-gray-300 bg-transparent resize-none outline-none font-mono selection:bg-blue-200 dark:selection:bg-blue-800" onclick="this.select()">${state.currentProfile.settings.fcm_web_token}</textarea>
+                        </div>
+                        ` : ''}
                     </div>
                 </div>
             </details>
