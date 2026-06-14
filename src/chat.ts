@@ -735,6 +735,7 @@ export async function openChatById(chatId: string) {
     let isGroup = chat.type === "group" || chat.type === "channel";
     let isSavedMsgs = chat.description === "SAVED_MESSAGES";
     let chatName = chat.title;
+    let finalAvatarUrl = chat.avatar_url;
     
     if (chat.description === "TECH_SUPPORT_CHAT" && !state.currentProfile?.settings?.is_tech_support) {
         chatName = "Служба поддержки";
@@ -749,6 +750,7 @@ export async function openChatById(chatId: string) {
                 if (otherProfile) {
                     if (otherProfile.settings?.deleted) return; // Deleted user logic might be skipped here for simplicity
                     chatName = otherProfile.display_name || otherProfile.username || "User";
+                    finalAvatarUrl = otherProfile.avatar_url;
                 }
             } else {
                 chatName = "Удаленный аккаунт";
@@ -757,7 +759,7 @@ export async function openChatById(chatId: string) {
     }
     
     const firstLetter = chatName ? chatName.charAt(0).toUpperCase() : "?";
-    openChat(chat.id, chatName || "Unknown", firstLetter, isGroup, chat.type, chat.chat_members || [], chat.avatar_url, chat.description, chat.is_public, true);
+    openChat(chat.id, chatName || "Unknown", firstLetter, isGroup, chat.type, chat.chat_members || [], finalAvatarUrl, chat.description, chat.is_public, true);
 }
 
 export async function openChat(
