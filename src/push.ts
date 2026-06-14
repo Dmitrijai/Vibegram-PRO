@@ -41,15 +41,24 @@ export async function requestPushPermissionAndToken() {
             
             // Register or wait for service worker to map it to correct root (needed for iOS / Safari if not auto-injected)
             let swRegistration = null;
-            if ('serviceWorker' in navigator) {
-                const swUrl = import.meta.env.BASE_URL + 'firebase-messaging-sw.js';
-                swRegistration = await navigator.serviceWorker.register(swUrl);
+            try {
+                if ('serviceWorker' in navigator) {
+                    const swUrl = import.meta.env.BASE_URL + 'firebase-messaging-sw.js';
+                    swRegistration = await navigator.serviceWorker.register(swUrl);
+                    console.log('SW registration successful for FCM');
+                }
+            } catch (e) {
+                console.error("SW registration failed", e);
             }
 
-            const currentToken = await getToken(messaging, { 
-                vapidKey: 'BCrzH4o4TFv0krG7AC9LDxLknf0tSNS6EK6fuejHPJd84I-n77Buma3nu0gD3DaGvhfSoCZBdNpkrhvAQ5eKhnE',
-                serviceWorkerRegistration: swRegistration
-            });
+            const tokenOptions: any = {
+                vapidKey: 'BCrzH4o4TFv0krG7AC9LDxLknf0tSNS6EK6fuejHPJd84I-n77Buma3nu0gD3DaGvhfSoCZBdNpkrhvAQ5eKhnE'
+            };
+            if (swRegistration) {
+                tokenOptions.serviceWorkerRegistration = swRegistration;
+            }
+
+            const currentToken = await getToken(messaging, tokenOptions);
 
             if (currentToken) {
                 console.log('FCM Web Token:', currentToken);
