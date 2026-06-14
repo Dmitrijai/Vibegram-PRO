@@ -33,6 +33,13 @@ window.addEventListener('popstate', (e) => {
             logic.openChatById(chatId);
             // Replace history state to #chat so it maps correctly
             window.history.replaceState({ screen: 'chat', chatId }, '', '#chat');
+            
+            if (window.innerWidth < 768) {
+                 const chatArea = document.getElementById('chat-area');
+                 const sidebar = document.getElementById('sidebar');
+                 if (chatArea) chatArea.classList.remove('hidden');
+                 if (sidebar) sidebar.classList.add('hidden');
+            }
         }
     } else if (hash === '#settings') {
         logic.openSettings('full', true);
