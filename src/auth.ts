@@ -372,6 +372,11 @@ function finalizeAppSetup() {
                     });
                 } catch(e) {}
             }
+            
+            // Trigger popstate so #chat=... is processed if app opened via URL/Push
+            setTimeout(() => {
+                window.dispatchEvent(new Event('popstate'));
+            }, 500);
 }
 
 let vibHeartbeatTimer: any = null;

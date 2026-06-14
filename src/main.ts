@@ -27,6 +27,13 @@ window.addEventListener('popstate', (e) => {
              if (chatArea) chatArea.classList.remove('hidden');
              if (sidebar) sidebar.classList.add('hidden');
         }
+    } else if (hash.startsWith('#chat=')) {
+        const chatId = hash.split('=')[1];
+        if (chatId) {
+            logic.openChatById(chatId);
+            // Replace history state to #chat so it maps correctly
+            window.history.replaceState({ screen: 'chat', chatId }, '', '#chat');
+        }
     } else if (hash === '#settings') {
         logic.openSettings('full', true);
     } else if (hash === '#info') {

@@ -724,6 +724,42 @@ export function updateChatInputUI() {
 }
 (window as any).updateChatInputUI = updateChatInputUI;
 
+export async function openChatById(chatId: string) {
+    const { data: chat, error } = await supabase.from('chats').select(`
+        id, type, title, avatar_url, description, is_public,
+        chat_members(user_id, role, profiles(id, username, display_name, is_online, avatar_url, settings, is_premium, premium_until))
+    `).eq('id', chatId).single();
+    
+    if (!chat || error) return;
+    
+    let isGroup = chat.type === "group" || chat.type === "channel";
+    let isSavedMsgs = chat.description === "SAVED_MESSAGES";
+    let chatName = chat.title;
+    
+    if (chat.description === "TECH_SUPPORT_CHAT" && !state.currentProfile?.settings?.is_tech_support) {
+        chatName = "Служба поддержки";
+        isGroup = false;
+    } else if (!isGroup) {
+        if (isSavedMsgs) {
+            chatName = "Избранное";
+        } else {
+            const others = chat.chat_members?.filter((m: any) => m.user_id !== state.currentUser.id);
+            if (others && others.length > 0) {
+                const otherProfile = others[0].profiles;
+                if (otherProfile) {
+                    if (otherProfile.settings?.deleted) return; // Deleted user logic might be skipped here for simplicity
+                    chatName = otherProfile.display_name || otherProfile.username || "User";
+                }
+            } else {
+                chatName = "Удаленный аккаунт";
+            }
+        }
+    }
+    
+    const firstLetter = chatName ? chatName.charAt(0).toUpperCase() : "?";
+    openChat(chat.id, chatName || "Unknown", firstLetter, isGroup, chat.type, chat.chat_members || [], chat.avatar_url, chat.description, chat.is_public, true);
+}
+
 export async function openChat(
   chatId: string,
   chatName: string,
