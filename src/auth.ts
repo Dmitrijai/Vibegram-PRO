@@ -325,6 +325,20 @@ function finalizeAppSetup() {
                 document.documentElement.classList.remove('dark');
             }
             
+            const showHeaderShorts = state.currentProfile?.settings?.show_header_shorts;
+            const showHeaderMiniApps = state.currentProfile?.settings?.show_header_miniapps;
+            
+            const shortsBtn = document.getElementById('header-shortcut-shorts');
+            const miniAppsBtn = document.getElementById('header-shortcut-miniapps');
+            if (shortsBtn) {
+                if (showHeaderShorts) shortsBtn.classList.remove('hidden');
+                else shortsBtn.classList.add('hidden');
+            }
+            if (miniAppsBtn) {
+                if (showHeaderMiniApps) miniAppsBtn.classList.remove('hidden');
+                else miniAppsBtn.classList.add('hidden');
+            }
+            
             const textSize = state.currentProfile?.settings?.textSize || 15;
             document.documentElement.style.setProperty('--msg-text-size', `${textSize}px`);
             

@@ -224,6 +224,38 @@ export function openSettings(modeOrSkip: 'full' | 'profile' | boolean = 'full', 
             <details class="group bg-gray-50 dark:bg-gray-800 rounded-xl overflow-hidden border border-gray-100 dark:border-gray-700 open:shadow-sm transition-all ${mode === 'profile' ? 'hidden' : ''}">
                 <summary class="flex justify-between items-center p-4 cursor-pointer select-none font-medium text-gray-800 dark:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-700/50 transition-colors">
                     <div class="flex items-center gap-3">
+                        <div class="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900/50 flex items-center justify-center text-blue-500"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"></path></svg></div>
+                        Интерфейс 
+                    </div>
+                    <svg class="w-5 h-5 text-gray-400 group-open:rotate-180 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+                </summary>
+                <div class="border-t border-gray-100 dark:border-gray-700 bg-white dark:bg-gray-800/80 p-2 space-y-1">
+                    <div class="flex items-center justify-between p-3 border-b border-gray-200 dark:border-gray-700 border-dashed">
+                        <div class="flex flex-col">
+                            <span class="font-medium text-gray-700 dark:text-gray-200">Ярлык Shorts в шапке</span>
+                            <span class="text-xs text-gray-500">Показывать кнопку Shorts слева от настроек</span>
+                        </div>
+                        <label class="relative inline-flex items-center cursor-pointer">
+                            <input type="checkbox" id="settings-show-header-shorts" class="sr-only peer" ${settings.show_header_shorts ? 'checked' : ''} onchange="saveSettings()">
+                            <div class="w-11 h-6 bg-gray-200 dark:bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 dark:after:border-gray-600 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-purple-500"></div>
+                        </label>
+                    </div>
+                    <div class="flex items-center justify-between p-3 border-b border-gray-200 dark:border-gray-700 border-dashed">
+                        <div class="flex flex-col">
+                            <span class="font-medium text-gray-700 dark:text-gray-200">Ярлык Мини-приложения в шапке</span>
+                            <span class="text-xs text-gray-500">Показывать кнопку Мини-приложения слева от настроек</span>
+                        </div>
+                        <label class="relative inline-flex items-center cursor-pointer">
+                            <input type="checkbox" id="settings-show-header-miniapps" class="sr-only peer" ${settings.show_header_miniapps ? 'checked' : ''} onchange="saveSettings()">
+                            <div class="w-11 h-6 bg-gray-200 dark:bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 dark:after:border-gray-600 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-purple-500"></div>
+                        </label>
+                    </div>
+                </div>
+            </details>
+
+            <details class="group bg-gray-50 dark:bg-gray-800 rounded-xl overflow-hidden border border-gray-100 dark:border-gray-700 open:shadow-sm transition-all ${mode === 'profile' ? 'hidden' : ''}">
+                <summary class="flex justify-between items-center p-4 cursor-pointer select-none font-medium text-gray-800 dark:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-700/50 transition-colors">
+                    <div class="flex items-center gap-3">
                         <div class="w-8 h-8 rounded-full bg-emerald-100 dark:bg-emerald-900/50 flex items-center justify-center text-emerald-500"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg></div>
                         Конфиденциальность 
                     </div>
@@ -433,6 +465,8 @@ export async function saveSettings() {
     const textSize = parseInt((document.getElementById('settings-text-size') as HTMLInputElement).value) || 15;
     const privacy = (document.getElementById('settings-privacy') as HTMLSelectElement).value;
     const chatBg = (document.getElementById('settings-chat-bg') as HTMLInputElement).value;
+    const show_header_shorts = (document.getElementById('settings-show-header-shorts') as HTMLInputElement).checked;
+    const show_header_miniapps = (document.getElementById('settings-show-header-miniapps') as HTMLInputElement).checked;
     
     // Parse paid message price if it exists
     const paidPriceInput = document.getElementById('settings-paid-message-price') as HTMLInputElement;
@@ -441,7 +475,7 @@ export async function saveSettings() {
     if(!newName || newName.length < 3 || newName.length > 35) return alert('Имя должно быть от 3 до 35 символов');
     
     const oldSettings = state.currentProfile?.settings || {};
-    const newSettings = { ...oldSettings, notifications: notif, privacy, theme, textSize, chatBg };
+    const newSettings = { ...oldSettings, notifications: notif, privacy, theme, textSize, chatBg, show_header_shorts, show_header_miniapps };
     
     try {
         localStorage.setItem('chatBg', chatBg);
@@ -463,6 +497,18 @@ export async function saveSettings() {
     const isPremium = state.currentProfile?.is_premium && (!state.currentProfile.premium_until || new Date(state.currentProfile.premium_until) > new Date());
     const badge = isPremium ? `<span class="inline-flex items-center justify-center ml-1 shrink-0" title="Vibegram Premium"><img src="./image/Google-Gemini-Logo-Transparent.png" class="w-3.5 h-3.5 object-contain" alt="Premium"></span>` : '';
     document.getElementById('my-nickname')!.innerHTML = `<span class="flex items-center">${newName}${badge}</span>`;
+    
+    // Check shortcuts
+    const shortsBtn = document.getElementById('header-shortcut-shorts');
+    const miniAppsBtn = document.getElementById('header-shortcut-miniapps');
+    if (shortsBtn) {
+        if (show_header_shorts) shortsBtn.classList.remove('hidden');
+        else shortsBtn.classList.add('hidden');
+    }
+    if (miniAppsBtn) {
+        if (show_header_miniapps) miniAppsBtn.classList.remove('hidden');
+        else miniAppsBtn.classList.add('hidden');
+    }
     
     if (theme === 'dark') {
         document.documentElement.classList.add('dark');
