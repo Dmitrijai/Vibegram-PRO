@@ -868,6 +868,22 @@ function appendShortsFromQueue(count: number) {
                         <span class="text-xs font-bold" id="short-comments-count-${short.id}">${short.comments_count || 0}</span>
                     </button>
 
+                    <button class="flex flex-col items-center gap-1 text-white drop-shadow-md transition-transform hover:scale-110 group" onclick="if(window.shareAppContent) window.shareAppContent('#shorts?id=${short.id}', '${(short.title || "Шортс").replace(/'/g, "\\'")}', 'ШОРТС', '')">
+                        <div class="p-2 rounded-full bg-black/20 group-hover:bg-black/40 backdrop-blur-sm transition-colors">
+                            <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"></path></svg>
+                        </div>
+                        <span class="text-xs font-bold">Поделиться</span>
+                    </button>
+
+                    ${short.profiles?.username && short.author_id !== state.currentUser?.id ? `
+                    <button class="flex flex-col items-center gap-1 text-yellow-400 drop-shadow-md transition-transform hover:scale-110 group" onclick="if(window.sendVibToUserModal) window.sendVibToUserModal('${short.profiles.username}')">
+                        <div class="p-2 rounded-full bg-black/20 group-hover:bg-black/40 backdrop-blur-sm transition-colors">
+                            <svg class="w-8 h-8" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M11.3 1.046A1 1 0 0112 2v5h4a1 1 0 01.82 1.573l-7 10A1 1 0 018 18v-5H4a1 1 0 01-.82-1.573l7-10a1 1 0 011.12-.381z" clip-rule="evenodd"></path></svg>
+                        </div>
+                        <span class="text-[10px] font-bold text-white uppercase">VIB</span>
+                    </button>
+                    ` : ''}
+
                     <div class="flex flex-col items-center gap-1 text-white drop-shadow-md group">
                         <div class="p-2 rounded-full bg-black/20 backdrop-blur-sm transition-colors">
                             <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path></svg>
@@ -1691,13 +1707,22 @@ window.addEventListener("popstate", (e) => {
   }
 
   // Main Shorts
-  if (hash === "#shorts") {
+  if (hash === "#shorts" || hash.startsWith("#shorts?id=")) {
     const screen = document.getElementById("shorts-screen");
+    let targetShortId = state?.shortId;
+    if (hash.startsWith("#shorts?id=")) {
+        targetShortId = hash.split("?id=")[1];
+    }
+    
     if (screen && screen.classList.contains("hidden")) {
       screen.classList.remove("hidden");
       if (activeVideo) activeVideo.play().catch((ex) => console.log(ex));
-    } else if (!screen) {
-      openShorts(state?.shortId, state?.authorId); // load it
+      if (targetShortId && targetShortId !== activeVideo?.parentElement?.getAttribute('data-id')) {
+          // Force reload to specific short
+          openShorts(targetShortId);
+      }
+    } else if (!screen || (targetShortId && targetShortId !== activeVideo?.parentElement?.getAttribute('data-id'))) {
+      openShorts(targetShortId, state?.authorId); // load it
     }
   } else {
     const screen = document.getElementById("shorts-screen");

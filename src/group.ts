@@ -574,16 +574,18 @@ export async function openChatInfo(skipPushState = false) {
   }
 
   let usernameHtml = "";
+  let isVerified = false;
   if (state.activeChatIsGroup) {
     const { data: chatData } = await supabase
       .from("chats")
-      .select("username")
+      .select("username, is_verified")
       .eq("id", state.activeChatId)
       .single();
     if (state.activeChatId !== currentChatId) return;
     if (chatData?.username) {
       usernameHtml = `<div class="text-sm text-blue-500 text-center select-all mt-1 cursor-pointer hover:text-blue-600 dark:hover:text-blue-400 transition-colors" onclick="navigator.clipboard.writeText('@${chatData.username}'); const old=this.innerHTML; this.innerHTML='✅ Скопировано'; setTimeout(()=>this.innerHTML=old, 2000);" title="Копировать ID">@${chatData.username}</div>`;
     }
+    isVerified = chatData?.is_verified || false;
   } else if (!isSavedMessages) {
     const { data: userData } = await supabase
       .from("profiles")
@@ -1103,6 +1105,10 @@ export async function openChatInfo(skipPushState = false) {
         </div>
     `;
 
+  const verifiedHtml = isVerified
+    ? `<span class="inline-flex items-center justify-center ml-1 align-baseline translate-y-0.5" title="Official"><svg class="w-6 h-6 text-blue-500" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"></path></svg></span>`
+    : "";
+
   modal.innerHTML = `
         <div class="flex justify-between items-center p-6 pb-4 shrink-0 border-b border-gray-100 dark:border-gray-800">
             <h3 class="text-xl font-bold text-gray-800 dark:text-gray-100">Информация</h3>
@@ -1112,7 +1118,7 @@ export async function openChatInfo(skipPushState = false) {
             <div class="w-28 h-28 rounded-full flex items-center justify-center text-white text-5xl font-bold mb-4 shadow-md shrink-0 bg-gradient-to-br relative ${state.activeChatIsGroup ? "from-emerald-400 to-teal-500" : "from-blue-400 to-indigo-500"}">
                 ${avatarHtml}
             </div>
-            <div class="font-bold text-2xl text-gray-800 dark:text-gray-100 text-center shrink-0 truncate w-full max-w-full px-4">${name}</div>
+            <div class="font-bold text-2xl text-gray-800 dark:text-gray-100 text-center shrink-0 truncate w-full max-w-full px-4 flex justify-center items-center gap-1">${name}${verifiedHtml}</div>
             ${usernameHtml}
             ${!state.activeChatIsGroup ? `<div class="text-sm text-gray-500 dark:text-gray-400 mt-1 shrink-0">${state.activeChatOtherUser?.is_online ? "в сети" : "был(а) недавно"}</div>` : ""}
             ${mediaContentHtml}

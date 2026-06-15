@@ -40,7 +40,7 @@ export async function loadChats() {
     const { data: chats, error: chatsError } = await supabase
       .from("chats")
       .select(
-        `id, created_at, type, title, avatar_url, description, is_public, chat_members(user_id, role, profiles(id, username, display_name, last_seen, is_online, avatar_url, bio, settings, is_premium, premium_until)), messages(content, message_type, created_at, is_read, sender_id)`,
+        `id, created_at, type, title, avatar_url, description, is_public, is_verified, chat_members(user_id, role, profiles(id, username, display_name, last_seen, is_online, avatar_url, bio, settings, is_premium, premium_until)), messages(content, message_type, created_at, is_read, sender_id)`,
       )
       .in("id", chatIds);
     if (chatsError) throw chatsError;
@@ -307,6 +307,8 @@ export async function loadChats() {
           avatarUrl,
           chat.description,
           chat.is_public,
+          false,
+          chat.is_verified,
         );
       };
 
@@ -348,6 +350,10 @@ export async function loadChats() {
       const premiumBadgeListHtml = isPremiumUser
         ? `<span class="inline-flex items-center justify-center ml-1 shrink-0" title="Vibegram Premium"><img src="./image/Google-Gemini-Logo-Transparent.png" class="w-3.5 h-3.5 object-contain" alt="Premium"></span>`
         : "";
+        
+      const verifiedBadgeListHtml = chat.is_verified
+        ? `<span class="inline-flex items-center justify-center ml-1 shrink-0" title="Official"><svg class="w-3.5 h-3.5 text-blue-500" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"></path></svg></span>`
+        : "";
 
       div.innerHTML = `
                 <div class="relative shrink-0 w-12 h-12 pointer-events-none">
@@ -361,6 +367,7 @@ export async function loadChats() {
                         <div class="flex items-center gap-1 min-w-0 flex-1">
                             <div class="font-bold text-gray-900 dark:text-gray-100 text-[15px] flex items-center min-w-0 flex-1 max-w-full">
                                 <div class="truncate shrink">${chatName || "Неизвестно"}</div>
+                                ${verifiedBadgeListHtml}
                                 ${premiumBadgeListHtml}
                             </div>
                             ${muteBadge}
@@ -773,6 +780,7 @@ export async function openChat(
   description?: string,
   isPublic?: boolean,
   skipPushState: boolean = false,
+  isVerified: boolean = false,
 ) {
   if (!skipPushState && window.location.hash !== "#chat") {
     window.history.pushState({ screen: "chat", chatId }, "", "#chat");
@@ -919,8 +927,11 @@ export async function openChat(
   const premiumBadgeListHtml = isPremiumUser
     ? `<span class="inline-flex items-center justify-center ml-1 shrink-0" title="Vibegram Premium"><img src="./image/Google-Gemini-Logo-Transparent.png" class="w-4 h-4 object-contain" alt="Premium"></span>`
     : "";
+  const verifiedBadgeListHtml = isVerified
+    ? `<span class="inline-flex items-center justify-center ml-1 shrink-0" title="Official"><svg class="w-4 h-4 text-blue-500" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"></path></svg></span>`
+    : "";
   document.getElementById("current-chat-name")!.innerHTML =
-    `<span class="truncate shrink">${chatName}</span>${premiumBadgeListHtml}`;
+    `<span class="truncate shrink">${chatName}</span>${verifiedBadgeListHtml}${premiumBadgeListHtml}`;
 
   const backBtn = document.querySelector("#chat-header-container button");
   if (backBtn) {

@@ -229,6 +229,7 @@ export async function forwardSelectedMessages() {
 }
 
 export async function confirmForwardMultiple() {
+// (I will actually just inject my code at the end of the file)
     if (state.forwardSelectedChats.length === 0 || selectedMessages.size === 0) return;
     
     const btn = document.getElementById('confirm-forward-btn') as HTMLButtonElement;
@@ -372,3 +373,133 @@ export async function confirmForwardMultiple() {
 (window as any).deleteSelectedMessages = deleteSelectedMessages;
 (window as any).forwardSelectedMessages = forwardSelectedMessages;
 (window as any).confirmForwardMultiple = confirmForwardMultiple;
+
+export async function shareAppContent(urlHash: string, title: string, contentTypeLabel: string, thumbnailUrl: string = '') {
+    state.shareSelectedChats = [];
+    state.pendingShareData = { url_hash: urlHash, title, content_type_label: contentTypeLabel, thumbnail_url: thumbnailUrl };
+    const modal = document.getElementById('modal-content')!;
+    modal.innerHTML = `
+        <div class="p-6">
+            <div class="flex justify-between items-center mb-6">
+                <h3 class="text-xl font-bold text-gray-800 dark:text-gray-100">Поделиться</h3>
+                <button onclick="closeModal()" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 bg-gray-100 dark:bg-gray-800 p-2 rounded-full transition-colors">✕</button>
+            </div>
+            <div id="share-chats-list" class="max-h-80 overflow-y-auto space-y-1 mb-6 custom-scrollbar pr-1">
+                <div class="flex justify-center p-4"><div class="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-500"></div></div>
+            </div>
+            <button id="confirm-share-btn" onclick="confirmShareAppContent()" class="w-full bg-blue-500 hover:bg-blue-600 text-white font-bold py-3.5 rounded-xl transition-all shadow-md opacity-50 cursor-not-allowed" disabled>
+                Отправить
+            </button>
+        </div>
+    `;
+    document.getElementById('modal-overlay')!.classList.remove('hidden');
+
+    const { data: members } = await supabase.from('chat_members').select('chat_id').eq('user_id', state.currentUser.id);
+    if (!members || members.length === 0) {
+        document.getElementById('share-chats-list')!.innerHTML = '<div class="text-center text-gray-500 text-sm p-4">Нет доступных чатов</div>';
+        return;
+    }
+    
+    const { data: chats } = await supabase.from('chats').select('id, type, title, avatar_url, chat_members(user_id, profiles(username, display_name, avatar_url))').in('id', members.map(m => m.chat_id));
+    
+    const list = document.getElementById('share-chats-list')!;
+    list.innerHTML = '';
+    
+    chats?.forEach((chat: any) => {
+        const isGroup = chat.type === 'group' || chat.type === 'channel';
+        let chatName = chat.title;
+        let avatarUrl = chat.avatar_url;
+        
+        if (!isGroup) {
+            const otherMember = chat.chat_members.find((m: any) => m.user_id !== state.currentUser.id);
+            if (otherMember) {
+                chatName = otherMember.profiles.display_name || otherMember.profiles.username;
+                avatarUrl = otherMember.profiles.avatar_url;
+            } else {
+                chatName = 'Избранное';
+            }
+        }
+        
+        const div = document.createElement('div');
+        div.className = 'flex items-center gap-3 p-2 hover:bg-gray-50 dark:hover:bg-gray-700/50 rounded-xl cursor-pointer transition-colors';
+        div.onclick = () => (window as any).toggleShareChatSelection(chat.id);
+        
+        div.innerHTML = `
+            <div class="relative">
+                <div class="w-10 h-10 rounded-full bg-gradient-to-br from-blue-400 to-blue-600 flex items-center justify-center text-white font-bold overflow-hidden shrink-0">
+                    ${avatarUrl ? '<img src="' + avatarUrl + '" class="w-full h-full object-cover">' : chatName.charAt(0).toUpperCase()}
+                </div>
+                <div id="share-check-${chat.id}" class="absolute -bottom-1 -right-1 w-5 h-5 bg-blue-500 rounded-full border-2 border-white dark:border-gray-800 flex items-center justify-center hidden scale-0 transition-transform">
+                    <svg class="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                </div>
+            </div>
+            <div class="flex-1 min-w-0">
+                <div class="font-medium text-gray-900 dark:text-gray-100 truncate">${chatName}</div>
+            </div>
+        `;
+        list.appendChild(div);
+    });
+}
+
+export function toggleShareChatSelection(chatId: string) {
+    state.shareSelectedChats = state.shareSelectedChats || [];
+    const index = state.shareSelectedChats.indexOf(chatId);
+    const check = document.getElementById(`share-check-${chatId}`)!;
+    const btn = document.getElementById('confirm-share-btn') as HTMLButtonElement;
+
+    if (index === -1) {
+        state.shareSelectedChats.push(chatId);
+        check.classList.remove('hidden', 'scale-0');
+        check.classList.add('scale-100');
+    } else {
+        state.shareSelectedChats.splice(index, 1);
+        check.classList.add('hidden', 'scale-0');
+        check.classList.remove('scale-100');
+    }
+
+    if (state.shareSelectedChats.length > 0) {
+        btn.disabled = false;
+        btn.classList.remove('opacity-50', 'cursor-not-allowed');
+    } else {
+        btn.disabled = true;
+        btn.classList.add('opacity-50', 'cursor-not-allowed');
+    }
+}
+
+export async function confirmShareAppContent() {
+    if (!state.shareSelectedChats || state.shareSelectedChats.length === 0 || !state.pendingShareData) return;
+    
+    const btn = document.getElementById('confirm-share-btn') as HTMLButtonElement;
+    btn.disabled = true;
+    btn.innerHTML = '<div class="animate-spin rounded-full h-5 w-5 border-b-2 border-white mx-auto"></div>';
+
+    try {
+        const shareMedia = {
+            type: 'share_app_content',
+            ...state.pendingShareData
+        };
+
+        for (const chatId of state.shareSelectedChats) {
+            await supabase.from('messages').insert({
+                chat_id: chatId,
+                sender_id: state.currentUser.id,
+                content: '',
+                media: [shareMedia],
+                message_type: 'text'
+            });
+        }
+        
+        closeModal();
+        customToast('Успешно отправлено!');
+        
+    } catch (e) {
+        console.error('Error sharing content:', e);
+        customToast('Ошибка при пересылке');
+        btn.disabled = false;
+        btn.innerHTML = 'Отправить';
+    }
+}
+
+(window as any).shareAppContent = shareAppContent;
+(window as any).toggleShareChatSelection = toggleShareChatSelection;
+(window as any).confirmShareAppContent = confirmShareAppContent;

@@ -916,6 +916,15 @@ export async function runMiniApp(id: string) {
     runModal.classList.remove("hidden");
     setTimeout(() => runModal.classList.remove("translate-y-full"), 10);
 
+    const shareBtn = document.getElementById('run-app-share-btn');
+    if (shareBtn) {
+        shareBtn.onclick = () => {
+            if ((window as any).shareAppContent) {
+                (window as any).shareAppContent(`?miniapp=${id}`, data.title, 'ПРИЛОЖЕНИЕ', data.icon_url || '');
+            }
+        };
+    }
+
     // Increment views
     supabase.rpc("increment_miniapp_view", { app_id: id }).then((res) => {
       if (res.error) {

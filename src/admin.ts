@@ -209,7 +209,7 @@ let globalTsPerms = { reset_auth: false, analytics: false };
 async function loadAdminData() {
     try {
         const { data: users, error: userErr } = await supabase.from('profiles').select('*');
-        const { data: chats, error: chatErr } = await supabase.from('chats').select('id, type, title, created_at, avatar_url, description');
+        const { data: chats, error: chatErr } = await supabase.from('chats').select('id, type, title, created_at, avatar_url, description, is_verified');
 
         if (userErr || chatErr) console.warn("Some data could not be fetched due to RLS. Best effort displayed.");
 
@@ -440,23 +440,43 @@ function renderChatsList(chats: any[]) {
 
     const nonPrivate = chats.filter(c => c.type !== 'private' && c.type !== 'direct');
 
-    list.innerHTML = nonPrivate.map(c => `
+    list.innerHTML = nonPrivate.map(c => {
+        const badges = [];
+        if (c.type === 'channel') badges.push('<span class="text-xs text-orange-400 uppercase font-bold">Channel</span>');
+        else if (c.type === 'group') badges.push('<span class="text-xs text-green-400 uppercase font-bold">Group</span>');
+        
+        if (c.is_verified) {
+             badges.push('<span class="text-xs text-blue-400 font-bold bg-blue-500/20 px-1 rounded" title="Official">✓</span>');
+        }
+
+        const isCreator = (window as any)._adminIsCreator;
+        let toggleVerifyHtml = '';
+        if (isCreator && c.type === 'channel') {
+             const vAction = c.is_verified ? 'false' : 'true';
+             const vLabel = c.is_verified ? 'Unverify' : 'Verify';
+             const vColor = c.is_verified ? 'bg-gray-500/20 text-gray-400 border-gray-500/30 hover:bg-gray-500/40' : 'bg-blue-500/20 text-blue-400 border-blue-500/30 hover:bg-blue-500/40';
+             toggleVerifyHtml = `<button onclick="window.adminToggleVerify('${c.id}', ${vAction})" class="px-3 py-1 rounded text-xs font-medium uppercase tracking-wider border shrink-0 ${vColor}">${vLabel}</button>`;
+        }
+
+        return `
         <div class="flex items-center justify-between p-3 border-b border-gray-700/50 hover:bg-gray-700/30 transition-colors">
             <div class="flex items-center gap-3 min-w-0 w-1/2">
                 <div class="w-10 h-10 rounded-full bg-gray-700 shrink-0 overflow-hidden flex items-center justify-center text-xl font-bold text-gray-300">
                     ${c.avatar_url ? `<img src="${c.avatar_url}" class="w-full h-full object-cover">` : (c.title || 'U')[0].toUpperCase()}
                 </div>
                 <div class="flex flex-col min-w-0 flex-1">
-                    <div class="text-white font-medium truncate">${c.title || 'Untitled'}</div>
-                    <div class="text-xs ${c.type==='channel' ? 'text-orange-400' : 'text-green-400'} uppercase font-bold">${c.type}</div>
+                    <div class="text-white font-medium truncate flex items-center gap-1">${c.title || 'Untitled'} ${c.is_verified ? '<img src="./image/Google-Gemini-Logo-Transparent.png" class="w-4 h-4 object-contain" alt="Verified">' : ''}</div>
+                    <div class="flex items-center gap-2 mt-0.5">${badges.join('')}</div>
                 </div>
             </div>
             <div class="flex gap-2 shrink-0">
+                ${toggleVerifyHtml}
                 <button onclick="window.adminOpenChat('${c.id}')" class="px-3 py-1 bg-green-500/20 text-green-400 hover:bg-green-500/40 rounded text-xs font-medium uppercase tracking-wider border border-green-500/30">Enter</button>
                 <button onclick="window.adminDeleteChat('${c.id}')" class="px-3 py-1 bg-red-500/20 text-red-400 hover:bg-red-500/40 rounded text-xs font-medium uppercase tracking-wider border border-red-500/30 shrink-0">PURGE</button>
             </div>
         </div>
-    `).join('');
+        `;
+    }).join('');
     
     if (nonPrivate.length === 0) {
         list.innerHTML = '<div class="text-center text-gray-500 p-4">No groups or channels</div>';
@@ -681,6 +701,17 @@ function renderChatsList(chats: any[]) {
     }
 };
 
+(window as any).adminToggleVerify = async (chatId: string, verifyStatus: boolean) => {
+    try {
+        const { error } = await supabase.rpc('admin_toggle_chat_verification', { target_chat_id: chatId, verified_status: verifyStatus });
+        if (error) throw error;
+        
+        loadAdminData();
+    } catch(e: any) {
+        alert('Verification toggle error: ' + e.message);
+    }
+};
+
 (window as any).adminOpenChat = async (chatId: string) => {
     try {
         const c = allAdminChats.find(chat => chat.id === chatId);
@@ -698,7 +729,9 @@ function renderChatsList(chats: any[]) {
                 [], 
                 c.avatar_url || undefined, 
                 c.description || undefined, 
-                false
+                false,
+                false,
+                c.is_verified || false
             ];
             
             localStorage.setItem('incognito_chat_args', JSON.stringify(openArgs));
