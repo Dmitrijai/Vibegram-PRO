@@ -1038,118 +1038,115 @@ let isSendVibProcessing = false;
     
     // Smooth, professional UI for terms
     overlay.innerHTML = `
-        <div class="bg-white dark:bg-gray-900 w-full max-w-lg rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh] transform transition-all">
-            <div class="p-5 border-b border-gray-100 dark:border-gray-800 flex justify-between items-center bg-gray-50/50 dark:bg-gray-800/30">
-                <div class="flex items-center gap-3">
-                    <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white shadow-sm">
-                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+        <div class="bg-white dark:bg-gray-900 w-full max-w-2xl rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh] transform transition-all border border-gray-100 dark:border-gray-800">
+            <div class="p-6 border-b border-gray-100 dark:border-gray-800 flex justify-between items-center bg-gray-50/50 dark:bg-gray-800/30 sticky top-0 z-10 backdrop-blur-md">
+                <div class="flex items-center gap-4">
+                    <div class="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white shadow-md">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
                     </div>
                     <div>
-                        <h2 class="text-xl font-bold text-gray-900 dark:text-gray-100 leading-tight">Правила пользования</h2>
-                        <div class="text-xs text-gray-500 dark:text-gray-400 font-medium">Vibegram Messenger</div>
+                        <h2 class="text-2xl font-black text-gray-900 dark:text-gray-100 tracking-tight">Пользовательское соглашение</h2>
+                        <div class="text-sm text-blue-600 dark:text-blue-400 font-semibold tracking-wide uppercase mt-0.5">Vibegram Messenger</div>
                     </div>
                 </div>
-                <button id="close-terms-btn" class="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full transition-colors outline-none focus:ring-2 ring-blue-500">
+                <button id="close-terms-btn" class="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full transition-colors outline-none focus:ring-2 ring-blue-500 bg-white dark:bg-gray-800 shadow-sm">
                     <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
                 </button>
             </div>
             
-            <div class="p-6 overflow-y-auto custom-scrollbar flex-1 space-y-6 text-gray-700 dark:text-gray-300">
+            <div class="p-8 overflow-y-auto custom-scrollbar flex-1 space-y-8 text-gray-700 dark:text-gray-300">
                 
                 <section>
-                    <h3 class="text-base font-bold text-gray-900 dark:text-gray-100 mb-2 flex items-center gap-2">
-                        <span class="w-1.5 h-1.5 rounded-full bg-blue-500"></span>
-                        1. Общие положения
+                    <h3 class="text-lg font-bold text-gray-900 dark:text-gray-100 mb-3 flex items-center gap-3">
+                        <span class="flex items-center justify-center w-6 h-6 rounded-full bg-blue-100 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400 text-xs font-black">1</span>
+                        Общие положения
                     </h3>
-                    <p class="text-sm leading-relaxed mb-2 ml-3.5">
-                        Добро пожаловать в Vibegram! Данный мессенджер предоставляет платформу для обмена личными сообщениями, файлами и звонками.
-                        Используя приложение, вы соглашаетесь с данными правилами.
-                    </p>
-                </section>
-
-                <section>
-                    <h3 class="text-base font-bold text-gray-900 dark:text-gray-100 mb-2 flex items-center gap-2">
-                        <span class="w-1.5 h-1.5 rounded-full bg-red-500"></span>
-                        2. Запрещенный контент
-                    </h3>
-                    <p class="text-sm leading-relaxed mb-2 ml-3.5">В Vibegram строго запрещено:</p>
-                    <ul class="list-disc text-sm ml-8 space-y-1">
-                        <li>Распространение незаконных материалов и мошенничество.</li>
-                        <li>Оскорбления, угрозы и разжигание ненависти.</li>
-                        <li>Спам, навязчивая реклама и фишинг.</li>
-                    </ul>
-                </section>
-
-                <section>
-                    <h3 class="text-base font-bold text-gray-900 dark:text-gray-100 mb-2 flex items-center gap-2">
-                        <span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
-                        3. Аккаунты и Устройства
-                    </h3>
-                    <p class="text-sm leading-relaxed ml-3.5">
-                        В целях безопасности и предотвращения злоупотреблений, <b>создание множества новых аккаунтов на одном устройстве запрещено</b>. 
-                        Однако вы по-прежнему можете беспрепятственно входить в уже существующие аккаунты.
-                    </p>
-                </section>
-
-                <section>
-                    <h3 class="text-base font-bold text-gray-900 dark:text-gray-100 mb-2 flex items-center gap-2">
-                        <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
-                        4. Конфиденциальность
-                    </h3>
-                    <p class="text-sm leading-relaxed ml-3.5">
-                        Мы уважаем вашу конфиденциальность. Ваши личные переписки не передаются третьим лицам. 
-                        Администрация может вмешаться только по жалобе на нарушение правил (раздел 2).
-                    </p>
-                </section>
-                
-                <section>
-                    <h3 class="text-base font-bold text-gray-900 dark:text-gray-100 mb-2 flex items-center gap-2">
-                        <span class="w-1.5 h-1.5 rounded-full bg-indigo-500"></span>
-                        5. Инструкции и Скрытые Фишки
-                    </h3>
-                    <div class="text-sm leading-relaxed ml-3.5 space-y-4">
-                        <div>
-                            <span class="font-bold text-gray-800 dark:text-gray-200 block mb-1">💬 Сообщения и Вызовы</span>
-                            <ul class="list-disc ml-5 space-y-1 text-gray-600 dark:text-gray-400">
-                                <li><b>Двойной клик или долгое нажатие</b> по сообщению открывает меню действий: ответ, редактирование, закрепление, удаление или копирование. Быстрые реакции находятся в этом же меню.</li>
-                                <li>Для отправки голосового сообщения удерживайте кнопку микрофона. Свайп вверх или отвод мыши наверх заблокирует запись, чтобы не держать кнопку.</li>
-                                <li>В мессенджере доступны голосовые и видео-звонки высокого качества (ищите иконки в шапке чата).</li>
-                            </ul>
-                        </div>
-
-                        <div>
-                            <span class="font-bold text-gray-800 dark:text-gray-200 block mb-1">🎮 Мини-приложения и Сторисы (Shorts)</span>
-                            <ul class="list-disc ml-5 space-y-1 text-gray-600 dark:text-gray-400">
-                                <li>Vibegram поддерживает мини-приложения. Их можно открыть через меню "плюсика" внизу или специальную кнопку в боковой панели.</li>
-                                <li>Откройте уникальный раздел <b>Shorts</b> для просмотра коротких видео от участников комьюнити! Лайкайте, комментируйте и подписывайтесь. Вы можете загрузить свой собственный шортс нажав на иконку камеры.</li>
-                            </ul>
-                        </div>
-
-                        <div>
-                            <span class="font-bold text-gray-800 dark:text-gray-200 block mb-1">💎 VIB Coins (Внутренняя валюта)</span>
-                            <ul class="list-disc ml-5 space-y-1 text-gray-600 dark:text-gray-400">
-                                <li>VIB — это наша внутренняя валюта, которую можно переводить другим пользователям.</li>
-                                <li>Нажмите на <b>кнопку скрепки</b> в чате, чтобы выбрать «Отправить VIB» и порадовать друга.</li>
-                                <li>История ваших переводов и баланс находятся на вкладке «Кошелек» в настройках профиля.</li>
-                            </ul>
-                        </div>
-
-                        <div>
-                            <span class="font-bold text-gray-800 dark:text-gray-200 block mb-1">⚙️ Кастомизация и Приватность</span>
-                            <ul class="list-disc ml-5 space-y-1 text-gray-600 dark:text-gray-400">
-                                <li><b>ПИН-код:</b> Защитите свои переписки от посторонних глаз, установив локальный ПИН-код на запуск приложения (Настройки → Конфиденциальность).</li>
-                                <li><b>Для глаз:</b> Меняйте светлую и темную тему, а также выбирайте крутые анимированные фоны чата на свой вкус.</li>
-                                <li>Не забудьте настроить свой красивый никнейм и загрузить аватарку в настройках!</li>
-                            </ul>
-                        </div>
+                    <div class="text-sm leading-relaxed ml-9 space-y-3">
+                        <p>Настоящее Пользовательское соглашение (далее — «Соглашение») регулирует отношения между пользователем и платформой <strong>Vibegram</strong>. Использование приложения означает ваше полное и безоговорочное согласие с настоящими условиями.</p>
+                        <p>Vibegram представляет собой современную коммуникационную платформу, предоставляющую услуги мгновенного обмена сообщениями, медиафайлами, голосовых и видеовызовов, а также расширенный социальный функционал.</p>
                     </div>
                 </section>
 
+                <section>
+                    <h3 class="text-lg font-bold text-gray-900 dark:text-gray-100 mb-3 flex items-center gap-3">
+                        <span class="flex items-center justify-center w-6 h-6 rounded-full bg-indigo-100 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-400 text-xs font-black">2</span>
+                        История создания и Разработка
+                    </h3>
+                    <div class="text-sm leading-relaxed ml-9 space-y-3">
+                        <p>Vibegram был создан и спроектирован с применением передовых технологий искусственного интеллекта на базе платформы <strong>Google AI Studio</strong>. Ядром архитектурного и функционального проектирования выступили агентные алгоритмы <strong>Google DeepMind</strong> (в частности, модель Gemini Pro и агент Antigravity), которые обеспечили полный цикл разработки платформы: от написания серверной логики интеграции с облачной инфраструктурой (Supabase) и до создания адаптивного клиентского интерфейса (React).</p>
+                        <p>Процесс разработки представлял собой синергию человеческого замысла и машинного исполнения, в ходе которой ИИ выстроил архитектуру реального времени (WebRTC, WebSocket), систему шифрования и авторизации, а также внедрил модули социальных экосистем (Shorts, Mini-Apps, генеративный ИИ).</p>
+                    </div>
+                </section>
+
+                <section>
+                    <h3 class="text-lg font-bold text-gray-900 dark:text-gray-100 mb-3 flex items-center gap-3">
+                        <span class="flex items-center justify-center w-6 h-6 rounded-full bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400 text-xs font-black">3</span>
+                        Инфраструктура и Функционал
+                    </h3>
+                    <div class="text-sm leading-relaxed ml-9 bg-gray-50 dark:bg-gray-800/50 p-4 rounded-xl border border-gray-100 dark:border-gray-700/50">
+                        <ul class="space-y-3">
+                            <li class="flex items-start gap-2">
+                                <svg class="w-5 h-5 text-emerald-500 mt-0.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                                <span><strong>Интеллектуальные функции:</strong> Платформа включает встроенную генерацию изображений по запросу через команду <code>@ai [запрос]</code>, а также алгоритмы машинной транскрипции голосовых сообщений.</span>
+                            </li>
+                            <li class="flex items-start gap-2">
+                                <svg class="w-5 h-5 text-emerald-500 mt-0.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                                <span><strong>Мультимедийная экосистема:</strong> Сервис поддерживает публикацию коротких вертикальных видео (Shorts) с функциями комментирования и вовлечения.</span>
+                            </li>
+                            <li class="flex items-start gap-2">
+                                <svg class="w-5 h-5 text-emerald-500 mt-0.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                                <span><strong>Коммуникационное ядро:</strong> Система базируется на надежной трансляции данных, включая высококачественные P2P аудио- и видеозвонки (WebRTC), групповые взаимодействия и интерактивные опросы.</span>
+                            </li>
+                            <li class="flex items-start gap-2">
+                                <svg class="w-5 h-5 text-emerald-500 mt-0.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                                <span><strong>Мини-приложения (Mini-Apps):</strong> Возможность запускать внутренние встраиваемые приложения, расширяющие функционал базового мессенджера без необходимости установки стороннего ПО.</span>
+                            </li>
+                        </ul>
+                    </div>
+                </section>
+
+                <section>
+                    <h3 class="text-lg font-bold text-gray-900 dark:text-gray-100 mb-3 flex items-center gap-3">
+                        <span class="flex items-center justify-center w-6 h-6 rounded-full bg-violet-100 text-violet-600 dark:bg-violet-900/30 dark:text-violet-400 text-xs font-black">4</span>
+                        Экономика платформы (VIB Coins)
+                    </h3>
+                    <div class="text-sm leading-relaxed ml-9 space-y-3">
+                        <p>В платформу интегрирована виртуальная расчетная единица — <strong>VIB Coin</strong>. Данный инструмент используется исключительно для внутреннего взаимодействия, поощрения авторов Shorts и осуществления P2P переводов между пользователями. VIB не является криптовалютой или электронным средством платежа в рамках законодательства.</p>
+                    </div>
+                </section>
+
+                <section>
+                    <h3 class="text-lg font-bold text-gray-900 dark:text-gray-100 mb-3 flex items-center gap-3">
+                        <span class="flex items-center justify-center w-6 h-6 rounded-full bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400 text-xs font-black">5</span>
+                        Запрещенный контент и Ограничения
+                    </h3>
+                    <div class="text-sm leading-relaxed ml-9 space-y-3">
+                        <p>Категорически запрещено использование платформы для:</p>
+                        <ul class="list-disc ml-5 space-y-1 text-gray-600 dark:text-gray-400 font-medium">
+                            <li>Распространения незаконных, экстремистских и мошеннических материалов.</li>
+                            <li>Публикации контента, разжигающего ненависть, содержащего оскорбления или угрозы.</li>
+                            <li>Массовой рассылки (спама), фишинга и использования автоматизированных скриптов без явного разрешения.</li>
+                        </ul>
+                        <p class="text-red-600 dark:text-red-400 font-bold mt-2">Важно: В целях безопасности пресекается создание множества новых аккаунтов с одного устройства (абуз системы). Вход в существующие аккаунты не ограничивается.</p>
+                    </div>
+                </section>
+
+                <section>
+                    <h3 class="text-lg font-bold text-gray-900 dark:text-gray-100 mb-3 flex items-center gap-3">
+                        <span class="flex items-center justify-center w-6 h-6 rounded-full bg-amber-100 text-amber-600 dark:bg-amber-900/30 dark:text-amber-400 text-xs font-black">6</span>
+                        Конфиденциальность и Данные
+                    </h3>
+                    <div class="text-sm leading-relaxed ml-9 space-y-3">
+                        <p>Защита ваших данных является приоритетом архитектуры Vibegram. Личные сообщения хранятся с использованием надежных баз данных. Администрация платформы не имеет несанкционированного доступа к содержанию переписок пользователей. Модерация контента осуществляется исключительно на основании валидных жалоб Пользователей в рамках раздела 5 настоящего Соглашения.</p>
+                        <p>Пользователь имеет право установить локальный PIN-код приложения для предотвращения физического доступа к мессенджеру на устройстве.</p>
+                    </div>
+                </section>
+                
             </div>
             
-            <div class="p-4 border-t border-gray-100 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-800/30">
-                <button id="accept-terms-btn" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-4 rounded-xl shadow-md hover:shadow-lg transition-all focus:ring-4 ring-blue-500/30 outline-none">
-                    Понятно
+            <div class="p-6 border-t border-gray-100 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-800/30 backdrop-blur-md">
+                <button id="accept-terms-btn" class="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-bold py-4 px-6 rounded-xl shadow-[0_4px_14px_0_rgba(37,99,235,0.39)] hover:shadow-[0_6px_20px_rgba(37,99,235,0.23)] hover:-translate-y-0.5 transition-all outline-none focus:ring-4 ring-blue-500/30 text-lg uppercase tracking-wider">
+                    Принять соглашение
                 </button>
             </div>
         </div>
