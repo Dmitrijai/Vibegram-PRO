@@ -202,8 +202,10 @@ export async function forwardSelectedMessages() {
             if (otherMember) {
                 chatName = otherMember.profiles.display_name || otherMember.profiles.username;
                 avatarUrl = otherMember.profiles.avatar_url;
-            } else {
+            } else if (chat.title === 'Избранное' || chat.description === 'SAVED_MESSAGES') {
                 chatName = 'Избранное';
+            } else {
+                return;
             }
         }
         
@@ -415,8 +417,10 @@ export async function shareAppContent(urlHash: string, title: string, contentTyp
             if (otherMember) {
                 chatName = otherMember.profiles.display_name || otherMember.profiles.username;
                 avatarUrl = otherMember.profiles.avatar_url;
-            } else {
+            } else if (chat.title === 'Избранное' || chat.description === 'SAVED_MESSAGES') {
                 chatName = 'Избранное';
+            } else {
+                return;
             }
         }
         
