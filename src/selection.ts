@@ -192,6 +192,8 @@ export async function forwardSelectedMessages() {
     const list = document.getElementById('forward-chats-list')!;
     list.innerHTML = '';
     
+    let savedMessagesAdded = false;
+
     chats?.forEach((chat: any) => {
         const isGroup = chat.type === 'group' || chat.type === 'channel';
         let chatName = chat.title;
@@ -203,6 +205,8 @@ export async function forwardSelectedMessages() {
                 chatName = otherMember.profiles.display_name || otherMember.profiles.username;
                 avatarUrl = otherMember.profiles.avatar_url;
             } else if (chat.title === 'Избранное' || chat.description === 'SAVED_MESSAGES') {
+                if (savedMessagesAdded) return;
+                savedMessagesAdded = true;
                 chatName = 'Избранное';
             } else {
                 return;
@@ -407,6 +411,8 @@ export async function shareAppContent(urlHash: string, title: string, contentTyp
     const list = document.getElementById('share-chats-list')!;
     list.innerHTML = '';
     
+    let savedMessagesAdded = false;
+
     chats?.forEach((chat: any) => {
         const isGroup = chat.type === 'group' || chat.type === 'channel';
         let chatName = chat.title;
@@ -418,6 +424,8 @@ export async function shareAppContent(urlHash: string, title: string, contentTyp
                 chatName = otherMember.profiles.display_name || otherMember.profiles.username;
                 avatarUrl = otherMember.profiles.avatar_url;
             } else if (chat.title === 'Избранное' || chat.description === 'SAVED_MESSAGES') {
+                if (savedMessagesAdded) return;
+                savedMessagesAdded = true;
                 chatName = 'Избранное';
             } else {
                 return;
