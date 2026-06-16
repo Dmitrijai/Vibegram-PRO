@@ -181,11 +181,14 @@ export async function forwardSelectedMessages() {
     `;
     document.getElementById('modal-overlay')!.classList.remove('hidden');
 
-    const { data: members } = await supabase.from('chat_members').select('chat_id').eq('user_id', state.currentUser.id);
+    const { data: members } = await supabase.from('chat_members').select('chat_id, role').eq('user_id', state.currentUser.id);
     if (!members || members.length === 0) {
         document.getElementById('forward-chats-list')!.innerHTML = '<div class="text-center text-gray-500 text-sm p-4">Нет доступных чатов</div>';
         return;
     }
+    
+    const roleMap = new Map();
+    members.forEach(m => roleMap.set(m.chat_id, m.role));
     
     const { data: chats } = await supabase.from('chats').select('id, type, title, avatar_url, chat_members(user_id, profiles(username, display_name, avatar_url))').in('id', members.map(m => m.chat_id));
     
@@ -195,6 +198,11 @@ export async function forwardSelectedMessages() {
     let savedMessagesAdded = false;
 
     chats?.forEach((chat: any) => {
+        if (chat.type === 'channel') {
+            const myRole = roleMap.get(chat.id);
+            if (myRole !== 'admin' && myRole !== 'creator') return;
+        }
+
         const isGroup = chat.type === 'group' || chat.type === 'channel';
         let chatName = chat.title;
         let avatarUrl = chat.avatar_url;
@@ -202,8 +210,8 @@ export async function forwardSelectedMessages() {
         if (!isGroup) {
             const otherMember = chat.chat_members.find((m: any) => m.user_id !== state.currentUser.id);
             if (otherMember) {
-                chatName = otherMember.profiles.display_name || otherMember.profiles.username;
-                avatarUrl = otherMember.profiles.avatar_url;
+                chatName = otherMember.profiles?.display_name || otherMember.profiles?.username || 'Удаленный аккаунт';
+                avatarUrl = otherMember.profiles?.avatar_url;
             } else if (chat.title === 'Избранное' || chat.description === 'SAVED_MESSAGES') {
                 if (savedMessagesAdded) return;
                 savedMessagesAdded = true;
@@ -303,66 +311,37 @@ export async function confirmForwardMultiple() {
 
         state.forwardSelectedChats.forEach(chatId => {
             // Push notification
-            supabase.from('chats').select('is_group, type, title, username, user1_id, user2_id').eq('id', chatId).single().then(({ data: chatData }) => {
+            supabase.from('chats').select('is_group, type, title, username').eq('id', chatId).single().then(({ data: chatData }) => {
                 if (chatData) {
-                    const pushData = { chatId: String(chatId) };
-                    
-                    if (!chatData.is_group) {
-                        const pushTitle = forwardSenderName;
-                        const pushBody = rawBodyContent;
-                        
-                        const pushPayloadBase = { 
-                            title: pushTitle, 
-                            body: pushBody,
-                            chat_id: String(chatId),
-                            text: rawBodyContent,
-                            sender_name: forwardSenderName,
-                            data: pushData
-                        };
-                        
-                        const otherUserId = chatData.user1_id === state.currentUser.id ? chatData.user2_id : chatData.user1_id;
-                        if (otherUserId) {
-                            supabase.from('profiles').select('push_token').eq('id', otherUserId).single().then(({ data: profile }) => {
-                                if (profile?.push_token) {
-                                    supabase.functions.invoke('send-push', {
-                                        body: { token: profile.push_token, ...pushPayloadBase }
-                                    }).catch(e => console.warn('Push error', e));
-                                }
-                            });
-                        }
-                    } else {
-                        const isChannel = chatData.type === 'channel';
-                        const groupName = chatData.title || chatData.username || 'Группа';
-                        const pushTitle = groupName;
-                        const pushBody = isChannel ? rawBodyContent : `${forwardSenderName}: ${rawBodyContent}`;
-                        
-                        const pushPayloadBase = { 
-                            title: pushTitle, 
-                            body: pushBody,
-                            chat_id: String(chatId),
-                            text: rawBodyContent,
-                            sender_name: forwardSenderName,
-                            data: pushData
-                        };
-                        
-                        supabase.from('chat_members').select('user_id').eq('chat_id', chatId).then(({ data: members }) => {
-                            if (members) {
-                                const memberIds = members.map((m: any) => m.user_id).filter((id: string) => id !== state.currentUser?.id);
-                                if (memberIds.length > 0) {
-                                    supabase.from('profiles').select('push_token').in('id', memberIds).then(({ data: profiles }) => {
-                                        if (profiles) {
-                                            const tokens = profiles.map((p: any) => p.push_token).filter((t: any) => t);
-                                            if (tokens.length > 0) {
-                                                supabase.functions.invoke('send-push', {
-                                                    body: { tokens: tokens, ...pushPayloadBase }
-                                                }).catch(e => console.warn('Group Push error', e));
-                                            }
+                    supabase.from('chat_members').select('user_id').eq('chat_id', chatId).then(({ data: members }) => {
+                        if (members) {
+                            const memberIds = members.map((m: any) => m.user_id).filter((id: string) => id !== state.currentUser?.id);
+                            if (memberIds.length > 0) {
+                                supabase.from('profiles').select('push_token').in('id', memberIds).then(({ data: profiles }) => {
+                                    if (profiles) {
+                                        const tokens = profiles.map((p: any) => p.push_token).filter((t: any) => t);
+                                        if (tokens.length > 0) {
+                                            const pushBody = (!chatData.is_group || chatData.type === 'channel') 
+                                                ? rawBodyContent 
+                                                : `${forwardSenderName}: ${rawBodyContent}`;
+                                                
+                                            const pushPayloadBase = { 
+                                                title: chatData.is_group ? (chatData.title || chatData.username || 'Группа') : forwardSenderName, 
+                                                body: pushBody,
+                                                chat_id: String(chatId),
+                                                text: rawBodyContent,
+                                                sender_name: forwardSenderName,
+                                                data: { chatId: String(chatId) }
+                                            };
+                                            supabase.functions.invoke('send-push', {
+                                                body: { tokens: tokens, ...pushPayloadBase }
+                                            }).catch(e => console.warn('Push error', e));
                                         }
-                                    });
-                                }
+                                    }
+                                });
                             }
-                        });
-                    }
+                        }
+                    });
                 }
             });
         });
@@ -400,11 +379,14 @@ export async function shareAppContent(urlHash: string, title: string, contentTyp
     `;
     document.getElementById('modal-overlay')!.classList.remove('hidden');
 
-    const { data: members } = await supabase.from('chat_members').select('chat_id').eq('user_id', state.currentUser.id);
+    const { data: members } = await supabase.from('chat_members').select('chat_id, role').eq('user_id', state.currentUser.id);
     if (!members || members.length === 0) {
         document.getElementById('share-chats-list')!.innerHTML = '<div class="text-center text-gray-500 text-sm p-4">Нет доступных чатов</div>';
         return;
     }
+    
+    const roleMap = new Map();
+    members.forEach(m => roleMap.set(m.chat_id, m.role));
     
     const { data: chats } = await supabase.from('chats').select('id, type, title, avatar_url, chat_members(user_id, profiles(username, display_name, avatar_url))').in('id', members.map(m => m.chat_id));
     
@@ -414,6 +396,11 @@ export async function shareAppContent(urlHash: string, title: string, contentTyp
     let savedMessagesAdded = false;
 
     chats?.forEach((chat: any) => {
+        if (chat.type === 'channel') {
+            const myRole = roleMap.get(chat.id);
+            if (myRole !== 'admin' && myRole !== 'creator') return;
+        }
+
         const isGroup = chat.type === 'group' || chat.type === 'channel';
         let chatName = chat.title;
         let avatarUrl = chat.avatar_url;
@@ -421,8 +408,8 @@ export async function shareAppContent(urlHash: string, title: string, contentTyp
         if (!isGroup) {
             const otherMember = chat.chat_members.find((m: any) => m.user_id !== state.currentUser.id);
             if (otherMember) {
-                chatName = otherMember.profiles.display_name || otherMember.profiles.username;
-                avatarUrl = otherMember.profiles.avatar_url;
+                chatName = otherMember.profiles?.display_name || otherMember.profiles?.username || 'Удаленный аккаунт';
+                avatarUrl = otherMember.profiles?.avatar_url;
             } else if (chat.title === 'Избранное' || chat.description === 'SAVED_MESSAGES') {
                 if (savedMessagesAdded) return;
                 savedMessagesAdded = true;
@@ -512,61 +499,37 @@ export async function confirmShareAppContent() {
 
         state.shareSelectedChats.forEach(chatId => {
             // Push notification
-            supabase.from('chats').select('is_group, type, title, username, user1_id, user2_id').eq('id', chatId).single().then(({ data: chatData }) => {
+            supabase.from('chats').select('is_group, type, title, username').eq('id', chatId).single().then(({ data: chatData }) => {
                 if (chatData) {
-                    const pushData = { chatId: String(chatId) };
-                    if (!chatData.is_group) {
-                        const pushTitle = forwardSenderName;
-                        const pushBody = rawBodyContent;
-                        const pushPayloadBase = { 
-                            title: pushTitle, 
-                            body: pushBody,
-                            chat_id: String(chatId),
-                            text: rawBodyContent,
-                            sender_name: forwardSenderName,
-                            data: pushData
-                        };
-                        const otherUserId = chatData.user1_id === state.currentUser.id ? chatData.user2_id : chatData.user1_id;
-                        if (otherUserId) {
-                            supabase.from('profiles').select('push_token').eq('id', otherUserId).single().then(({ data: profile }) => {
-                                if (profile?.push_token) {
-                                    supabase.functions.invoke('send-push', {
-                                        body: { token: profile.push_token, ...pushPayloadBase }
-                                    }).catch(e => console.warn('Push error', e));
-                                }
-                            });
-                        }
-                    } else {
-                        const isChannel = chatData.type === 'channel';
-                        const groupName = chatData.title || chatData.username || 'Группа';
-                        const pushTitle = groupName;
-                        const pushBody = isChannel ? rawBodyContent : `${forwardSenderName}: ${rawBodyContent}`;
-                        const pushPayloadBase = { 
-                            title: pushTitle, 
-                            body: pushBody,
-                            chat_id: String(chatId),
-                            text: rawBodyContent,
-                            sender_name: forwardSenderName,
-                            data: pushData
-                        };
-                        supabase.from('chat_members').select('user_id').eq('chat_id', chatId).then(({ data: members }) => {
-                            if (members) {
-                                const memberIds = members.map((m: any) => m.user_id).filter((id: string) => id !== state.currentUser?.id);
-                                if (memberIds.length > 0) {
-                                    supabase.from('profiles').select('push_token').in('id', memberIds).then(({ data: profiles }) => {
-                                        if (profiles) {
-                                            const tokens = profiles.map((p: any) => p.push_token).filter((t: any) => t);
-                                            if (tokens.length > 0) {
-                                                supabase.functions.invoke('send-push', {
-                                                    body: { tokens: tokens, ...pushPayloadBase }
-                                                }).catch(e => console.warn('Group Push error', e));
-                                            }
+                    supabase.from('chat_members').select('user_id').eq('chat_id', chatId).then(({ data: members }) => {
+                        if (members) {
+                            const memberIds = members.map((m: any) => m.user_id).filter((id: string) => id !== state.currentUser?.id);
+                            if (memberIds.length > 0) {
+                                supabase.from('profiles').select('push_token').in('id', memberIds).then(({ data: profiles }) => {
+                                    if (profiles) {
+                                        const tokens = profiles.map((p: any) => p.push_token).filter((t: any) => t);
+                                        if (tokens.length > 0) {
+                                            const pushBody = (!chatData.is_group || chatData.type === 'channel') 
+                                                ? rawBodyContent 
+                                                : `${forwardSenderName}: ${rawBodyContent}`;
+                                                
+                                            const pushPayloadBase = { 
+                                                title: chatData.is_group ? (chatData.title || chatData.username || 'Группа') : forwardSenderName, 
+                                                body: pushBody,
+                                                chat_id: String(chatId),
+                                                text: rawBodyContent,
+                                                sender_name: forwardSenderName,
+                                                data: { chatId: String(chatId) }
+                                            };
+                                            supabase.functions.invoke('send-push', {
+                                                body: { tokens: tokens, ...pushPayloadBase }
+                                            }).catch(e => console.warn('Push error', e));
                                         }
-                                    });
-                                }
+                                    }
+                                });
                             }
-                        });
-                    }
+                        }
+                    });
                 }
             });
         });
