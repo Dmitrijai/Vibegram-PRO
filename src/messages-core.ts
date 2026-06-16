@@ -330,7 +330,7 @@ export function renderMessages(messages: any[], isInitialLoad = false) {
 
         if (replyData) {
             replyHtml = `
-                <div class="flex items-center gap-2 mb-1.5 pl-2 border-l-2 border-blue-500 cursor-pointer hover:bg-black/5 dark:hover:bg-white/5 rounded-r transition-colors" onclick="document.getElementById('msg-${replyData.original_id}')?.scrollIntoView({behavior: 'smooth', block: 'center'})">
+                <div class="flex items-center gap-2 mb-1.5 pl-2 border-l-2 border-blue-500 cursor-pointer hover:bg-black/5 dark:hover:bg-white/5 rounded-r transition-colors" onclick="const el = document.getElementById('msg-${replyData.original_id}'); if(el) { el.scrollIntoView({behavior: 'smooth', block: 'center'}); ['bg-[#bbdefb]', 'dark:bg-blue-900/60', 'scale-[1.02]'].forEach(c => el.classList.add(c)); el.style.transition = 'all 0.3s ease'; setTimeout(() => { ['bg-[#bbdefb]', 'dark:bg-blue-900/60', 'scale-[1.02]'].forEach(c => el.classList.remove(c)); setTimeout(() => el.style.transition = '', 300); }, 1500); }">
                     <div class="flex-1 min-w-0">
                         <div class="text-[13px] font-medium text-blue-500 dark:text-blue-400">${replyData.original_sender}</div>
                         <div class="text-[13px] text-gray-500 dark:text-gray-400 truncate">${replyData.original_content}</div>
@@ -544,6 +544,24 @@ export function renderMessages(messages: any[], isInitialLoad = false) {
 
         const encodedContent = encodeURIComponent(msg.content || '').replace(/'/g, "%27");
         
+        let previewContentString = msg.content || '';
+        if (!previewContentString.trim()) {
+            if (actualMedia.length > 0) {
+                const type = actualMedia[0].type;
+                if (type === 'image') previewContentString = 'Фотография';
+                else if (type === 'video') previewContentString = 'Видеосообщение';
+                else if (type === 'audio') previewContentString = 'Голосовое сообщение';
+                else if (type === 'file') previewContentString = 'Файл';
+                else if (type === 'poll') previewContentString = 'Опрос';
+                else if (type === 'recording') previewContentString = 'Голосовое сообщение';
+            } else if (shareData) {
+                previewContentString = shareData.content_type_label || 'Вложение';
+            }
+        }
+        if (!previewContentString.trim()) previewContentString = 'Вложение';
+        const encodedPreviewContent = encodeURIComponent(previewContentString).replace(/'/g, "%27");
+        const replyParamsJSON = JSON.stringify([msg.id, encodedPreviewContent, displaySenderName]).replace(/'/g, "%27").replace(/"/g, "&quot;");
+        
         // Reactions HTML
         let reactionsHtml = generateReactionsHtml(msg.id, msg.reactions);
 
@@ -630,7 +648,7 @@ export function renderMessages(messages: any[], isInitialLoad = false) {
         const innerHTML = `
             <div class="flex items-end max-w-full">
                 ${avatarHtml}
-                <div class="relative group select-none ${isMe ? 'bg-[#e3f2fd] dark:bg-blue-900/40 text-gray-900 dark:text-gray-100 rounded-[18px] rounded-br-[4px]' : 'bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 rounded-[18px] rounded-bl-[4px]'} p-2 px-3 shadow-sm border border-gray-200/60 dark:border-gray-700/60 max-w-full flex-1 min-w-0" id="msg-${msg.id}" ontouchstart="handleMessageTouchStart(event, '${msg.id}')" ontouchend="handleMessageTouchEnd(event)" ontouchmove="handleMessageTouchMove(event)" onmousedown="handleMessageTouchStart(event, '${msg.id}')" onmouseup="handleMessageTouchEnd(event)" onmousemove="handleMessageTouchMove(event)" onmouseleave="handleMessageTouchEnd(event)">
+                <div data-reply-params='${replyParamsJSON}' class="relative group select-none ${isMe ? 'bg-[#e3f2fd] dark:bg-blue-900/40 text-gray-900 dark:text-gray-100 rounded-[18px] rounded-br-[4px]' : 'bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 rounded-[18px] rounded-bl-[4px]'} p-2 px-3 shadow-sm border border-gray-200/60 dark:border-gray-700/60 max-w-full flex-1 min-w-0" id="msg-${msg.id}" ontouchstart="handleMessageTouchStart(event, '${msg.id}')" ontouchend="handleMessageTouchEnd(event)" ontouchmove="handleMessageTouchMove(event)" onmousedown="handleMessageTouchStart(event, '${msg.id}')" onmouseup="handleMessageTouchEnd(event)" onmousemove="handleMessageTouchMove(event)" onmouseleave="handleMessageTouchEnd(event)">
                     ${shareHtml}
                     ${forwardHtml}
                     ${replyHtml}

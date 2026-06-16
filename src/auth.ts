@@ -389,7 +389,8 @@ function finalizeAppSetup() {
             
             // Trigger popstate so #chat=... is processed if app opened via URL/Push
             setTimeout(() => {
-                const urlParams = new URLSearchParams(window.location.search);
+                const initialSearch = sessionStorage.getItem('initial_search') || window.location.search;
+                const urlParams = new URLSearchParams(initialSearch);
                 const queryMiniapp = urlParams.get('miniapp');
                 if (queryMiniapp) {
                     import('./miniapps').then(m => m.runMiniApp(queryMiniapp));

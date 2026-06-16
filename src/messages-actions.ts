@@ -84,12 +84,14 @@ export async function forwardMessage(id: string, content: string, senderName: st
     });
 
     // Check if Saved Messages exists, if not construct a virtual one
-    let savedMessagesChat = chats?.find(c => !c.type.includes('group') && !c.type.includes('channel') && (!c.chat_members?.filter((m: any) => m.user_id !== state.currentUser.id)?.length));
+    let allSavedMessages = chats?.filter(c => !c.type.includes('group') && !c.type.includes('channel') && (!c.chat_members?.filter((m: any) => m.user_id !== state.currentUser.id)?.length)) || [];
+    let savedMessagesChat = allSavedMessages.length > 0 ? allSavedMessages[0] : null;
     
     let renderedChats = chats ? [...chats] : [];
     
     if (savedMessagesChat) {
-        renderedChats = renderedChats.filter(c => c.id !== savedMessagesChat.id);
+        const savedIds = allSavedMessages.map(c => c.id);
+        renderedChats = renderedChats.filter(c => !savedIds.includes(c.id));
         renderedChats.unshift(savedMessagesChat); // put it to the front
     }
     

@@ -196,23 +196,32 @@ export async function forwardSelectedMessages() {
         return true;
     });
 
+    let allSavedMessages = chats?.filter(c => !c.type.includes('group') && !c.type.includes('channel') && (!c.chat_members?.filter((m: any) => m.user_id !== state.currentUser.id)?.length)) || [];
+    let savedMessagesChat = allSavedMessages.length > 0 ? allSavedMessages[0] : null;
+    
+    let renderedChats = chats ? [...chats] : [];
+    
+    if (savedMessagesChat) {
+        const savedIds = allSavedMessages.map(c => c.id);
+        renderedChats = renderedChats.filter(c => !savedIds.includes(c.id));
+        renderedChats.unshift(savedMessagesChat); // put it to the front
+    }
+
     const list = document.getElementById('forward-chats-list')!;
     list.innerHTML = '';
     
-    chats?.forEach((chat: any) => {
+    renderedChats.forEach((chat: any) => {
         const isGroup = chat.type === 'group' || chat.type === 'channel';
         let chatName = chat.title;
         let avatarUrl = chat.avatar_url;
         
         if (!isGroup) {
-            const otherMember = chat.chat_members.find((m: any) => m.user_id !== state.currentUser.id);
+            const otherMember = chat.chat_members?.find((m: any) => m.user_id !== state.currentUser.id);
             if (otherMember) {
-                chatName = otherMember.profiles.display_name || otherMember.profiles.username;
-                avatarUrl = otherMember.profiles.avatar_url;
-            } else if (chat.title === 'Избранное' || chat.description === 'SAVED_MESSAGES') {
-                chatName = 'Избранное';
+                chatName = otherMember.profiles?.display_name || otherMember.profiles?.username || 'Неизвестно';
+                avatarUrl = otherMember.profiles?.avatar_url;
             } else {
-                return;
+                chatName = 'Избранное';
             }
         }
         
@@ -418,23 +427,32 @@ export async function shareAppContent(urlHash: string, title: string, contentTyp
         return true;
     });
 
+    let allSavedMessages = chats?.filter(c => !c.type.includes('group') && !c.type.includes('channel') && (!c.chat_members?.filter((m: any) => m.user_id !== state.currentUser.id)?.length)) || [];
+    let savedMessagesChat = allSavedMessages.length > 0 ? allSavedMessages[0] : null;
+    
+    let renderedChats = chats ? [...chats] : [];
+    
+    if (savedMessagesChat) {
+        const savedIds = allSavedMessages.map(c => c.id);
+        renderedChats = renderedChats.filter(c => !savedIds.includes(c.id));
+        renderedChats.unshift(savedMessagesChat); // put it to the front
+    }
+
     const list = document.getElementById('share-chats-list')!;
     list.innerHTML = '';
     
-    chats?.forEach((chat: any) => {
+    renderedChats.forEach((chat: any) => {
         const isGroup = chat.type === 'group' || chat.type === 'channel';
         let chatName = chat.title;
         let avatarUrl = chat.avatar_url;
         
         if (!isGroup) {
-            const otherMember = chat.chat_members.find((m: any) => m.user_id !== state.currentUser.id);
+            const otherMember = chat.chat_members?.find((m: any) => m.user_id !== state.currentUser.id);
             if (otherMember) {
-                chatName = otherMember.profiles.display_name || otherMember.profiles.username;
-                avatarUrl = otherMember.profiles.avatar_url;
-            } else if (chat.title === 'Избранное' || chat.description === 'SAVED_MESSAGES') {
-                chatName = 'Избранное';
+                chatName = otherMember.profiles?.display_name || otherMember.profiles?.username || 'Неизвестно';
+                avatarUrl = otherMember.profiles?.avatar_url;
             } else {
-                return;
+                chatName = 'Избранное';
             }
         }
         

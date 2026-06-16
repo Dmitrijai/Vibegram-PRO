@@ -184,6 +184,7 @@ const urlParams = new URLSearchParams(window.location.search);
 // Cache original hash on startup to handle PWA cold start with deep links
 if (!sessionStorage.getItem('initial_hash_handled')) {
     sessionStorage.setItem('initial_hash', window.location.hash);
+    sessionStorage.setItem('initial_search', window.location.search);
 }
 
 // Initialize app
