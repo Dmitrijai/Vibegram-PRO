@@ -181,28 +181,25 @@ export async function forwardSelectedMessages() {
     `;
     document.getElementById('modal-overlay')!.classList.remove('hidden');
 
-    const { data: members } = await supabase.from('chat_members').select('chat_id, role').eq('user_id', state.currentUser.id);
+    const { data: members } = await supabase.from('chat_members').select('chat_id').eq('user_id', state.currentUser.id);
     if (!members || members.length === 0) {
         document.getElementById('forward-chats-list')!.innerHTML = '<div class="text-center text-gray-500 text-sm p-4">Нет доступных чатов</div>';
         return;
     }
     
-    const roleMap = new Map();
-    members.forEach(m => roleMap.set(m.chat_id, m.role));
-    
-    const { data: chats } = await supabase.from('chats').select('id, type, title, avatar_url, chat_members(user_id, profiles(username, display_name, avatar_url))').in('id', members.map(m => m.chat_id));
-    
+    const { data: rawChats } = await supabase.from('chats').select('id, type, title, avatar_url, chat_members(user_id, role, profiles(username, display_name, avatar_url))').in('id', members.map(m => m.chat_id));
+    const chats = rawChats?.filter(c => {
+        if (c.type === 'channel') {
+            const myMember = c.chat_members.find((m: any) => m.user_id === state.currentUser.id);
+            if (myMember && myMember.role === 'member') return false;
+        }
+        return true;
+    });
+
     const list = document.getElementById('forward-chats-list')!;
     list.innerHTML = '';
     
-    let savedMessagesAdded = false;
-
     chats?.forEach((chat: any) => {
-        if (chat.type === 'channel') {
-            const myRole = roleMap.get(chat.id);
-            if (myRole !== 'admin' && myRole !== 'creator') return;
-        }
-
         const isGroup = chat.type === 'group' || chat.type === 'channel';
         let chatName = chat.title;
         let avatarUrl = chat.avatar_url;
@@ -210,11 +207,9 @@ export async function forwardSelectedMessages() {
         if (!isGroup) {
             const otherMember = chat.chat_members.find((m: any) => m.user_id !== state.currentUser.id);
             if (otherMember) {
-                chatName = otherMember.profiles?.display_name || otherMember.profiles?.username || 'Удаленный аккаунт';
-                avatarUrl = otherMember.profiles?.avatar_url;
+                chatName = otherMember.profiles.display_name || otherMember.profiles.username;
+                avatarUrl = otherMember.profiles.avatar_url;
             } else if (chat.title === 'Избранное' || chat.description === 'SAVED_MESSAGES') {
-                if (savedMessagesAdded) return;
-                savedMessagesAdded = true;
                 chatName = 'Избранное';
             } else {
                 return;
@@ -311,37 +306,66 @@ export async function confirmForwardMultiple() {
 
         state.forwardSelectedChats.forEach(chatId => {
             // Push notification
-            supabase.from('chats').select('is_group, type, title, username').eq('id', chatId).single().then(({ data: chatData }) => {
+            supabase.from('chats').select('is_group, type, title, username, user1_id, user2_id').eq('id', chatId).single().then(({ data: chatData }) => {
                 if (chatData) {
-                    supabase.from('chat_members').select('user_id').eq('chat_id', chatId).then(({ data: members }) => {
-                        if (members) {
-                            const memberIds = members.map((m: any) => m.user_id).filter((id: string) => id !== state.currentUser?.id);
-                            if (memberIds.length > 0) {
-                                supabase.from('profiles').select('push_token').in('id', memberIds).then(({ data: profiles }) => {
-                                    if (profiles) {
-                                        const tokens = profiles.map((p: any) => p.push_token).filter((t: any) => t);
-                                        if (tokens.length > 0) {
-                                            const pushBody = (!chatData.is_group || chatData.type === 'channel') 
-                                                ? rawBodyContent 
-                                                : `${forwardSenderName}: ${rawBodyContent}`;
-                                                
-                                            const pushPayloadBase = { 
-                                                title: chatData.is_group ? (chatData.title || chatData.username || 'Группа') : forwardSenderName, 
-                                                body: pushBody,
-                                                chat_id: String(chatId),
-                                                text: rawBodyContent,
-                                                sender_name: forwardSenderName,
-                                                data: { chatId: String(chatId) }
-                                            };
-                                            supabase.functions.invoke('send-push', {
-                                                body: { tokens: tokens, ...pushPayloadBase }
-                                            }).catch(e => console.warn('Push error', e));
-                                        }
-                                    }
-                                });
-                            }
+                    const pushData = { chatId: String(chatId) };
+                    
+                    if (!chatData.is_group) {
+                        const pushTitle = forwardSenderName;
+                        const pushBody = rawBodyContent;
+                        
+                        const pushPayloadBase = { 
+                            title: pushTitle, 
+                            body: pushBody,
+                            chat_id: String(chatId),
+                            text: rawBodyContent,
+                            sender_name: forwardSenderName,
+                            data: pushData
+                        };
+                        
+                        const otherUserId = chatData.user1_id === state.currentUser.id ? chatData.user2_id : chatData.user1_id;
+                        if (otherUserId) {
+                            supabase.from('profiles').select('push_token').eq('id', otherUserId).single().then(({ data: profile }) => {
+                                if (profile?.push_token) {
+                                    supabase.functions.invoke('send-push', {
+                                        body: { token: profile.push_token, ...pushPayloadBase }
+                                    }).catch(e => console.warn('Push error', e));
+                                }
+                            });
                         }
-                    });
+                    } else {
+                        const isChannel = chatData.type === 'channel';
+                        const groupName = chatData.title || chatData.username || 'Группа';
+                        const pushTitle = groupName;
+                        const pushBody = isChannel ? rawBodyContent : `${forwardSenderName}: ${rawBodyContent}`;
+                        
+                        const pushPayloadBase = { 
+                            title: pushTitle, 
+                            body: pushBody,
+                            chat_id: String(chatId),
+                            text: rawBodyContent,
+                            sender_name: forwardSenderName,
+                            data: pushData
+                        };
+                        
+                        supabase.from('chat_members').select('user_id').eq('chat_id', chatId).then(({ data: members }) => {
+                            if (members) {
+                                const memberIds = members.map((m: any) => m.user_id).filter((id: string) => id !== state.currentUser?.id);
+                                if (memberIds.length > 0) {
+                                    supabase.from('profiles').select('push_token').in('id', memberIds).then(({ data: profiles }) => {
+                                        if (profiles) {
+                                            const tokens = profiles.map((p: any) => p.push_token).filter((t: any) => t);
+                                            if (tokens.length > 0) {
+                                                supabase.functions.invoke('send-push', {
+                                                    body: { tokens: tokens, ...pushPayloadBase }
+                                                }).catch(e => console.warn('Group Push error', e));
+                                            }
+                                        }
+                                    });
+                                }
+                            }
+                        });
+                    }
                 }
             });
         });
@@ -379,28 +403,25 @@ export async function shareAppContent(urlHash: string, title: string, contentTyp
     `;
     document.getElementById('modal-overlay')!.classList.remove('hidden');
 
-    const { data: members } = await supabase.from('chat_members').select('chat_id, role').eq('user_id', state.currentUser.id);
+    const { data: members } = await supabase.from('chat_members').select('chat_id').eq('user_id', state.currentUser.id);
     if (!members || members.length === 0) {
         document.getElementById('share-chats-list')!.innerHTML = '<div class="text-center text-gray-500 text-sm p-4">Нет доступных чатов</div>';
         return;
     }
     
-    const roleMap = new Map();
-    members.forEach(m => roleMap.set(m.chat_id, m.role));
-    
-    const { data: chats } = await supabase.from('chats').select('id, type, title, avatar_url, chat_members(user_id, profiles(username, display_name, avatar_url))').in('id', members.map(m => m.chat_id));
-    
+    const { data: rawChats } = await supabase.from('chats').select('id, type, title, avatar_url, chat_members(user_id, role, profiles(username, display_name, avatar_url))').in('id', members.map(m => m.chat_id));
+    const chats = rawChats?.filter(c => {
+        if (c.type === 'channel') {
+            const myMember = c.chat_members.find((m: any) => m.user_id === state.currentUser.id);
+            if (myMember && myMember.role === 'member') return false;
+        }
+        return true;
+    });
+
     const list = document.getElementById('share-chats-list')!;
     list.innerHTML = '';
     
-    let savedMessagesAdded = false;
-
     chats?.forEach((chat: any) => {
-        if (chat.type === 'channel') {
-            const myRole = roleMap.get(chat.id);
-            if (myRole !== 'admin' && myRole !== 'creator') return;
-        }
-
         const isGroup = chat.type === 'group' || chat.type === 'channel';
         let chatName = chat.title;
         let avatarUrl = chat.avatar_url;
@@ -408,11 +429,9 @@ export async function shareAppContent(urlHash: string, title: string, contentTyp
         if (!isGroup) {
             const otherMember = chat.chat_members.find((m: any) => m.user_id !== state.currentUser.id);
             if (otherMember) {
-                chatName = otherMember.profiles?.display_name || otherMember.profiles?.username || 'Удаленный аккаунт';
-                avatarUrl = otherMember.profiles?.avatar_url;
+                chatName = otherMember.profiles.display_name || otherMember.profiles.username;
+                avatarUrl = otherMember.profiles.avatar_url;
             } else if (chat.title === 'Избранное' || chat.description === 'SAVED_MESSAGES') {
-                if (savedMessagesAdded) return;
-                savedMessagesAdded = true;
                 chatName = 'Избранное';
             } else {
                 return;
@@ -486,53 +505,60 @@ export async function confirmShareAppContent() {
                 media: [shareMedia],
                 message_type: 'text'
             });
-        }
-        
-        let forwardSenderName = state.currentProfile?.display_name || state.currentProfile?.username || state.currentUser?.user_metadata?.full_name;
-        if (!forwardSenderName) {
-            const { data: p } = await supabase.from('profiles').select('display_name, username').eq('id', state.currentUser.id).single();
-            if (p) forwardSenderName = p.display_name || p.username;
-        }
-        forwardSenderName = forwardSenderName || "Vibegram";
-        
-        const rawBodyContent = '♻️ Поделились: ' + (state.pendingShareData.content_type_label || 'Контентом');
 
-        state.shareSelectedChats.forEach(chatId => {
-            // Push notification
-            supabase.from('chats').select('is_group, type, title, username').eq('id', chatId).single().then(({ data: chatData }) => {
+            try {
+                const { data: chatData } = await supabase.from('chats').select('type, title, username').eq('id', chatId).single();
                 if (chatData) {
-                    supabase.from('chat_members').select('user_id').eq('chat_id', chatId).then(({ data: members }) => {
+                    const isGroup = chatData.type === 'group' || chatData.type === 'channel';
+                    let pushTitle = state.currentProfile?.display_name || state.currentUser?.first_name || 'VibeGram';
+                    let pushBody = state.pendingShareData?.content_type_label === 'ПРИЛОЖЕНИЕ' 
+                                   ? 'Отправил(а) мини-приложение' 
+                                   : 'Отправил(а) контент';
+                    if (state.pendingShareData?.content_type_label === 'ШОРТС') pushBody = 'Отправил(а) шортс';
+                    
+                    const pushPayloadBase = { 
+                        title: isGroup ? (chatData.title || chatData.username || 'Группа') : pushTitle,
+                        body: isGroup ? `${pushTitle}: ${pushBody}` : pushBody,
+                        chat_id: String(chatId),
+                        text: pushBody,
+                        sender_name: pushTitle
+                    };
+
+                    if (isGroup) {
+                        const { data: members } = await supabase.from('chat_members').select('user_id').eq('chat_id', chatId);
                         if (members) {
                             const memberIds = members.map((m: any) => m.user_id).filter((id: string) => id !== state.currentUser?.id);
                             if (memberIds.length > 0) {
-                                supabase.from('profiles').select('push_token').in('id', memberIds).then(({ data: profiles }) => {
-                                    if (profiles) {
-                                        const tokens = profiles.map((p: any) => p.push_token).filter((t: any) => t);
-                                        if (tokens.length > 0) {
-                                            const pushBody = (!chatData.is_group || chatData.type === 'channel') 
-                                                ? rawBodyContent 
-                                                : `${forwardSenderName}: ${rawBodyContent}`;
-                                                
-                                            const pushPayloadBase = { 
-                                                title: chatData.is_group ? (chatData.title || chatData.username || 'Группа') : forwardSenderName, 
-                                                body: pushBody,
-                                                chat_id: String(chatId),
-                                                text: rawBodyContent,
-                                                sender_name: forwardSenderName,
-                                                data: { chatId: String(chatId) }
-                                            };
-                                            supabase.functions.invoke('send-push', {
-                                                body: { tokens: tokens, ...pushPayloadBase }
-                                            }).catch(e => console.warn('Push error', e));
-                                        }
+                                const { data: profiles } = await supabase.from('profiles').select('push_token').in('id', memberIds);
+                                if (profiles) {
+                                    const tokens = profiles.map((p: any) => p.push_token).filter((t: any) => t);
+                                    if (tokens.length > 0) {
+                                        supabase.functions.invoke('send-push', {
+                                            body: { tokens, ...pushPayloadBase }
+                                        }).catch(e => console.warn('Push error', e));
                                     }
-                                });
+                                }
                             }
                         }
-                    });
+                    } else {
+                        const { data: members } = await supabase.from('chat_members').select('user_id').eq('chat_id', chatId);
+                        if (members) {
+                            const otherUserId = members.find((m: any) => m.user_id !== state.currentUser?.id)?.user_id;
+                            if (otherUserId) {
+                                const { data: profile } = await supabase.from('profiles').select('push_token').eq('id', otherUserId).single();
+                                if (profile?.push_token) {
+                                    supabase.functions.invoke('send-push', {
+                                        body: { token: profile.push_token, ...pushPayloadBase }
+                                    }).catch(e => console.warn('Push error', e));
+                                }
+                            }
+                        }
+                    }
                 }
-            });
-        });
+            } catch (err) {
+                console.warn('Share push error:', err);
+            }
+        }
         
         closeModal();
         customToast('Успешно отправлено!');

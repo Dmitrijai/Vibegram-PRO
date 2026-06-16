@@ -74,8 +74,15 @@ export async function forwardMessage(id: string, content: string, senderName: st
         return;
     }
     
-    const { data: chats } = await supabase.from('chats').select('id, type, title, avatar_url, chat_members(user_id, profiles(username, display_name, avatar_url))').in('id', members.map(m => m.chat_id));
-    
+    const { data: rawChats } = await supabase.from('chats').select('id, type, title, avatar_url, chat_members(user_id, role, profiles(username, display_name, avatar_url))').in('id', members.map(m => m.chat_id));
+    const chats = rawChats?.filter(c => {
+        if (c.type === 'channel') {
+            const myMember = c.chat_members.find((m: any) => m.user_id === state.currentUser.id);
+            if (myMember && myMember.role === 'member') return false;
+        }
+        return true;
+    });
+
     // Check if Saved Messages exists, if not construct a virtual one
     let savedMessagesChat = chats?.find(c => !c.type.includes('group') && !c.type.includes('channel') && (!c.chat_members?.filter((m: any) => m.user_id !== state.currentUser.id)?.length));
     
@@ -133,7 +140,7 @@ export async function forwardMessage(id: string, content: string, senderName: st
             <div class="w-10 h-10 shrink-0 relative">${avatarHtml}${premiumBadgeHtml}</div>
             <div class="flex-1 min-w-0">
                 <div class="font-semibold text-gray-800 dark:text-gray-100 truncate text-sm">${chatName || 'Неизвестно'}</div>
-                <div class="text-xs text-gray-500">${isSavedMessages ? 'Избранное' : (isGroup ? 'Группа' : 'Личный чат')}</div>
+                <div class="text-xs text-gray-500">${isSavedMessages ? 'Избранное' : (chat.type === 'channel' ? 'Канал' : (isGroup ? 'Группа' : 'Личный чат'))}</div>
             </div>
             <div id="forward-check-${chat.id}" class="w-6 h-6 rounded-full border-2 border-gray-200 dark:border-gray-700 flex items-center justify-center transition-all">
                 <svg class="w-4 h-4 text-white hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"></path></svg>

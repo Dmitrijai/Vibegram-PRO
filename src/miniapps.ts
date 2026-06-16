@@ -973,6 +973,79 @@ export function copyMiniAppLink(appId?: string) {
   });
 }
 
+export async function runStandaloneMiniApp(id: string) {
+  try {
+    currentRunningAppId = id;
+    const { data, error } = await supabase
+      .from("mini_apps")
+      .select("*")
+      .eq("id", id)
+      .single();
+    if (error || !data) throw error || new Error("App Not Found");
+
+    const screens = [
+      "auth-screen",
+      "lock-screen",
+      "app-screen",
+      "initial-loader",
+    ];
+    screens.forEach((sId) =>
+      document.getElementById(sId)?.classList.add("hidden"),
+    );
+
+    const standaloneScreen = document.getElementById(
+      "standalone-miniapp-screen",
+    )!;
+    standaloneScreen.classList.remove("hidden");
+    standaloneScreen.classList.add("flex");
+
+    const iframe = document.getElementById(
+      "standalone-miniapp-frame",
+    ) as HTMLIFrameElement;
+
+    iframe.removeAttribute("srcdoc");
+    iframe.removeAttribute("src");
+
+    if (data.html_content && data.html_content.trim().startsWith("<")) {
+      iframe.srcdoc = data.html_content;
+    } else if (data.html_content && data.html_content.startsWith("https://")) {
+      if (data.html_content.includes("res.cloudinary.com")) {
+        try {
+          iframe.srcdoc = await fetchAndInjectBase(data.html_content);
+        } catch (err) {
+          iframe.src = data.html_content;
+        }
+      } else {
+        iframe.src = data.html_content;
+      }
+    } else if (data.html_url) {
+      if (data.html_url.includes("res.cloudinary.com")) {
+        try {
+          iframe.srcdoc = await fetchAndInjectBase(data.html_url);
+        } catch (err) {
+          iframe.src = data.html_url;
+        }
+      } else {
+        iframe.src = data.html_url;
+      }
+    } else if (data.html_content) {
+      iframe.srcdoc = data.html_content;
+    }
+
+    supabase.rpc("increment_miniapp_view", { app_id: id }).then((res) => {
+      if (res.error)
+        supabase
+          .from("mini_apps")
+          .update({ views_count: (data.views_count || 0) + 1 })
+          .eq("id", id)
+          .then();
+    });
+
+    window.addEventListener("message", handleMiniAppMessage);
+  } catch (e: any) {
+    document.body.innerHTML = `<div class="h-full w-full flex items-center justify-center text-red-500 font-bold bg-white dark:bg-gray-900">Ошибка загрузки приложения: ${e.message}</div>`;
+  }
+}
 
 function handleMiniAppMessage(event: MessageEvent) {
   if (!event.data || !currentRunningAppId) return;
@@ -984,7 +1057,11 @@ function handleMiniAppMessage(event: MessageEvent) {
   }
 
   if (event.data.type === "vibe_get_user") {
-    const iframeId = "mini-app-frame";
+    const urlParams = new URLSearchParams(window.location.search);
+    const isStandalone = urlParams.has("miniapp");
+    const iframeId = isStandalone
+      ? "standalone-miniapp-frame"
+      : "mini-app-frame";
     const iframe = document.getElementById(iframeId) as HTMLIFrameElement;
 
     if (iframe && iframe.contentWindow) {

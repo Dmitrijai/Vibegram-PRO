@@ -389,6 +389,12 @@ function finalizeAppSetup() {
             
             // Trigger popstate so #chat=... is processed if app opened via URL/Push
             setTimeout(() => {
+                const urlParams = new URLSearchParams(window.location.search);
+                const queryMiniapp = urlParams.get('miniapp');
+                if (queryMiniapp) {
+                    import('./miniapps').then(m => m.runMiniApp(queryMiniapp));
+                }
+
                 const initialHash = sessionStorage.getItem('initial_hash');
                 if (initialHash && (initialHash.startsWith('#chat=') || initialHash.startsWith('#shorts?id=')) && window.location.hash !== initialHash) {
                     window.history.replaceState(null, '', initialHash);

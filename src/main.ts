@@ -3,7 +3,7 @@ import { supabase, state } from './supabase';
 import * as logic from './logic';
 import './ai';
 import './shorts'; // Add Shorts support
-import { setupMiniApps } from './miniapps';
+import { setupMiniApps, runStandaloneMiniApp } from './miniapps';
 import { requestPushPermissionAndToken } from './push';
 
 (window as any).enablePushNotifications = requestPushPermissionAndToken;
@@ -180,11 +180,6 @@ window.addEventListener('popstate', (e) => {
 };
 
 const urlParams = new URLSearchParams(window.location.search);
-const standaloneMiniAppId = urlParams.get('miniapp');
-
-if (standaloneMiniAppId) {
-    import('./miniapps').then(m => m.runMiniApp(standaloneMiniAppId));
-}
 
 // Cache original hash on startup to handle PWA cold start with deep links
 if (!sessionStorage.getItem('initial_hash_handled')) {
