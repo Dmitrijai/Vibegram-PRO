@@ -3,7 +3,7 @@ import { supabase, state } from './supabase';
 import * as logic from './logic';
 import './ai';
 import './shorts'; // Add Shorts support
-import { setupMiniApps, runStandaloneMiniApp } from './miniapps';
+import { setupMiniApps } from './miniapps';
 import { requestPushPermissionAndToken } from './push';
 
 (window as any).enablePushNotifications = requestPushPermissionAndToken;
@@ -181,12 +181,6 @@ window.addEventListener('popstate', (e) => {
 
 const urlParams = new URLSearchParams(window.location.search);
 const standaloneMiniAppId = urlParams.get('miniapp');
-let isStandaloneMiniAppMode = false;
-
-if (standaloneMiniAppId) {
-    isStandaloneMiniAppMode = true;
-    runStandaloneMiniApp(standaloneMiniAppId);
-}
 
 // Cache original hash on startup to handle PWA cold start with deep links
 if (!sessionStorage.getItem('initial_hash_handled')) {
@@ -233,7 +227,6 @@ if (idToken) {
 }
 
 supabase.auth.getSession().then(({ data: { session }, error }) => {
-    if (isStandaloneMiniAppMode) return;
     if (error) {
         import('./utils').then(m => m.showError('Session error: ' + error.message));
     }
@@ -249,12 +242,20 @@ supabase.auth.getSession().then(({ data: { session }, error }) => {
 
 supabase.auth.onAuthStateChange((event, session) => {
     console.log("Auth State Changed:", event, "Session exists?", !!session);
-    if (isStandaloneMiniAppMode) return;
     if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION') {
         if (session?.user) {
             state.currentUser = session.user;
             logic.checkUser(event);
             setupRealtime();
+            
+            if (standaloneMiniAppId && !(window as any)._miniAppOpened) {
+                (window as any)._miniAppOpened = true;
+                setTimeout(() => {
+                    import('./miniapps').then(m => m.runMiniApp(standaloneMiniAppId));
+                    const newUrl = window.location.protocol + "//" + window.location.host + window.location.pathname + window.location.hash;
+                    window.history.replaceState({path: newUrl}, '', newUrl);
+                }, 800);
+            }
         } else if (event === 'INITIAL_SESSION' && !isHandlingIdToken) {
             document.getElementById('auth-screen')!.classList.remove('hidden');
             const loader = document.getElementById('initial-loader');
