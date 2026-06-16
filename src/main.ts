@@ -182,6 +182,10 @@ window.addEventListener('popstate', (e) => {
 const urlParams = new URLSearchParams(window.location.search);
 const standaloneMiniAppId = urlParams.get('miniapp');
 
+if (standaloneMiniAppId) {
+    import('./miniapps').then(m => m.runMiniApp(standaloneMiniAppId));
+}
+
 // Cache original hash on startup to handle PWA cold start with deep links
 if (!sessionStorage.getItem('initial_hash_handled')) {
     sessionStorage.setItem('initial_hash', window.location.hash);
@@ -247,15 +251,6 @@ supabase.auth.onAuthStateChange((event, session) => {
             state.currentUser = session.user;
             logic.checkUser(event);
             setupRealtime();
-            
-            if (standaloneMiniAppId && !(window as any)._miniAppOpened) {
-                (window as any)._miniAppOpened = true;
-                setTimeout(() => {
-                    import('./miniapps').then(m => m.runMiniApp(standaloneMiniAppId));
-                    const newUrl = window.location.protocol + "//" + window.location.host + window.location.pathname + window.location.hash;
-                    window.history.replaceState({path: newUrl}, '', newUrl);
-                }, 800);
-            }
         } else if (event === 'INITIAL_SESSION' && !isHandlingIdToken) {
             document.getElementById('auth-screen')!.classList.remove('hidden');
             const loader = document.getElementById('initial-loader');
