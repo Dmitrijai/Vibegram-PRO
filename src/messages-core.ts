@@ -330,7 +330,7 @@ export function renderMessages(messages: any[], isInitialLoad = false) {
 
         if (replyData) {
             replyHtml = `
-                <div class="flex items-center gap-2 mb-1.5 pl-2 border-l-2 border-blue-500 cursor-pointer hover:bg-black/5 dark:hover:bg-white/5 rounded-r transition-colors" onclick="const el = document.getElementById('msg-${replyData.original_id}'); if(el) { el.scrollIntoView({behavior: 'smooth', block: 'center'}); ['bg-[#bbdefb]', 'dark:bg-blue-900/60', 'scale-[1.02]'].forEach(c => el.classList.add(c)); el.style.transition = 'all 0.3s ease'; setTimeout(() => { ['bg-[#bbdefb]', 'dark:bg-blue-900/60', 'scale-[1.02]'].forEach(c => el.classList.remove(c)); setTimeout(() => el.style.transition = '', 300); }, 1500); }">
+                <div class="flex items-center gap-2 mb-1.5 pl-2 border-l-2 border-blue-500 cursor-pointer hover:bg-black/5 dark:hover:bg-white/5 rounded-r transition-colors" onclick="if(window.highlightMessage) window.highlightMessage('${replyData.original_id}')">
                     <div class="flex-1 min-w-0">
                         <div class="text-[13px] font-medium text-blue-500 dark:text-blue-400">${replyData.original_sender}</div>
                         <div class="text-[13px] text-gray-500 dark:text-gray-400 truncate">${replyData.original_content}</div>
@@ -546,16 +546,19 @@ export function renderMessages(messages: any[], isInitialLoad = false) {
         
         let previewContentString = msg.content || '';
         if (!previewContentString.trim()) {
-            if (actualMedia.length > 0) {
-                const type = actualMedia[0].type;
-                if (type === 'image') previewContentString = 'Фотография';
-                else if (type === 'video') previewContentString = 'Видеосообщение';
-                else if (type === 'audio') previewContentString = 'Голосовое сообщение';
-                else if (type === 'file') previewContentString = 'Файл';
-                else if (type === 'poll') previewContentString = 'Опрос';
-                else if (type === 'recording') previewContentString = 'Голосовое сообщение';
-            } else if (shareData) {
-                previewContentString = shareData.content_type_label || 'Вложение';
+            if (msg.message_type === 'voice') previewContentString = '🎤 Голосовое сообщение';
+            else if (msg.message_type === 'video_circle') previewContentString = '📹 Видео кружок';
+            else if (msg.message_type === 'photo') previewContentString = '📷 Фотография';
+            else if (msg.message_type === 'video') previewContentString = '🎥 Видео';
+            else if (msg.message_type === 'document') previewContentString = '📁 Файл';
+            else if (msg.message_type === 'poll') previewContentString = '📊 Опрос';
+            else if (shareData) previewContentString = shareData.content_type_label || 'App / Вложение';
+            else if (actualMedia.length > 0) {
+                const type = actualMedia[0].type || '';
+                if (type.startsWith('image/')) previewContentString = '📷 Фотография';
+                else if (type.startsWith('video/')) previewContentString = '🎥 Видеосообщение';
+                else if (type.startsWith('audio/')) previewContentString = '🎵 ГС / Аудио';
+                else previewContentString = '📁 Файл';
             }
         }
         if (!previewContentString.trim()) previewContentString = 'Вложение';
@@ -601,7 +604,7 @@ export function renderMessages(messages: any[], isInitialLoad = false) {
                         Копировать
                     </button>
                     ${document.getElementById('input-area')?.style.display !== 'none' ? `
-                    <button onclick="event.stopPropagation(); closeAllMessageMenus(); replyToMessage('${msg.id}', decodeURIComponent('${encodedContent}'), '${displaySenderName}')" class="w-full text-left px-4 py-2.5 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors flex items-center gap-3">
+                    <button onclick="event.stopPropagation(); closeAllMessageMenus(); replyToMessage('${msg.id}', decodeURIComponent('${encodedPreviewContent}'), '${displaySenderName}')" class="w-full text-left px-4 py-2.5 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors flex items-center gap-3">
                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6"></path></svg>
                         Ответить
                     </button>
