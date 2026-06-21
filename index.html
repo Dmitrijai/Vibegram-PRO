@@ -11,10 +11,12 @@
     <meta name="apple-mobile-web-app-title" content="Vibegram">
     <link rel="apple-touch-icon" href="pwa-icon.png">
     <link rel="icon" href="pwa-icon.png" />
+    <meta id="theme-color-meta" name="theme-color" content="#ffffff">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <script>
         if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
             document.documentElement.classList.add('dark');
+            document.getElementById('theme-color-meta').setAttribute('content', '#111827');
         }
         try {
             const savedBg = localStorage.getItem('chatBg');

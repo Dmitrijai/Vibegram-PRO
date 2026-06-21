@@ -510,7 +510,12 @@ async function updateCountersDynamically(shortId: string) {
       .eq("short_id", shortId);
     if (likesCount !== null) {
       const likesEl = document.getElementById(`short-likes-count-${shortId}`);
-      if (likesEl) likesEl.innerText = likesCount.toString();
+      if (likesEl) {
+          if (likesEl.innerText !== likesCount.toString()) {
+             supabase.from("shorts").update({ likes_count: likesCount }).eq("id", shortId).then();
+          }
+          likesEl.innerText = likesCount.toString();
+      }
     }
 
     const { count: commentsCount } = await supabase
@@ -521,7 +526,12 @@ async function updateCountersDynamically(shortId: string) {
       const commentsEl = document.getElementById(
         `short-comments-count-${shortId}`,
       );
-      if (commentsEl) commentsEl.innerText = commentsCount.toString();
+      if (commentsEl) {
+          if (commentsEl.innerText !== commentsCount.toString()) {
+             supabase.from("shorts").update({ comments_count: commentsCount }).eq("id", shortId).then();
+          }
+          commentsEl.innerText = commentsCount.toString();
+      }
     }
 
     const { data: shortData } = await supabase

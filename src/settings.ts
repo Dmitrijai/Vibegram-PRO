@@ -512,8 +512,12 @@ export async function saveSettings() {
     
     if (theme === 'dark') {
         document.documentElement.classList.add('dark');
+        const m = document.getElementById('theme-color-meta');
+        if (m) m.setAttribute('content', '#111827');
     } else {
         document.documentElement.classList.remove('dark');
+        const m = document.getElementById('theme-color-meta');
+        if (m) m.setAttribute('content', '#ffffff');
     }
     
     // Apply text size to messages using a CSS variable

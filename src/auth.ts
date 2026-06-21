@@ -307,7 +307,11 @@ function finalizeAppSetup() {
                 loader.classList.add('opacity-0', 'pointer-events-none');
                 setTimeout(() => loader.remove(), 300);
             }
-            document.getElementById('app-screen')!.classList.remove('hidden');
+            
+            const initialSearchCheck = sessionStorage.getItem('initial_search') || window.location.search;
+            if (!new URLSearchParams(initialSearchCheck).get('miniapp')) {
+                document.getElementById('app-screen')!.classList.remove('hidden');
+            }
             
             const pr = state.currentProfile;
             const nickname = pr?.display_name || pr?.username || 'User';
@@ -321,8 +325,12 @@ function finalizeAppSetup() {
             const theme = state.currentProfile?.settings?.theme || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
             if (theme === 'dark') {
                 document.documentElement.classList.add('dark');
+                const m = document.getElementById('theme-color-meta');
+                if (m) m.setAttribute('content', '#111827');
             } else {
                 document.documentElement.classList.remove('dark');
+                const m = document.getElementById('theme-color-meta');
+                if (m) m.setAttribute('content', '#ffffff');
             }
             
             const showHeaderShorts = state.currentProfile?.settings?.show_header_shorts;
