@@ -481,7 +481,18 @@ export function closeShortsAnalytics() {
 
 export function closeShorts() {
   if (window.location.hash.startsWith("#shorts")) {
-    window.location.hash = ""; // Clear all shorts modal hashes
+    const isFromInternal = window.history.state?.fromInternal;
+    if (isFromInternal) {
+      window.history.back();
+    } else {
+      import("./supabase").then(({ state }) => {
+        if (state.activeChatId) {
+          window.location.hash = "#chat=" + state.activeChatId;
+        } else {
+          window.location.hash = ""; // Clear all shorts modal hashes
+        }
+      });
+    }
   } else {
     const screen = document.getElementById("shorts-screen");
     if (screen) screen.classList.add("hidden");
@@ -1719,10 +1730,10 @@ window.addEventListener("popstate", (e) => {
       if (activeVideo) activeVideo.play().catch((ex) => console.log(ex));
       if (targetShortId && targetShortId !== activeVideo?.parentElement?.getAttribute('data-id')) {
           // Force reload to specific short
-          openShorts(targetShortId);
+          openShorts(targetShortId, undefined, true);
       }
     } else if (!screen || (targetShortId && targetShortId !== activeVideo?.parentElement?.getAttribute('data-id'))) {
-      openShorts(targetShortId, state?.authorId); // load it
+      openShorts(targetShortId, state?.authorId, true); // load it
     }
   } else {
     const screen = document.getElementById("shorts-screen");

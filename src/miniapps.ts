@@ -49,6 +49,33 @@ export function setupMiniApps() {
 
   // Listen for messages from mini-apps window.parent.postMessage
   window.addEventListener("message", handleMiniAppMessage);
+
+  window.addEventListener("popstate", () => {
+    const urlParams = new URLSearchParams(window.location.search);
+    if (!urlParams.has("miniapp")) {
+      const standaloneScreen = document.getElementById("standalone-miniapp-screen");
+      if (standaloneScreen && !standaloneScreen.classList.contains("hidden")) {
+        standaloneScreen.classList.add("hidden");
+        standaloneScreen.classList.remove("flex");
+        // We only restore app screen here, assuming user is logged in
+        document.getElementById("app-screen")?.classList.remove("hidden");
+        
+        const iframe = document.getElementById("standalone-miniapp-frame") as HTMLIFrameElement;
+        if (iframe) {
+           iframe.removeAttribute("srcdoc");
+           iframe.removeAttribute("src");
+        }
+        currentRunningAppId = null;
+      }
+    } else {
+      const appId = urlParams.get("miniapp");
+      if (appId && currentRunningAppId !== appId) {
+        runStandaloneMiniApp(appId);
+      }
+    }
+  });
+
+  (window as any).runStandaloneMiniApp = runStandaloneMiniApp;
 }
 
 let activeTab = "public";
@@ -943,9 +970,25 @@ export async function runMiniApp(id: string) {
 
 export function closeMiniApp() {
   const urlParams = new URLSearchParams(window.location.search);
+  const wasStandalone = urlParams.has("miniapp");
   if (urlParams.has("miniapp")) {
-    window.location.href = window.location.pathname;
-    return;
+    urlParams.delete("miniapp");
+    const newSearch = urlParams.toString() ? `?${urlParams.toString()}` : "";
+    window.history.pushState(null, "", window.location.pathname + newSearch + window.location.hash);
+  }
+
+  const standaloneScreen = document.getElementById("standalone-miniapp-screen");
+  if (standaloneScreen && !standaloneScreen.classList.contains("hidden")) {
+    standaloneScreen.classList.add("hidden");
+    standaloneScreen.classList.remove("flex");
+    document.getElementById("app-screen")?.classList.remove("hidden");
+    const iframe = document.getElementById("standalone-miniapp-frame") as HTMLIFrameElement;
+    if (iframe) {
+        iframe.removeAttribute("srcdoc");
+        iframe.removeAttribute("src");
+    }
+    currentRunningAppId = null;
+    miniAppContentData = null;
   }
 
   const runModal = document.getElementById("mini-app-run-modal");
@@ -956,8 +999,10 @@ export function closeMiniApp() {
       const iframe = document.getElementById(
         "mini-app-frame",
       ) as HTMLIFrameElement;
-      iframe.removeAttribute("srcdoc");
-      iframe.removeAttribute("src");
+      if (iframe) {
+        iframe.removeAttribute("srcdoc");
+        iframe.removeAttribute("src");
+      }
       currentRunningAppId = null;
       miniAppContentData = null;
     }, 300);

@@ -581,6 +581,11 @@ export async function confirmShareAppContent() {
             import('./supabase').then(s => s.broadcastUpdate(chatId, 'message'));
         }
         
+        if (state.activeChatId && state.shareSelectedChats.includes(state.activeChatId)) {
+            import('./messages-core').then(m => m.loadMessages(state.activeChatId!));
+        }
+        import('./chat').then(c => c.loadChats());
+        
         closeModal();
         customToast('Успешно отправлено!');
         

@@ -69,6 +69,13 @@ export async function markMessagesAsRead(chatId: string) {
 function renderContent(content: string) {
     if (!content) return '';
     
+    let safeContent = content
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+    
     const stripped = content.replace(/[\p{Emoji}\s]/gu, '');
     const isOnlyEmoji = stripped.length === 0 && content.trim().length > 0;
     
@@ -83,13 +90,18 @@ function renderContent(content: string) {
             if (seg.match(/[\p{Emoji}]/gu)) {
                 html += `<img src="${getNotoEmojiUrl(seg)}" alt="${seg}" loading="lazy" class="w-24 h-24 sm:w-32 sm:h-32 object-contain drop-shadow-xl hover:scale-110 transition-transform" onerror="this.onerror=null; this.outerHTML='<span class=\\'text-6xl\\'>${seg}</span>';">`;
             } else {
-                html += seg;
+                html += seg; // Seg spaces
             }
         }
         return `<div class="flex gap-2 justify-center py-2">${html}</div>`;
     }
     
-    return `<p class="break-words [word-break:break-word] leading-relaxed whitespace-pre-wrap" style="font-size: var(--msg-text-size, 15px);">${content}</p>`;
+    const urlRegex = /(https?:\/\/[^\s]+)/g;
+    safeContent = safeContent.replace(urlRegex, (url) => {
+        return `<a href="${url}" target="_blank" rel="noopener noreferrer" class="text-blue-500 hover:underline break-all" onclick="event.stopPropagation()">${url}</a>`;
+    });
+    
+    return `<p class="break-words [word-break:break-word] leading-relaxed whitespace-pre-wrap" style="font-size: var(--msg-text-size, 15px);">${safeContent}</p>`;
 }
 
 let floatingDateTimeout: any = null;
@@ -308,7 +320,7 @@ export function renderMessages(messages: any[], isInitialLoad = false) {
         let shareHtml = '';
         if (shareData) {
             shareHtml = `
-                <div class="mb-2 w-full max-w-[280px] bg-white dark:bg-[#1C1C1D] shadow-[0_2px_12px_rgba(0,0,0,0.06)] rounded-[16px] overflow-hidden border border-gray-100 dark:border-[#2C2C2E] cursor-pointer hover:shadow-[0_4px_16px_rgba(0,0,0,0.08)] transition-all active:scale-[0.98]" onclick="if('${shareData.url_hash}'.startsWith('?miniapp=')) { window.history.pushState(null, '', window.location.pathname + '${shareData.url_hash}'); if(window.runMiniApp) window.runMiniApp('${shareData.url_hash}'.split('=')[1]); } else if('${shareData.url_hash}'.startsWith('?')) { window.location.href = '${shareData.url_hash}'; } else if(window.location.hash !== '${shareData.url_hash}') { window.history.pushState(null, '', '${shareData.url_hash}'); window.dispatchEvent(new Event('popstate')); }">
+                <div class="mb-2 w-full max-w-[280px] bg-white dark:bg-[#1C1C1D] shadow-[0_2px_12px_rgba(0,0,0,0.06)] rounded-[16px] overflow-hidden border border-gray-100 dark:border-[#2C2C2E] cursor-pointer hover:shadow-[0_4px_16px_rgba(0,0,0,0.08)] transition-all active:scale-[0.98]" onclick="if('${shareData.url_hash}'.startsWith('?miniapp=')) { window.history.pushState({ fromInternal: true }, '', window.location.pathname + '${shareData.url_hash}' + window.location.hash); if(window.runStandaloneMiniApp) window.runStandaloneMiniApp('${shareData.url_hash}'.split('=')[1]); } else if('${shareData.url_hash}'.startsWith('?')) { window.location.href = '${shareData.url_hash}'; } else if(window.location.hash !== '${shareData.url_hash}') { window.history.pushState({ fromInternal: true }, '', '${shareData.url_hash}'); window.dispatchEvent(new Event('popstate')); }">
                     <div class="relative w-full aspect-video bg-gray-100 dark:bg-[#2C2C2E] flex items-center justify-center overflow-hidden group">
                         ${shareData.thumbnail_url ? `<img src="${shareData.thumbnail_url}" class="w-full h-full object-cover">` : `<svg class="w-10 h-10 text-gray-400 dark:text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>`}
                         <div class="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">

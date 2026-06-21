@@ -393,7 +393,7 @@ function finalizeAppSetup() {
                 const urlParams = new URLSearchParams(initialSearch);
                 const queryMiniapp = urlParams.get('miniapp');
                 if (queryMiniapp) {
-                    import('./miniapps').then(m => m.runMiniApp(queryMiniapp));
+                    import('./miniapps').then(m => m.runStandaloneMiniApp(queryMiniapp));
                 }
 
                 const initialHash = sessionStorage.getItem('initial_hash');
