@@ -1118,7 +1118,12 @@ export async function openChatInfo(skipPushState = false) {
             <div class="w-28 h-28 rounded-full flex items-center justify-center text-white text-5xl font-bold mb-4 shadow-md shrink-0 bg-gradient-to-br relative ${state.activeChatIsGroup ? "from-emerald-400 to-teal-500" : "from-blue-400 to-indigo-500"}">
                 ${avatarHtml}
             </div>
-            <div class="font-bold text-2xl text-gray-800 dark:text-gray-100 text-center shrink-0 truncate w-full max-w-full px-4 flex justify-center items-center gap-1">${name}${verifiedHtml}</div>
+            <div class="font-bold text-2xl text-gray-800 dark:text-gray-100 shrink-0 w-full max-w-[calc(100%-2rem)] flex">
+                <div class="flex items-center mx-auto min-w-0 max-w-full gap-1">
+                    <span class="truncate block min-w-0">${name}</span>
+                    ${verifiedHtml}
+                </div>
+            </div>
             ${usernameHtml}
             ${!state.activeChatIsGroup ? `<div class="text-sm text-gray-500 dark:text-gray-400 mt-1 shrink-0">${state.activeChatOtherUser?.is_online ? "в сети" : "был(а) недавно"}</div>` : ""}
             ${mediaContentHtml}

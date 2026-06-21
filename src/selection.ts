@@ -576,6 +576,9 @@ export async function confirmShareAppContent() {
             } catch (err) {
                 console.warn('Share push error:', err);
             }
+            
+            // Trigger realtime update specifically like other normal messages do
+            import('./supabase').then(s => s.broadcastUpdate(chatId, 'message'));
         }
         
         closeModal();
