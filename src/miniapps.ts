@@ -884,6 +884,8 @@ async function fetchAndInjectBase(url: string): Promise<string> {
 }
 
 export async function runMiniApp(id: string) {
+  const themeMeta = document.getElementById("theme-color-meta");
+  if (themeMeta) themeMeta.setAttribute("content", "#111827");
   customToast("Загрузка приложения...");
 
   try {
@@ -969,6 +971,13 @@ export async function runMiniApp(id: string) {
 }
 
 export function closeMiniApp() {
+  const themeMeta = document.getElementById("theme-color-meta");
+  if (themeMeta) {
+      if (!document.documentElement.classList.contains('dark')) {
+          themeMeta.setAttribute("content", "#ffffff");
+      }
+  }
+
   const urlParams = new URLSearchParams(window.location.search);
   const wasStandalone = urlParams.has("miniapp");
   if (urlParams.has("miniapp")) {
@@ -1019,6 +1028,8 @@ export function copyMiniAppLink(appId?: string) {
 }
 
 export async function runStandaloneMiniApp(id: string) {
+  const themeMeta = document.getElementById("theme-color-meta");
+  if (themeMeta) themeMeta.setAttribute("content", "#111827");
   try {
     currentRunningAppId = id;
     const { data, error } = await supabase

@@ -302,14 +302,17 @@ export async function verifyRecoveryCode() {
 }
 
 function finalizeAppSetup() {
+            const initialSearchCheck = sessionStorage.getItem('initial_search') || window.location.search;
+            const isStandalone = new URLSearchParams(initialSearchCheck).get('miniapp');
+            
             const loader = document.getElementById('initial-loader');
-            if (loader) {
+            // If it's a standalone miniapp, let it remove the loader itself after it loads to avoid flashing
+            if (loader && !isStandalone) {
                 loader.classList.add('opacity-0', 'pointer-events-none');
                 setTimeout(() => loader.remove(), 300);
             }
             
-            const initialSearchCheck = sessionStorage.getItem('initial_search') || window.location.search;
-            if (!new URLSearchParams(initialSearchCheck).get('miniapp')) {
+            if (!isStandalone) {
                 document.getElementById('app-screen')!.classList.remove('hidden');
             }
             

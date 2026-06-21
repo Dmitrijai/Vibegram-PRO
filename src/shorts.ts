@@ -9,6 +9,9 @@ export async function openShorts(
   authorFilterId?: string,
   skipPushState = false,
 ) {
+  const themeMeta = document.getElementById("theme-color-meta");
+  if (themeMeta) themeMeta.setAttribute("content", "#111827");
+
   import("./utils").then((m) => m.closeModal(undefined, true));
   if (!skipPushState && window.location.hash !== "#shorts") {
     window.history.pushState(
@@ -480,6 +483,13 @@ export function closeShortsAnalytics() {
 (window as any).closeShortsAnalytics = closeShortsAnalytics;
 
 export function closeShorts() {
+  const themeMeta = document.getElementById("theme-color-meta");
+  if (themeMeta) {
+      if (!document.documentElement.classList.contains('dark')) {
+          themeMeta.setAttribute("content", "#ffffff");
+      }
+  }
+
   if (window.location.hash.startsWith("#shorts")) {
     const isFromInternal = window.history.state?.fromInternal;
     if (isFromInternal) {

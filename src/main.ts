@@ -11,6 +11,16 @@ import { requestPushPermissionAndToken } from './push';
 window.addEventListener('popstate', (e) => {
     const hash = window.location.hash;
     
+    // Restore theme color
+    const themeMeta = document.getElementById("theme-color-meta");
+    if (themeMeta) {
+        if (!document.documentElement.classList.contains('dark')) {
+            themeMeta.setAttribute("content", "#ffffff");
+        } else {
+            themeMeta.setAttribute("content", "#111827");
+        }
+    }
+
     // Fallbacks / globals for navigation
     if (!hash || hash === '' || hash === '#') {
         // Back to home (chat list on mobile, or just base state)
