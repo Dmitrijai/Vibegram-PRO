@@ -730,7 +730,10 @@ async function fetchShortsBatch(
   }
 }
 
+let currentLoadSeq = 0;
+
 async function loadShorts(initialShortId?: string, authorFilterId?: string) {
+  const seq = ++currentLoadSeq;
   const container = document.getElementById("shorts-container");
   if (!container) return;
 
@@ -777,7 +780,10 @@ async function loadShorts(initialShortId?: string, authorFilterId?: string) {
   }
 
   loadedShortIds.clear();
-  shortsQueue = await fetchShortsBatch(initialShortId, authorFilterId);
+  const newQueue = await fetchShortsBatch(initialShortId, authorFilterId);
+  if (seq !== currentLoadSeq) return;
+  
+  shortsQueue = newQueue;
   shortsList = [];
 
   if (shortsQueue.length === 0) {
