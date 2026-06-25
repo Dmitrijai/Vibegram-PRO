@@ -3,6 +3,9 @@ import { getStatusText, customConfirm } from "./utils";
 import { loadMessages, markMessagesAsRead } from "./messages";
 
 export async function loadChats() {
+  const list = document.getElementById("chats-list");
+  if (!list) return;
+
   try {
     if (navigator.onLine) {
         import("./group")
@@ -41,8 +44,6 @@ export async function loadChats() {
             chatIds = [...new Set([...chatIds, ...supportChats.map((c) => c.id)])];
           }
         }
-
-        const list = document.getElementById("chats-list")!;
 
         if (chatIds.length === 0) {
           list.innerHTML = `<div class="text-center text-gray-400 mt-20 p-6"><span class="text-sm">У вас пока нет чатов.<br>Найдите друзей через поиск выше.</span></div>`;
