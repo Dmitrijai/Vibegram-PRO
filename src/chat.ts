@@ -40,7 +40,7 @@ export async function loadChats() {
     const { data: chats, error: chatsError } = await supabase
       .from("chats")
       .select(
-        `id, created_at, type, title, avatar_url, description, is_public, is_verified, chat_members(user_id, role, profiles(id, username, display_name, last_seen, is_online, avatar_url, bio, settings, is_premium, premium_until)), messages(content, message_type, created_at, is_read, sender_id)`,
+        `id, created_at, type, title, avatar_url, description, is_public, is_verified, chat_members(user_id, role, profiles(id, username, display_name, last_seen, is_online, avatar_url, bio, settings, is_premium, premium_until)), messages(content, message_type, media, created_at, is_read, sender_id)`,
       )
       .in("id", chatIds);
     if (chatsError) throw chatsError;
@@ -231,12 +231,19 @@ export async function loadChats() {
         '<span class="italic text-gray-400">Нет сообщений</span>';
 
       if (lastMsg) {
-        if (lastMsg.message_type === "voice") previewText = "🎤 Голосовое";
+        const mediaArr = lastMsg.media || [];
+        const shareData = mediaArr.find((m: any) => m.type === 'share_app_content');
+        
+        if (shareData) {
+            let label = shareData.content_type_label ? shareData.content_type_label.charAt(0).toUpperCase() + shareData.content_type_label.slice(1).toLowerCase() : 'Контент';
+            previewText = shareData.title ? `${label} «${shareData.title}»` : label;
+        } else if (lastMsg.message_type === "voice") previewText = "🎤 Голосовое";
         else if (lastMsg.message_type === "video_circle")
           previewText = "📹 Видеосообщение";
         else if (lastMsg.message_type === "photo") previewText = "📷 Фото";
         else if (lastMsg.message_type === "video") previewText = "🎥 Видео";
         else if (lastMsg.message_type === "document") previewText = "📁 Файл";
+        else if (lastMsg.message_type === "poll") previewText = "📊 Опрос";
         else previewText = lastMsg.content || "";
 
         if (lastMsg.sender_id === state.currentUser.id) {

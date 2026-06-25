@@ -660,6 +660,11 @@ export function renderMessages(messages: any[], isInitialLoad = false) {
             </div>
         `;
 
+        let contentHtml = renderContent(msg.content);
+        if (shareData && msg.content && msg.content.trim().startsWith('http') && !/\s/.test(msg.content.trim())) {
+            contentHtml = '';
+        }
+
         const innerHTML = `
             <div class="flex items-end max-w-full">
                 ${avatarHtml}
@@ -668,7 +673,7 @@ export function renderMessages(messages: any[], isInitialLoad = false) {
                     ${forwardHtml}
                     ${replyHtml}
                     ${senderNameHtml} ${fileHtml}
-                    ${renderContent(msg.content)}
+                    ${contentHtml}
                     <div id="reactions-container-${msg.id}">${reactionsHtml}</div>
                     <div class="text-[11px] font-medium ${isMe ? 'text-blue-500 dark:text-blue-400' : 'text-gray-400 dark:text-gray-500'} mt-1 flex justify-end items-center float-right ml-4 pt-1">
                         ${time} ${ticks}
