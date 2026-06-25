@@ -3,68 +3,48 @@ import { getStatusText, customConfirm } from "./utils";
 import { loadMessages, markMessagesAsRead } from "./messages";
 
 export async function loadChats() {
-  const list = document.getElementById("chats-list");
-  if (!list) return;
-
   try {
-    if (navigator.onLine) {
-        import("./group")
-          .then((m) => {
-            if (m.checkGlobalPendingRequests) m.checkGlobalPendingRequests();
-          })
-          .catch((err) =>
-            console.error("Error loading group for pending checks:", err),
-          );
+    import("./group")
+      .then((m) => {
+        if (m.checkGlobalPendingRequests) m.checkGlobalPendingRequests();
+      })
+      .catch((err) =>
+        console.error("Error loading group for pending checks:", err),
+      );
+
+    const { data: members, error: membersError } = await supabase
+      .from("chat_members")
+      .select("chat_id")
+      .eq("user_id", state.currentUser.id)
+      .neq("role", "pending");
+    if (membersError) throw membersError;
+
+    let chatIds = members ? members.map((m) => m.chat_id) : [];
+    if (state.currentProfile?.settings?.is_tech_support) {
+      const { data: supportChats } = await supabase
+        .from("chats")
+        .select("id")
+        .eq("description", "TECH_SUPPORT_CHAT");
+      if (supportChats) {
+        chatIds = [...new Set([...chatIds, ...supportChats.map((c) => c.id)])];
+      }
     }
 
-    let chatsData;
+    const list = document.getElementById("chats-list")!;
 
-    if (!navigator.onLine) {
-        const cached = localStorage.getItem('vibegram_cached_chats');
-        if (cached) {
-            chatsData = JSON.parse(cached);
-        } else {
-            throw new Error('No internet connection and no cached chats');
-        }
-    } else {
-        const { data: members, error: membersError } = await supabase
-          .from("chat_members")
-          .select("chat_id")
-          .eq("user_id", state.currentUser.id)
-          .neq("role", "pending");
-        if (membersError) throw membersError;
-
-        let chatIds = members ? members.map((m) => m.chat_id) : [];
-        if (state.currentProfile?.settings?.is_tech_support) {
-          const { data: supportChats } = await supabase
-            .from("chats")
-            .select("id")
-            .eq("description", "TECH_SUPPORT_CHAT");
-          if (supportChats) {
-            chatIds = [...new Set([...chatIds, ...supportChats.map((c) => c.id)])];
-          }
-        }
-
-        if (chatIds.length === 0) {
-          list.innerHTML = `<div class="text-center text-gray-400 mt-20 p-6"><span class="text-sm">У вас пока нет чатов.<br>Найдите друзей через поиск выше.</span></div>`;
-          return;
-        }
-
-        const { data: chats, error: chatsError } = await supabase
-          .from("chats")
-          .select(
-            `id, created_at, type, title, avatar_url, description, is_public, is_verified, chat_members(user_id, role, profiles(id, username, display_name, last_seen, is_online, avatar_url, bio, settings, is_premium, premium_until)), messages(content, message_type, media, created_at, is_read, sender_id)`,
-          )
-          .in("id", chatIds);
-        if (chatsError) throw chatsError;
-        chatsData = chats;
-        if (chats) {
-             localStorage.setItem('vibegram_cached_chats', JSON.stringify(chats));
-        }
+    if (chatIds.length === 0) {
+      list.innerHTML = `<div class="text-center text-gray-400 mt-20 p-6"><span class="text-sm">У вас пока нет чатов.<br>Найдите друзей через поиск выше.</span></div>`;
+      return;
     }
-    
-    if (!chatsData) return;
-    const chats = chatsData;
+
+    const { data: chats, error: chatsError } = await supabase
+      .from("chats")
+      .select(
+        `id, created_at, type, title, avatar_url, description, is_public, is_verified, chat_members(user_id, role, profiles(id, username, display_name, last_seen, is_online, avatar_url, bio, settings, is_premium, premium_until)), messages(content, message_type, media, created_at, is_read, sender_id)`,
+      )
+      .in("id", chatIds);
+    if (chatsError) throw chatsError;
+    if (!chats) return;
 
     chats.forEach((chat: any) => {
       if (chat.messages) {

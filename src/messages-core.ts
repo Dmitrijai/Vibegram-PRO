@@ -205,32 +205,17 @@ export async function loadMessages(chatId: string, isInitialLoad = false) {
         setupMessageScrollListener();
     }
     try {
-        let messagesData;
-        if (!navigator.onLine) {
-            const cached = localStorage.getItem('vibegram_cached_messages_' + chatId);
-            if (cached) {
-                messagesData = JSON.parse(cached);
-                hasMoreMessages = false;
-            } else {
-                throw new Error('Offline and no messages cached');
-            }
-        } else {
-            const { data: messages, error } = await supabase.from('messages')
-                .select('*, profiles(username, display_name, is_premium, premium_until)')
-                .eq('chat_id', chatId)
-                .order('created_at', { ascending: false })
-                .limit(currentMessageLimit);
-                
-            if (error) throw error;
-            messagesData = messages;
-            if (messages) {
-                localStorage.setItem('vibegram_cached_messages_' + chatId, JSON.stringify(messages));
-            }
-        }
+        const { data: messages, error } = await supabase.from('messages')
+            .select('*, profiles(username, display_name, is_premium, premium_until)')
+            .eq('chat_id', chatId)
+            .order('created_at', { ascending: false })
+            .limit(currentMessageLimit);
+            
+        if (error) throw error;
         
-        if (messagesData) {
-            if (navigator.onLine) hasMoreMessages = messagesData.length === currentMessageLimit;
-            renderMessages(messagesData.reverse(), isInitialLoad);
+        if (messages) {
+            hasMoreMessages = messages.length === currentMessageLimit;
+            renderMessages(messages.reverse(), isInitialLoad);
         }
     } catch (error) {
         console.error('Error loading messages:', error);
