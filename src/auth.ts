@@ -33,13 +33,23 @@ export async function checkUser(authEvent?: string) {
         if ("Notification" in window && Notification.permission === "default") {
             Notification.requestPermission();
         }
-        const { data: { user }, error } = await supabase.auth.getUser();
+        let { data: { user }, error } = await supabase.auth.getUser();
         if (error) {
             console.error('Auth error:', error.message || error);
-            if (error.message === 'Failed to fetch') {
-                import('./utils').then(m => m.showError('Не удалось подключиться к серверу (Failed to fetch). Возможно, база данных Supabase остановлена.'));
+            if (error.message === 'Failed to fetch' || String(error.message).includes('fetch')) {
+                // Offline fallback
+                const { data: { session } } = await supabase.auth.getSession();
+                if (session && session.user) {
+                    user = session.user;
+                    error = null;
+                    console.log('Using offline session fallback');
+                } else {
+                    import('./utils').then(m => m.showError('Нет сети и нет сохраненной сессии (Failed to fetch).'));
+                    return;
+                }
+            } else {
+                return;
             }
-            return;
         }
         if (user) {
             const SUPABASE_URL = supabase['supabaseUrl'] || 'default';

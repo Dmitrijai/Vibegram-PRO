@@ -32,6 +32,8 @@ export const state = {
     activeChatDescription: null as string | null | undefined,
     selectedFiles: [] as File[],
     groupCreationSelectedUsers: [] as any[],
+    shareSelectedChats: [] as string[],
+    pendingShareData: null as any,
     isRecordingVoice: false,
     isRecordingVideo: false,
     mediaRecorder: null as MediaRecorder | null,
