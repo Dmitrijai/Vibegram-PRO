@@ -33,14 +33,41 @@ export async function checkUser(authEvent?: string) {
         if ("Notification" in window && Notification.permission === "default") {
             Notification.requestPermission();
         }
-        const { data: { user }, error } = await supabase.auth.getUser();
-        if (error) {
-            console.error('Auth error:', error.message || error);
-            if (error.message === 'Failed to fetch') {
-                import('./utils').then(m => m.showError('Не удалось подключиться к серверу (Failed to fetch). Возможно, база данных Supabase остановлена.'));
+        let user;
+        let profileData;
+
+        if (!navigator.onLine) {
+            const cachedUserStr = localStorage.getItem('vibegram_cached_user');
+            const cachedProfileStr = localStorage.getItem('vibegram_cached_profile');
+            if (cachedUserStr && cachedProfileStr) {
+                user = JSON.parse(cachedUserStr);
+                profileData = JSON.parse(cachedProfileStr);
+            } else {
+                throw new Error('Offline and no cached user');
             }
-            return;
+        } else {
+            const { data, error } = await supabase.auth.getUser();
+            if (error) {
+                console.error('Auth error:', error.message || error);
+                if (error.message === 'Failed to fetch') {
+                    // Try fallback
+                    const cachedUserStr = localStorage.getItem('vibegram_cached_user');
+                    const cachedProfileStr = localStorage.getItem('vibegram_cached_profile');
+                    if (cachedUserStr && cachedProfileStr) {
+                        user = JSON.parse(cachedUserStr);
+                        profileData = JSON.parse(cachedProfileStr);
+                    } else {
+                        import('./utils').then(m => m.showError('Не удалось подключиться к серверу (Failed to fetch). Возможно, база данных Supabase остановлена.'));
+                        return;
+                    }
+                } else {
+                    return;
+                }
+            } else {
+                user = data.user;
+            }
         }
+        
         if (user) {
             const SUPABASE_URL = supabase['supabaseUrl'] || 'default';
             const deviceRegKey = 'vibegram_device_registered_' + SUPABASE_URL;
@@ -55,7 +82,7 @@ export async function checkUser(authEvent?: string) {
                 localStorage.setItem(registeredUserIdKey, user.id);
             } else if (accountAgeMs < 120000 && registeredUserId !== user.id) { // 2 minutes
                 import('./utils').then(m => m.showError('На этом устройстве уже зарегистрирован аккаунт. Создание новых аккаунтов на одном устройстве запрещено. Вы можете войти только в уже существующий аккаунт.'));
-                await supabase.auth.signOut();
+                if (navigator.onLine) await supabase.auth.signOut();
                 state.currentUser = null;
                 const loader = document.getElementById('initial-loader');
                 if (loader) {
@@ -71,29 +98,37 @@ export async function checkUser(authEvent?: string) {
             }
 
             state.currentUser = user;
-            let { data } = await supabase.from('profiles').select('*').eq('id', user.id).single();
+            if (navigator.onLine) localStorage.setItem('vibegram_cached_user', JSON.stringify(user));
             
-            // Fallback if trigger failed to create profile
-            if (!data) {
-                const nickname = user.user_metadata?.full_name || user.user_metadata?.name || user.user_metadata?.nickname || 'User';
-                let username = 'user_' + user.id.substring(0, 8);
-                if (user.user_metadata?.email) {
-                    username = user.user_metadata.email.split('@')[0].replace(/[^a-zA-Z0-9_]/g, '') + '_' + user.id.substring(0, 4);
+            if (!profileData && navigator.onLine) {
+                let { data } = await supabase.from('profiles').select('*').eq('id', user.id).single();
+                
+                // Fallback if trigger failed to create profile
+                if (!data) {
+                    const nickname = user.user_metadata?.full_name || user.user_metadata?.name || user.user_metadata?.nickname || 'User';
+                    let username = 'user_' + user.id.substring(0, 8);
+                    if (user.user_metadata?.email) {
+                        username = user.user_metadata.email.split('@')[0].replace(/[^a-zA-Z0-9_]/g, '') + '_' + user.id.substring(0, 4);
+                    }
+                    const avatarUrl = user.user_metadata?.avatar_url || user.user_metadata?.picture || null;
+                    await supabase.from('profiles').insert({ id: user.id, display_name: nickname, username, avatar_url: avatarUrl });
+                    const { data: newData } = await supabase.from('profiles').select('*').eq('id', user.id).single();
+                    data = newData;
                 }
-                const avatarUrl = user.user_metadata?.avatar_url || user.user_metadata?.picture || null;
-                await supabase.from('profiles').insert({ id: user.id, display_name: nickname, username, avatar_url: avatarUrl });
-                const { data: newData } = await supabase.from('profiles').select('*').eq('id', user.id).single();
-                data = newData;
+                profileData = data;
+                localStorage.setItem('vibegram_cached_profile', JSON.stringify(data));
             }
             
+            const data = profileData;
             state.currentProfile = data;
             
             if (data.settings?.force_pin_reset) {
                 localStorage.removeItem('vibegram_app_lock_' + user.id);
                 const newSettings = { ...data.settings };
                 delete newSettings.force_pin_reset;
-                await supabase.from('profiles').update({ settings: newSettings }).eq('id', user.id);
+                if (navigator.onLine) await supabase.from('profiles').update({ settings: newSettings }).eq('id', user.id);
                 data.settings = newSettings;
+                localStorage.setItem('vibegram_cached_profile', JSON.stringify(data));
             }
 
             // Clear URL to prevent OAuth token leak or reload loops

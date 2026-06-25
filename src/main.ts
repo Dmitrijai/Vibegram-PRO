@@ -8,6 +8,21 @@ import { requestPushPermissionAndToken } from './push';
 
 (window as any).enablePushNotifications = requestPushPermissionAndToken;
 
+function updateOfflineStatus() {
+    const indicator = document.getElementById('offline-indicator');
+    if (!indicator) return;
+    if (navigator.onLine) {
+        indicator.classList.add('hidden');
+    } else {
+        indicator.classList.remove('hidden');
+    }
+}
+window.addEventListener('online', updateOfflineStatus);
+window.addEventListener('offline', updateOfflineStatus);
+document.addEventListener('DOMContentLoaded', updateOfflineStatus);
+// Run immediately in case it's already loaded
+updateOfflineStatus();
+
 window.addEventListener('popstate', (e) => {
     const hash = window.location.hash;
     

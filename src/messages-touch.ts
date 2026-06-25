@@ -21,11 +21,29 @@ document.addEventListener('click', (e) => {
 
 let isSwiping = false;
 let swipeDeltaX = 0;
+let lastTapTime = 0;
+let lastTapTarget: string | null = null;
 
 (window as any).handleMessageTouchStart = (e: TouchEvent | MouseEvent, msgId: string) => {
     touchTarget = msgId;
     isSwiping = false;
     swipeDeltaX = 0;
+    
+    const currentTime = new Date().getTime();
+    const tapLength = currentTime - lastTapTime;
+    
+    if (tapLength < 300 && tapLength > 0 && lastTapTarget === msgId) {
+        clearTimeout(touchTimer);
+        ignoreNextClick = true;
+        (window as any).toggleReactionMenu(e, msgId);
+        lastTapTime = 0;
+        touchTarget = null;
+        return;
+    } else {
+        lastTapTime = currentTime;
+        lastTapTarget = msgId;
+    }
+
     if (window.TouchEvent && e instanceof TouchEvent) {
         touchStartX = e.touches[0].clientX;
         touchStartY = e.touches[0].clientY;
@@ -36,7 +54,46 @@ let swipeDeltaX = 0;
     touchTimer = setTimeout(() => {
         if (touchTarget === msgId && !isSwiping) {
             ignoreNextClick = true;
-            (window as any).toggleReactionMenu(e, msgId);
+            lastTapTime = 0; // Prevent double tap after long press
+            
+            // Try to copy message content
+            const el = document.getElementById(`msg-${msgId}`);
+            if (el) {
+                const textContentEl = el.querySelector('.whitespace-pre-wrap');
+                const text = textContentEl ? textContentEl.textContent : '';
+                if (text && text.trim()) {
+                    navigator.clipboard.writeText(text.trim()).then(() => {
+                        customToast('Текст скопирован');
+                    }).catch(() => {
+                        const textArea = document.createElement("textarea");
+                        textArea.value = text.trim();
+                        document.body.appendChild(textArea);
+                        textArea.select();
+                        try {
+                            document.execCommand('copy');
+                            customToast('Текст скопирован');
+                        } catch (err) {}
+                        document.body.removeChild(textArea);
+                    });
+                } else {
+                     const replyParamsStr = el.dataset.replyParams;
+                     let fallbackText = '';
+                     if (replyParamsStr) {
+                         try {
+                             const [, content] = JSON.parse(replyParamsStr);
+                             fallbackText = decodeURIComponent(content).trim();
+                         } catch(e) {}
+                     }
+                     if (fallbackText) {
+                         navigator.clipboard.writeText(fallbackText).then(() => {
+                             customToast('Текст скопирован');
+                         });
+                     } else {
+                         customToast('Сообщение выбрано');
+                     }
+                }
+            }
+            
             if (navigator.vibrate) {
                 try { navigator.vibrate(50); } catch(e){}
             }
