@@ -762,10 +762,9 @@ export async function openChatById(chatId: string) {
             if (others && others.length > 0) {
                 const otherProfile = others[0].profiles;
                 if (otherProfile) {
-                    const profileData = Array.isArray(otherProfile) ? otherProfile[0] : otherProfile;
-                    if (profileData?.settings?.deleted) return; // Deleted user logic might be skipped here for simplicity
-                    chatName = profileData?.display_name || profileData?.username || "User";
-                    finalAvatarUrl = profileData?.avatar_url;
+                    if (otherProfile.settings?.deleted) return; // Deleted user logic might be skipped here for simplicity
+                    chatName = otherProfile.display_name || otherProfile.username || "User";
+                    finalAvatarUrl = otherProfile.avatar_url;
                 }
             } else {
                 chatName = "Удаленный аккаунт";

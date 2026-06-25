@@ -592,41 +592,9 @@ document.addEventListener('DOMContentLoaded', () => {
             toggle.checked = isFullscreen;
         }
     });
-
-    const updateNetworkStatus = () => {
-        const searchInput = document.getElementById('search-input');
-        const searchIcon = document.getElementById('search-icon');
-        const offlineStatus = document.getElementById('offline-status');
-        
-        if (!navigator.onLine) {
-            if (searchInput) searchInput.classList.add('hidden');
-            if (searchIcon) searchIcon.classList.add('hidden');
-            if (offlineStatus) offlineStatus.classList.remove('hidden');
-        } else {
-            if (searchInput) searchInput.classList.remove('hidden');
-            if (searchIcon) searchIcon.classList.remove('hidden');
-            if (offlineStatus) offlineStatus.classList.add('hidden');
-            // Try to refresh chats if we came back online
-            if ((window as any).logic?.loadChats) {
-                (window as any).logic.loadChats();
-            }
-        }
-    };
-    
-    window.addEventListener('online', updateNetworkStatus);
-    window.addEventListener('offline', updateNetworkStatus);
-    updateNetworkStatus(); // initial check
 });
 
 setupMiniApps();
-
-if ('serviceWorker' in navigator) {
-    window.addEventListener('load', () => {
-        navigator.serviceWorker.register((import.meta as any).env.BASE_URL + 'firebase-messaging-sw.js')
-            .then(reg => console.log('SW registered for offline support', reg))
-            .catch(err => console.error('SW registration failed', err));
-    });
-}
 
 import { Capacitor } from '@capacitor/core';
 import { PushNotifications } from '@capacitor/push-notifications';

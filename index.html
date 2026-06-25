@@ -109,12 +109,8 @@
             
             <div class="p-3 bg-white dark:bg-gray-900 shrink-0 relative shadow-sm z-10">
                 <div class="flex bg-gray-100 dark:bg-gray-800 rounded-xl overflow-hidden focus-within:ring-2 ring-blue-500 transition-all">
-                    <svg id="search-icon" class="w-5 h-5 text-gray-400 dark:text-gray-500 ml-3 my-auto shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                    <svg class="w-5 h-5 text-gray-400 dark:text-gray-500 ml-3 my-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
                     <input type="text" id="search-input" placeholder="Поиск людей..." class="w-full p-2.5 bg-transparent outline-none text-sm px-3 text-gray-900 dark:text-gray-100" oninput="searchUsers(this.value)">
-                    <div id="offline-status" class="hidden w-full p-2.5 bg-transparent text-sm px-3 text-red-500 font-medium flex items-center gap-2 animate-pulse">
-                        <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
-                        <span class="truncate">Нет интернета... Ожидание сети...</span>
-                    </div>
                 </div>
                 <div id="search-results" class="hidden mt-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-xl absolute w-[calc(100%-24px)] z-50 max-h-64 overflow-y-auto"></div>
             </div>

@@ -1,28 +1,3 @@
-self.addEventListener('install', function(event) {
-    event.waitUntil(self.skipWaiting());
-});
-
-self.addEventListener('activate', function(event) {
-    event.waitUntil(self.clients.claim());
-});
-
-self.addEventListener('fetch', function(event) {
-    if (event.request.method !== 'GET') return;
-    if (!event.request.url.startsWith('http')) return;
-
-    event.respondWith(
-        fetch(event.request).then(function(response) {
-            const responseClone = response.clone();
-            caches.open('vibegram-offline-cache-v1').then(function(cache) {
-                cache.put(event.request, responseClone);
-            });
-            return response;
-        }).catch(function() {
-            return caches.match(event.request);
-        })
-    );
-});
-
 self.addEventListener('push', function(event) {
     console.log('[SW] Push Received.', event.data.text());
     let payload = {};
