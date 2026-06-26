@@ -23,8 +23,17 @@ let isSwiping = false;
 let swipeDeltaX = 0;
 let lastTapTime = 0;
 let lastTapTarget: string | null = null;
+let lastTouchStartTime = 0;
 
 (window as any).handleMessageTouchStart = (e: TouchEvent | MouseEvent, msgId: string) => {
+    if (e.type === 'touchstart') {
+        lastTouchStartTime = new Date().getTime();
+    } else if (e.type === 'mousedown') {
+        if (new Date().getTime() - lastTouchStartTime < 500) {
+            return;
+        }
+    }
+
     touchTarget = msgId;
     isSwiping = false;
     swipeDeltaX = 0;
@@ -103,6 +112,11 @@ let lastTapTarget: string | null = null;
 };
 
 (window as any).handleMessageTouchMove = (e: TouchEvent | MouseEvent) => {
+    if (e.type === 'mousemove') {
+        if (new Date().getTime() - lastTouchStartTime < 500) {
+            return;
+        }
+    }
     if (!touchTarget && !isSwiping) return;
     let currentX = 0;
     let currentY = 0;
@@ -139,6 +153,11 @@ let lastTapTarget: string | null = null;
 };
 
 (window as any).handleMessageTouchEnd = (e: TouchEvent | MouseEvent) => {
+    if (e.type === 'mouseup' || e.type === 'mouseleave') {
+        if (new Date().getTime() - lastTouchStartTime < 500) {
+            return;
+        }
+    }
     clearTimeout(touchTimer);
     
     if (isSwiping && swipeDeltaX < -40) {
