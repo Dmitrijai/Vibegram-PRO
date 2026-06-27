@@ -48,7 +48,9 @@ export const state = {
     chatScrollPositions: new Map<string, any>(),
     globalChannel: null as any,
     isAdminStatus: false,
-    isTechSupportChat: false
+    isTechSupportChat: false,
+    shareSelectedChats: [] as string[],
+    pendingShareData: null as any
 };
 
 export function broadcastUpdate(chatId: string, type: string = 'message') {

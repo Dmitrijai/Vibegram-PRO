@@ -866,27 +866,26 @@ export async function submitEditMiniApp() {
   }
 }
 
-async function fetchAndInjectBase(url: string): Promise<string> {
-  const res = await fetch(url);
-  if (!res.ok) throw new Error("Fetch failed");
-  let text = await res.text();
-  const urlObj = new URL(url);
-  urlObj.pathname = urlObj.pathname.substring(0, urlObj.pathname.lastIndexOf('/') + 1);
-  const baseTag = `<base href="${urlObj.href}">`;
-  if (/<head[^>]*>/i.test(text)) {
-    text = text.replace(/(<head[^>]*>)/i, `$1${baseTag}`);
-  } else if (/<html[^>]*>/i.test(text)) {
-    text = text.replace(/(<html[^>]*>)/i, `$1<head>${baseTag}</head>`);
-  } else {
-    text = `<head>${baseTag}</head>` + text;
-  }
-  return text;
-}
-
 export async function runMiniApp(id: string) {
   const themeMeta = document.getElementById("theme-color-meta");
   if (themeMeta) themeMeta.setAttribute("content", "#111827");
-  customToast("Загрузка приложения...");
+  
+  const runModal = document.getElementById("mini-app-run-modal")!;
+  runModal.classList.remove("hidden");
+  setTimeout(() => runModal.classList.remove("translate-y-full"), 10);
+  
+  document.getElementById("run-app-title")!.textContent = "Загрузка...";
+  const iconEl = document.getElementById("run-app-icon")!;
+  iconEl.innerHTML = `<div class="w-full h-full rounded-lg animate-pulse bg-gray-700"></div>`;
+  
+  const iframe = document.getElementById(
+    "mini-app-frame",
+  ) as HTMLIFrameElement;
+  iframe.removeAttribute("srcdoc");
+  iframe.removeAttribute("src");
+  
+  // Show spinner overlay in iframe container if possible, or just wait
+  // (We'll just wait for the db fetch)
 
   try {
     const { data, error } = await supabase
@@ -901,49 +900,21 @@ export async function runMiniApp(id: string) {
     miniAppContentData = data;
 
     document.getElementById("run-app-title")!.textContent = data.title;
-    const iconEl = document.getElementById("run-app-icon")!;
     if (data.icon_url) {
       iconEl.innerHTML = `<img src="${data.icon_url}" class="w-full h-full object-cover rounded-lg">`;
     } else {
       iconEl.textContent = data.title.substring(0, 2).toUpperCase();
     }
 
-    const runModal = document.getElementById("mini-app-run-modal")!;
-    const iframe = document.getElementById(
-      "mini-app-frame",
-    ) as HTMLIFrameElement;
-
-    iframe.removeAttribute("srcdoc");
-    iframe.removeAttribute("src");
-
     if (data.html_content && data.html_content.trim().startsWith("<")) {
       iframe.srcdoc = data.html_content;
     } else if (data.html_content && data.html_content.startsWith("https://")) {
-      if (data.html_content.includes("res.cloudinary.com")) {
-        try {
-          iframe.srcdoc = await fetchAndInjectBase(data.html_content);
-        } catch (err) {
-          iframe.src = data.html_content;
-        }
-      } else {
-        iframe.src = data.html_content;
-      }
+      iframe.src = data.html_content;
     } else if (data.html_url) {
-      if (data.html_url.includes("res.cloudinary.com")) {
-        try {
-          iframe.srcdoc = await fetchAndInjectBase(data.html_url);
-        } catch (err) {
-          iframe.src = data.html_url;
-        }
-      } else {
-        iframe.src = data.html_url;
-      }
+      iframe.src = data.html_url;
     } else if (data.html_content) {
       iframe.srcdoc = data.html_content;
     }
-
-    runModal.classList.remove("hidden");
-    setTimeout(() => runModal.classList.remove("translate-y-full"), 10);
 
     const shareBtn = document.getElementById('run-app-share-btn');
     if (shareBtn) {
@@ -1071,25 +1042,9 @@ export async function runStandaloneMiniApp(id: string) {
     if (data.html_content && data.html_content.trim().startsWith("<")) {
       iframe.srcdoc = data.html_content;
     } else if (data.html_content && data.html_content.startsWith("https://")) {
-      if (data.html_content.includes("res.cloudinary.com")) {
-        try {
-          iframe.srcdoc = await fetchAndInjectBase(data.html_content);
-        } catch (err) {
-          iframe.src = data.html_content;
-        }
-      } else {
-        iframe.src = data.html_content;
-      }
+      iframe.src = data.html_content;
     } else if (data.html_url) {
-      if (data.html_url.includes("res.cloudinary.com")) {
-        try {
-          iframe.srcdoc = await fetchAndInjectBase(data.html_url);
-        } catch (err) {
-          iframe.src = data.html_url;
-        }
-      } else {
-        iframe.src = data.html_url;
-      }
+      iframe.src = data.html_url;
     } else if (data.html_content) {
       iframe.srcdoc = data.html_content;
     }

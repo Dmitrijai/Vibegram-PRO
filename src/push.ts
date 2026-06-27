@@ -43,7 +43,7 @@ export async function requestPushPermissionAndToken() {
             let swRegistration = null;
             try {
                 if ('serviceWorker' in navigator) {
-                    const swUrl = import.meta.env.BASE_URL + 'firebase-messaging-sw.js';
+                    const swUrl = (import.meta as any).env.BASE_URL + 'firebase-messaging-sw.js';
                     swRegistration = await navigator.serviceWorker.register(swUrl);
                     console.log('SW registration successful for FCM');
                 }

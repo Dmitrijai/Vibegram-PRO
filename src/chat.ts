@@ -763,7 +763,7 @@ export async function openChatById(chatId: string) {
         } else {
             const others = chat.chat_members?.filter((m: any) => m.user_id !== state.currentUser.id);
             if (others && others.length > 0) {
-                const otherProfile = others[0].profiles;
+                const otherProfile = Array.isArray(others[0].profiles) ? others[0].profiles[0] : others[0].profiles;
                 if (otherProfile) {
                     if (otherProfile.settings?.deleted) return; 
                     chatName = otherProfile.display_name || otherProfile.username || "User";

@@ -588,7 +588,7 @@ export async function openChatInfo(skipPushState = false) {
     ? state.activeChatAvatarUrl
     : state.activeChatOtherUser?.avatar_url;
     
-  let avatarPromise = Promise.resolve();
+  let avatarPromise: any = Promise.resolve();
   if (state.activeChatIsGroup && !avatarUrl) {
       avatarPromise = supabase
       .from("chats")
@@ -603,7 +603,7 @@ export async function openChatInfo(skipPushState = false) {
 
   let usernameHtml = "";
   let isVerified = false;
-  let usernamePromise = Promise.resolve();
+  let usernamePromise: any = Promise.resolve();
   if (state.activeChatIsGroup) {
       usernamePromise = supabase
       .from("chats")
@@ -631,7 +631,7 @@ export async function openChatInfo(skipPushState = false) {
   promises.push(usernamePromise);
 
   let settings: any = {};
-  let settingsPromise = supabase
+  let settingsPromise: any = supabase
     .from("profiles")
     .select("settings")
     .eq("id", state.currentUser.id)
@@ -642,7 +642,7 @@ export async function openChatInfo(skipPushState = false) {
   promises.push(settingsPromise);
   
   let members: any[] = [];
-  let membersPromise = Promise.resolve();
+  let membersPromise: any = Promise.resolve();
   if (state.activeChatIsGroup) {
       membersPromise = supabase
       .from("chat_members")
@@ -873,7 +873,7 @@ export async function openChatInfo(skipPushState = false) {
     const bio = state.activeChatOtherUser.bio || "Информация отсутствует";
     const username = state.activeChatOtherUser.username;
     const otherUserId = state.activeChatOtherUser.id;
-    const isBlocked = (profile?.settings?.blocked_users || []).includes(
+    const isBlocked = (settings?.blocked_users || []).includes(
       otherUserId,
     );
     infoHtml = `
@@ -954,79 +954,101 @@ export async function openChatInfo(skipPushState = false) {
         `;
   }
 
-  // Fetch media for tabs
-  const { data: messagesWithMedia } = await supabase
+  let mediaContentHtml = `
+        <div class="w-full mt-6 flex flex-col">
+            <div class="bg-transparent mb-4">
+                <div class="flex border-b border-gray-200 dark:border-gray-700 overflow-x-auto hide-scrollbar">
+                    <button class="px-4 py-2 text-sm font-medium text-blue-500 border-b-2 border-blue-500 whitespace-nowrap" id="chat-info-btn-info" onclick="switchChatInfoTab('info', this)">Информация</button>
+                    <button class="px-4 py-2 text-sm font-medium text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 whitespace-nowrap" id="chat-info-btn-media" onclick="switchChatInfoTab('media', this)">Медиа</button>
+                    <button class="px-4 py-2 text-sm font-medium text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 whitespace-nowrap" id="chat-info-btn-files" onclick="switchChatInfoTab('files', this)">Файлы</button>
+                    <button class="px-4 py-2 text-sm font-medium text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 whitespace-nowrap" id="chat-info-btn-audiovideo" onclick="switchChatInfoTab('audiovideo', this)">Голосовые</button>
+                </div>
+            </div>
+            <div id="chat-info-tab-container" class="w-full pt-2 transition-all duration-300 pb-4">
+                <div id="chat-info-tab-info" class="w-full tab-content block">
+                    ${infoHtml}
+                </div>
+                <div id="chat-info-tab-media" class="w-full tab-content hidden">
+                    <div class="flex justify-center p-8"><div class="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div></div>
+                </div>
+                <div id="chat-info-tab-files" class="w-full tab-content hidden">
+                    <div class="flex justify-center p-8"><div class="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div></div>
+                </div>
+                <div id="chat-info-tab-audiovideo" class="w-full tab-content hidden">
+                    <div class="flex justify-center p-8"><div class="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div></div>
+                </div>
+            </div>
+        </div>
+    `;
+
+  // Fetch media for tabs asynchronously
+  supabase
     .from("messages")
     .select("id, media, message_type, created_at")
     .eq("chat_id", state.activeChatId)
     .not("media", "is", null)
     .order("created_at", { ascending: false })
-    .limit(1000);
+    .limit(1000)
+    .then(({ data: messagesWithMedia }) => {
+      if (state.activeChatId !== currentChatId) return;
 
-  if (state.activeChatId !== currentChatId) return;
+      let photosVideos: any[] = [];
+      let files: any[] = [];
+      let audioVideo: any[] = [];
 
-  let photosVideos: any[] = [];
-  let files: any[] = [];
-  let audioVideo: any[] = [];
+      messagesWithMedia?.forEach((msg) => {
+        if (!msg.media) return;
+        const actualMedia = msg.media.filter(
+          (m: any) => m.type !== "reply" && m.type !== "forward",
+        );
+        if (actualMedia.length === 0) return;
 
-  messagesWithMedia?.forEach((msg) => {
-    if (!msg.media) return;
-    const actualMedia = msg.media.filter(
-      (m: any) => m.type !== "reply" && m.type !== "forward",
-    );
-    if (actualMedia.length === 0) return;
-
-    if (msg.message_type === "voice") {
-      audioVideo.push({
-        msgId: msg.id,
-        media: actualMedia[0],
-        date: msg.created_at,
-        type: "voice",
-      });
-    } else if (msg.message_type === "video_circle") {
-      audioVideo.push({
-        msgId: msg.id,
-        media: actualMedia[0],
-        date: msg.created_at,
-        type: "circle",
-      });
-    } else if (msg.message_type === "poll") {
-      // Do not add polls to media tabs
-      return;
-    } else {
-      actualMedia.forEach((m: any) => {
-        if (m.type?.startsWith("image/") || m.type?.startsWith("video/")) {
-          if (m.asFile)
-            files.push({ msgId: msg.id, media: m, date: msg.created_at });
-          else
-            photosVideos.push({
-              msgId: msg.id,
-              media: m,
-              date: msg.created_at,
-            });
-        } else if (m.type?.startsWith("audio/")) {
+        if (msg.message_type === "voice") {
           audioVideo.push({
             msgId: msg.id,
-            media: m,
+            media: actualMedia[0],
             date: msg.created_at,
             type: "voice",
           });
+        } else if (msg.message_type === "video_circle") {
+          audioVideo.push({
+            msgId: msg.id,
+            media: actualMedia[0],
+            date: msg.created_at,
+            type: "circle",
+          });
+        } else if (msg.message_type === "poll") {
+          return;
         } else {
-          files.push({ msgId: msg.id, media: m, date: msg.created_at });
+          actualMedia.forEach((m: any) => {
+            if (m.type?.startsWith("image/") || m.type?.startsWith("video/")) {
+              if (m.asFile)
+                files.push({ msgId: msg.id, media: m, date: msg.created_at });
+              else
+                photosVideos.push({
+                  msgId: msg.id,
+                  media: m,
+                  date: msg.created_at,
+                });
+            } else if (m.type?.startsWith("audio/")) {
+              audioVideo.push({
+                msgId: msg.id,
+                media: m,
+                date: msg.created_at,
+                type: "voice",
+              });
+            } else {
+              files.push({ msgId: msg.id, media: m, date: msg.created_at });
+            }
+          });
         }
       });
-    }
-  });
 
-  audioVideo.sort(
-    (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime(),
-  );
+      audioVideo.sort(
+        (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime(),
+      );
 
-  const hasAnyMedia =
-    photosVideos.length > 0 || files.length > 0 || audioVideo.length > 0;
-  let mediaContentHtml = "";
-
-  const renderMediaGrid = (items: any[]) => `
+      const renderMediaGrid = (items: any[]) => `
         <div class="grid grid-cols-3 gap-1 mt-4">
             ${items
               .map(
@@ -1056,9 +1078,9 @@ export async function openChatInfo(skipPushState = false) {
               )
               .join("")}
         </div>
-    `;
+      `;
 
-  const renderFileList = (items: any[]) => `
+      const renderFileList = (items: any[]) => `
         <div class="flex flex-col gap-2 mt-4">
             ${items
               .map(
@@ -1090,9 +1112,9 @@ export async function openChatInfo(skipPushState = false) {
               )
               .join("")}
         </div>
-    `;
+      `;
 
-  const renderAudioVideoList = (items: any[]) => `
+      const renderAudioVideoList = (items: any[]) => `
         <div class="flex flex-col gap-2 mt-4">
             ${items
               .map((item) => {
@@ -1156,28 +1178,17 @@ export async function openChatInfo(skipPushState = false) {
               })
               .join("")}
         </div>
-    `;
+      `;
 
-  mediaContentHtml = `
-        <div class="w-full mt-6 flex flex-col">
-            <div class="bg-transparent mb-4">
-                <div class="flex border-b border-gray-200 dark:border-gray-700 overflow-x-auto hide-scrollbar">
-                    <button class="px-4 py-2 text-sm font-medium text-blue-500 border-b-2 border-blue-500 whitespace-nowrap" id="chat-info-btn-info" onclick="switchChatInfoTab('info', this)">Информация</button>
-                    <button class="px-4 py-2 text-sm font-medium text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 whitespace-nowrap" id="chat-info-btn-media" onclick="switchChatInfoTab('media', this)">Медиа</button>
-                    <button class="px-4 py-2 text-sm font-medium text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 whitespace-nowrap" id="chat-info-btn-files" onclick="switchChatInfoTab('files', this)">Файлы</button>
-                    <button class="px-4 py-2 text-sm font-medium text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 whitespace-nowrap" id="chat-info-btn-audiovideo" onclick="switchChatInfoTab('audiovideo', this)">Голосовые</button>
-                </div>
-            </div>
-            <div id="chat-info-tab-container" class="w-full pt-2 transition-all duration-300 pb-4">
-                <div id="chat-info-tab-info" class="w-full tab-content block">
-                    ${infoHtml}
-                </div>
-                <div id="chat-info-tab-media" class="w-full tab-content hidden">${photosVideos.length > 0 ? renderMediaGrid(photosVideos) : '<div class="text-center text-gray-500 py-4">Нет медиа</div>'}</div>
-                <div id="chat-info-tab-files" class="w-full tab-content hidden">${files.length > 0 ? renderFileList(files) : '<div class="text-center text-gray-500 py-4">Нет файлов</div>'}</div>
-                <div id="chat-info-tab-audiovideo" class="w-full tab-content hidden">${audioVideo.length > 0 ? renderAudioVideoList(audioVideo) : '<div class="text-center text-gray-500 py-4">Нет голосовых</div>'}</div>
-            </div>
-        </div>
-    `;
+      const mediaTab = document.getElementById("chat-info-tab-media");
+      if (mediaTab) mediaTab.innerHTML = photosVideos.length > 0 ? renderMediaGrid(photosVideos) : '<div class="text-center text-gray-500 py-4">Нет медиа</div>';
+
+      const filesTab = document.getElementById("chat-info-tab-files");
+      if (filesTab) filesTab.innerHTML = files.length > 0 ? renderFileList(files) : '<div class="text-center text-gray-500 py-4">Нет файлов</div>';
+
+      const avTab = document.getElementById("chat-info-tab-audiovideo");
+      if (avTab) avTab.innerHTML = audioVideo.length > 0 ? renderAudioVideoList(audioVideo) : '<div class="text-center text-gray-500 py-4">Нет голосовых</div>';
+    });
 
   const verifiedHtml = isVerified
     ? `<span class="inline-flex items-center justify-center ml-1 align-baseline translate-y-0.5" title="Official"><svg class="w-6 h-6 text-blue-500" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"></path></svg></span>`
