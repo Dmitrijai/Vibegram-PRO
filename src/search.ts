@@ -190,7 +190,20 @@ export async function openUserProfile(userId: string) {
     modal.classList.add('flex', 'flex-col', 'overflow-hidden', 'p-0');
     
     document.getElementById('modal-overlay')?.classList.remove('hidden');
-    modal.innerHTML = `<div class="p-12 flex justify-center items-center"><div class="w-10 h-10 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div></div>`;
+    modal.innerHTML = `
+        <div class="flex justify-between items-center p-6 pb-4 shrink-0 border-b border-gray-100 dark:border-gray-800">
+            <h3 class="text-xl font-bold text-gray-800 dark:text-gray-100">Профиль</h3>
+            <button onclick="closeModal()" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 bg-gray-100 dark:bg-gray-800 p-2 rounded-full transition-colors">✕</button>
+        </div>
+        <div class="flex-1 overflow-y-auto px-6 pt-4 custom-scrollbar flex flex-col items-center">
+            <div class="w-28 h-28 rounded-full bg-gray-200 dark:bg-gray-700 mb-4 animate-pulse shrink-0 shadow-md"></div>
+            <div class="w-32 h-6 bg-gray-200 dark:bg-gray-700 rounded animate-pulse shrink-0 mb-2"></div>
+            <div class="w-20 h-4 bg-gray-200 dark:bg-gray-700 rounded animate-pulse shrink-0 mb-4"></div>
+            <div class="w-full flex-1 flex justify-center items-center mt-8">
+                <div class="w-10 h-10 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+            </div>
+        </div>
+    `;
 
     const { data: userToFind } = await supabase.from('profiles').select('*').eq('id', userId).single();
     if (!userToFind) {

@@ -522,7 +522,6 @@ export async function openChatInfo(skipPushState = false) {
   modal.classList.add("flex", "flex-col", "overflow-hidden", "p-0");
 
   document.getElementById("modal-overlay")?.classList.remove("hidden");
-  modal.innerHTML = `<div class="p-12 flex justify-center items-center"><div class="w-10 h-10 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div></div>`;
 
   const name = document.getElementById("current-chat-name")!.innerText;
   const isChannel = state.activeChatType === "channel";
@@ -534,6 +533,53 @@ export async function openChatInfo(skipPushState = false) {
         state.activeChatMembers.filter(
           (m: any) => m.user_id !== state.currentUser.id,
         ).length === 0));
+
+  let initialAvatarUrl = state.activeChatIsGroup
+    ? state.activeChatAvatarUrl
+    : state.activeChatOtherUser?.avatar_url;
+
+  let initialIsPremiumUser = false;
+  if (!state.activeChatIsGroup && state.activeChatOtherUser) {
+    initialIsPremiumUser =
+      state.activeChatOtherUser.is_premium &&
+      (!state.activeChatOtherUser.premium_until ||
+        new Date(state.activeChatOtherUser.premium_until) > new Date());
+  }
+
+  const initialPremiumBadgeHtml = initialIsPremiumUser
+    ? `<div class="absolute bottom-0 right-0 translate-x-1.5 translate-y-1.5 bg-white dark:bg-gray-800 rounded-full p-1 shadow-sm border-2 border-white dark:border-gray-900 z-50 w-8 h-8 flex items-center justify-center"><img src="./image/Google-Gemini-Logo-Transparent.png" class="w-full h-full object-contain" alt="Premium"></div>`
+    : "";
+
+  let initialAvatarHtml;
+  if (isSavedMessages) {
+    initialAvatarHtml = `<div class="w-full h-full relative rounded-full flex items-center justify-center bg-gradient-to-br from-blue-400 to-indigo-500 text-white font-bold text-4xl shadow-sm">И</div>`;
+  } else {
+    const avatarInnerHtml = initialAvatarUrl
+      ? `<img src="${initialAvatarUrl}" class="w-full h-full object-cover rounded-full">`
+      : `${name && name[0] ? name[0].toUpperCase() : "U"}`;
+    initialAvatarHtml = `<div class="w-full h-full relative rounded-full flex items-center justify-center ${!initialAvatarUrl ? (state.activeChatIsGroup ? "bg-gradient-to-br from-emerald-400 to-teal-500 text-white font-bold text-4xl" : "bg-gradient-to-br from-blue-400 to-indigo-500 text-white font-bold text-4xl") : ""}">${avatarInnerHtml}${initialPremiumBadgeHtml}</div>`;
+  }
+
+  modal.innerHTML = `
+        <div class="flex justify-between items-center p-6 pb-4 shrink-0 border-b border-gray-100 dark:border-gray-800">
+            <h3 class="text-xl font-bold text-gray-800 dark:text-gray-100">Информация</h3>
+            <button onclick="closeModal()" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 bg-gray-100 dark:bg-gray-800 p-2 rounded-full transition-colors">✕</button>
+        </div>
+        <div class="flex-1 overflow-y-auto px-6 pt-4 custom-scrollbar flex flex-col items-center">
+            <div class="w-28 h-28 rounded-full flex items-center justify-center text-white text-5xl font-bold mb-4 shadow-md shrink-0 bg-gradient-to-br relative ${state.activeChatIsGroup ? "from-emerald-400 to-teal-500" : "from-blue-400 to-indigo-500"}">
+                ${initialAvatarHtml}
+            </div>
+            <div class="font-bold text-2xl text-gray-800 dark:text-gray-100 shrink-0 w-full px-4 text-center">
+                <span class="inline-flex items-center max-w-full align-bottom">
+                    <span class="truncate min-w-0 shrink">${name}</span>
+                </span>
+            </div>
+            ${!state.activeChatIsGroup ? `<div class="text-sm text-gray-500 dark:text-gray-400 mt-1 shrink-0">${state.activeChatOtherUser?.is_online ? "в сети" : "был(а) недавно"}</div>` : ""}
+            <div class="w-full flex-1 flex justify-center items-center mt-8">
+                <div class="w-10 h-10 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+            </div>
+        </div>
+  `;
 
   // Parallelize data fetching
   const promises: Promise<any>[] = [];
