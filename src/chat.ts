@@ -739,6 +739,9 @@ export function updateChatInputUI() {
 (window as any).updateChatInputUI = updateChatInputUI;
 
 export async function openChatById(chatId: string) {
+    // Optimistically open the chat if we don't have details yet
+    openChat(chatId, 'Загрузка...', '?', false, 'direct', [], undefined, undefined, false, false, false);
+    
     const { data: chat, error } = await supabase.from('chats').select(`
         id, type, title, avatar_url, description, is_public,
         chat_members(user_id, role, profiles(id, username, display_name, is_online, avatar_url, settings, is_premium, premium_until))
@@ -762,7 +765,7 @@ export async function openChatById(chatId: string) {
             if (others && others.length > 0) {
                 const otherProfile = others[0].profiles;
                 if (otherProfile) {
-                    if (otherProfile.settings?.deleted) return; // Deleted user logic might be skipped here for simplicity
+                    if (otherProfile.settings?.deleted) return; 
                     chatName = otherProfile.display_name || otherProfile.username || "User";
                     finalAvatarUrl = otherProfile.avatar_url;
                 }

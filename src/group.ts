@@ -535,22 +535,89 @@ export async function openChatInfo(skipPushState = false) {
           (m: any) => m.user_id !== state.currentUser.id,
         ).length === 0));
 
-  // Build avatar properly
+  // Parallelize data fetching
+  const promises: Promise<any>[] = [];
+
   let avatarUrl = state.activeChatIsGroup
     ? state.activeChatAvatarUrl
     : state.activeChatOtherUser?.avatar_url;
+    
+  let avatarPromise = Promise.resolve();
   if (state.activeChatIsGroup && !avatarUrl) {
-    const { data: chatData } = await supabase
+      avatarPromise = supabase
       .from("chats")
       .select("avatar_url")
       .eq("id", state.activeChatId)
-      .single();
-    if (state.activeChatId !== currentChatId) return;
-    if (chatData?.avatar_url) {
-      avatarUrl = chatData.avatar_url;
-      state.activeChatAvatarUrl = avatarUrl;
-    }
+      .single()
+      .then(({data}) => {
+          if (data?.avatar_url) avatarUrl = data.avatar_url;
+      });
   }
+  promises.push(avatarPromise);
+
+  let usernameHtml = "";
+  let isVerified = false;
+  let usernamePromise = Promise.resolve();
+  if (state.activeChatIsGroup) {
+      usernamePromise = supabase
+      .from("chats")
+      .select("username, is_verified")
+      .eq("id", state.activeChatId)
+      .single()
+      .then(({data}) => {
+          if (data?.username) {
+              usernameHtml = `<div class="text-sm text-blue-500 text-center select-all mt-1 cursor-pointer hover:text-blue-600 dark:hover:text-blue-400 transition-colors" onclick="navigator.clipboard.writeText('@${data.username}'); const old=this.innerHTML; this.innerHTML='✅ Скопировано'; setTimeout(()=>this.innerHTML=old, 2000);" title="Копировать ID">@${data.username}</div>`;
+          }
+          isVerified = data?.is_verified || false;
+      });
+  } else if (!isSavedMessages) {
+      usernamePromise = supabase
+      .from("profiles")
+      .select("username")
+      .eq("id", state.activeChatOtherUser?.id)
+      .single()
+      .then(({data}) => {
+          if (data?.username) {
+              usernameHtml = `<div class="text-sm text-blue-500 text-center select-all mt-1 cursor-pointer hover:text-blue-600 dark:hover:text-blue-400 transition-colors" onclick="navigator.clipboard.writeText('@${data.username}'); const old=this.innerHTML; this.innerHTML='✅ Скопировано'; setTimeout(()=>this.innerHTML=old, 2000);" title="Копировать ID">@${data.username}</div>`;
+          }
+      });
+  }
+  promises.push(usernamePromise);
+
+  let settings: any = {};
+  let settingsPromise = supabase
+    .from("profiles")
+    .select("settings")
+    .eq("id", state.currentUser.id)
+    .single()
+    .then(({data}) => {
+        settings = data?.settings || {};
+    });
+  promises.push(settingsPromise);
+  
+  let members: any[] = [];
+  let membersPromise = Promise.resolve();
+  if (state.activeChatIsGroup) {
+      membersPromise = supabase
+      .from("chat_members")
+      .select(
+        "role, user_id, profiles(id, username, display_name, avatar_url, is_online)",
+      )
+      .eq("chat_id", state.activeChatId)
+      .then(({data}) => {
+          members = data || [];
+      });
+  }
+  promises.push(membersPromise);
+  
+  await Promise.all(promises);
+
+  if (state.activeChatId !== currentChatId) return;
+
+  if (state.activeChatIsGroup && avatarUrl) {
+      state.activeChatAvatarUrl = avatarUrl;
+  }
+  
   let isPremiumUser = false;
   if (!state.activeChatIsGroup && state.activeChatOtherUser) {
     isPremiumUser =
@@ -573,38 +640,6 @@ export async function openChatInfo(skipPushState = false) {
     avatarHtml = `<div class="w-full h-full relative rounded-full flex items-center justify-center ${!avatarUrl ? (state.activeChatIsGroup ? "bg-gradient-to-br from-emerald-400 to-teal-500 text-white font-bold text-4xl" : "bg-gradient-to-br from-blue-400 to-indigo-500 text-white font-bold text-4xl") : ""}">${avatarInnerHtml}${premiumBadgeHtml}</div>`;
   }
 
-  let usernameHtml = "";
-  let isVerified = false;
-  if (state.activeChatIsGroup) {
-    const { data: chatData } = await supabase
-      .from("chats")
-      .select("username, is_verified")
-      .eq("id", state.activeChatId)
-      .single();
-    if (state.activeChatId !== currentChatId) return;
-    if (chatData?.username) {
-      usernameHtml = `<div class="text-sm text-blue-500 text-center select-all mt-1 cursor-pointer hover:text-blue-600 dark:hover:text-blue-400 transition-colors" onclick="navigator.clipboard.writeText('@${chatData.username}'); const old=this.innerHTML; this.innerHTML='✅ Скопировано'; setTimeout(()=>this.innerHTML=old, 2000);" title="Копировать ID">@${chatData.username}</div>`;
-    }
-    isVerified = chatData?.is_verified || false;
-  } else if (!isSavedMessages) {
-    const { data: userData } = await supabase
-      .from("profiles")
-      .select("username")
-      .eq("id", state.activeChatOtherUser?.id)
-      .single();
-    if (state.activeChatId !== currentChatId) return;
-    if (userData?.username) {
-      usernameHtml = `<div class="text-sm text-blue-500 text-center select-all mt-1 cursor-pointer hover:text-blue-600 dark:hover:text-blue-400 transition-colors" onclick="navigator.clipboard.writeText('@${userData.username}'); const old=this.innerHTML; this.innerHTML='✅ Скопировано'; setTimeout(()=>this.innerHTML=old, 2000);" title="Копировать ID">@${userData.username}</div>`;
-    }
-  }
-
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("settings")
-    .eq("id", state.currentUser.id)
-    .single();
-  if (state.activeChatId !== currentChatId) return;
-  const settings = profile?.settings || {};
   const mutedChats = settings.muted_chats || [];
   const isMuted = mutedChats.includes(state.activeChatId);
 
@@ -652,13 +687,6 @@ export async function openChatInfo(skipPushState = false) {
             </div>
         `;
   } else if (state.activeChatIsGroup) {
-    const { data: members } = await supabase
-      .from("chat_members")
-      .select(
-        "role, user_id, profiles(id, username, display_name, avatar_url, is_online)",
-      )
-      .eq("chat_id", state.activeChatId);
-    if (state.activeChatId !== currentChatId) return;
     const myRole = members?.find(
       (m: any) => m.user_id === state.currentUser.id,
     )?.role;

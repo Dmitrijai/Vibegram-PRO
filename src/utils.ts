@@ -1,5 +1,18 @@
 import { state, supabase } from './supabase';
 
+export function showLoadingModal(text: string = 'Загрузка...') {
+    const overlay = document.getElementById('modal-overlay');
+    const modal = document.getElementById('modal-content');
+    if (!overlay || !modal) return;
+    overlay.classList.remove('hidden');
+    modal.innerHTML = `<div class="p-12 flex flex-col justify-center items-center"><div class="w-10 h-10 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-4"></div><div class="text-gray-500 font-medium">${text}</div></div>`;
+}
+
+export function hideLoadingModal() {
+    const overlay = document.getElementById('modal-overlay');
+    if (overlay) overlay.classList.add('hidden');
+}
+
 export const getFakeEmail = (nick: string) => `${nick.toLowerCase().trim().replace(/[^a-z0-9]/g, '')}@vibegram.local`;
 
 export const formatBytes = (bytes: number) => {

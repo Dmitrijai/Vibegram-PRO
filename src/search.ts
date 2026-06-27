@@ -128,6 +128,8 @@ export async function joinChannel(channel: any) {
 export async function startChatWithUser(userToFind: any) {
     const isSelf = userToFind.id === state.currentUser.id;
     let chatId;
+    
+    import('./utils').then(m => m.showLoadingModal('Открытие чата...'));
 
     if (isSelf) {
         const { data: myChats } = await supabase.from('chat_members').select('chat_id').eq('user_id', state.currentUser.id);
@@ -158,15 +160,23 @@ export async function startChatWithUser(userToFind: any) {
         const { error: cmErr } = await supabase.from('chat_members').insert(membersToInsert);
         if (cmErr) console.error("CM Error", cmErr);
     }
+    
+    import('./utils').then(m => m.hideLoadingModal());
     openChat(chatId, isSelf ? 'Избранное' : (userToFind.display_name || userToFind.username), (userToFind.display_name || userToFind.username)[0].toUpperCase(), false, 'private', [{user_id: userToFind.id, profiles: userToFind}], userToFind.avatar_url);
     await import('./chat').then(m => m.loadChats());
 }
 
 export async function startDirectChatById(userId: string) {
+    import('./utils').then(m => m.showLoadingModal('Открытие чата...'));
     const { data: userToFind } = await supabase.from('profiles').select('*').eq('id', userId).single();
     if (userToFind) {
         import('./utils').then(m => m.closeModal());
         startChatWithUser(userToFind);
+    } else {
+        import('./utils').then(m => {
+            m.hideLoadingModal();
+            m.customAlert('Пользователь не найден');
+        });
     }
 }
 

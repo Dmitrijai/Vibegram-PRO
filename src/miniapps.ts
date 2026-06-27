@@ -1030,37 +1030,43 @@ export function copyMiniAppLink(appId?: string) {
 export async function runStandaloneMiniApp(id: string) {
   const themeMeta = document.getElementById("theme-color-meta");
   if (themeMeta) themeMeta.setAttribute("content", "#111827");
+  
+  currentRunningAppId = id;
+  const screens = [
+    "auth-screen",
+    "lock-screen",
+    "app-screen",
+    "initial-loader",
+  ];
+  screens.forEach((sId) =>
+    document.getElementById(sId)?.classList.add("hidden"),
+  );
+
+  const standaloneScreen = document.getElementById(
+    "standalone-miniapp-screen",
+  )!;
+  standaloneScreen.classList.remove("hidden");
+  standaloneScreen.classList.add("flex");
+
+  const iframe = document.getElementById(
+    "standalone-miniapp-frame",
+  ) as HTMLIFrameElement;
+  
+  iframe.removeAttribute("srcdoc");
+  iframe.removeAttribute("src");
+  iframe.srcdoc = `
+    <div style="display:flex;justify-content:center;align-items:center;height:100vh;font-family:sans-serif;color:#888;">
+      Загрузка приложения...
+    </div>
+  `;
+
   try {
-    currentRunningAppId = id;
     const { data, error } = await supabase
       .from("mini_apps")
       .select("*")
       .eq("id", id)
       .single();
     if (error || !data) throw error || new Error("App Not Found");
-
-    const screens = [
-      "auth-screen",
-      "lock-screen",
-      "app-screen",
-      "initial-loader",
-    ];
-    screens.forEach((sId) =>
-      document.getElementById(sId)?.classList.add("hidden"),
-    );
-
-    const standaloneScreen = document.getElementById(
-      "standalone-miniapp-screen",
-    )!;
-    standaloneScreen.classList.remove("hidden");
-    standaloneScreen.classList.add("flex");
-
-    const iframe = document.getElementById(
-      "standalone-miniapp-frame",
-    ) as HTMLIFrameElement;
-
-    iframe.removeAttribute("srcdoc");
-    iframe.removeAttribute("src");
 
     if (data.html_content && data.html_content.trim().startsWith("<")) {
       iframe.srcdoc = data.html_content;
