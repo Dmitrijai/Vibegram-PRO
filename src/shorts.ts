@@ -561,7 +561,7 @@ async function updateCountersDynamically(shortId: string) {
         .select("id")
         .eq("short_id", shortId)
         .eq("user_id", state.currentUser.id)
-        .single();
+        .maybeSingle();
       const uiLikeBtn = document.getElementById(`short-like-btn-${shortId}`);
       if (uiLikeBtn) {
         if (likeData) {
@@ -1034,7 +1034,7 @@ async function recordView(shortId: string) {
   try {
     const { error } = await supabase
       .from("short_views")
-      .insert({ short_id: shortId, user_id: state.currentUser.id });
+      .upsert({ short_id: shortId, user_id: state.currentUser.id }, { onConflict: 'short_id,user_id', ignoreDuplicates: true });
     if (!error) {
       // New view successfully recorded
       const uiViews = document.getElementById(`short-views-count-${shortId}`);
