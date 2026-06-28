@@ -609,7 +609,8 @@ export async function submitMiniApp() {
   btn.textContent = "Загрузка...";
 
   try {
-    let htmlUrl = "";
+    let htmlUrl = null;
+    let htmlContent = null;
 
     if (isFileMode) {
       const file = fileInput.files![0];
@@ -659,12 +660,7 @@ export async function submitMiniApp() {
         htmlToLoad = scriptInjection + htmlToLoad;
       }
 
-      // Upload to Cloudinary
-      const modifiedBlob = new Blob([htmlToLoad], { type: "text/html" });
-      const modifiedFile = new File([modifiedBlob], "index.html", {
-        type: "text/html",
-      });
-      htmlUrl = await uploadToCloudinary(modifiedFile);
+      htmlContent = htmlToLoad;
     } else {
       htmlUrl = urlInput.value.trim();
     }
@@ -679,6 +675,7 @@ export async function submitMiniApp() {
       title: titleBtn.value.trim(),
       description: descBtn.value.trim(),
       html_url: htmlUrl,
+      html_content: htmlContent,
       icon_url: iconUrl,
       visibility: isPublic ? "public" : "unlisted",
     });
@@ -792,6 +789,7 @@ export async function submitEditMiniApp() {
 
   try {
     let htmlUrl = undefined;
+    let htmlContent = undefined;
 
     if (isFileMode) {
       if (fileInput.files && fileInput.files.length > 0) {
@@ -818,16 +816,13 @@ export async function submitEditMiniApp() {
           htmlToLoad = scriptInjection + htmlToLoad;
         }
 
-        // Upload new file to Cloudinary
-        const modifiedBlob = new Blob([htmlToLoad], { type: "text/html" });
-        const modifiedFile = new File([modifiedBlob], "index.html", {
-          type: "text/html",
-        });
-        htmlUrl = await uploadToCloudinary(modifiedFile);
+        htmlContent = htmlToLoad;
+        htmlUrl = null;
       }
     } else {
       if (urlInput.value.trim()) {
         htmlUrl = urlInput.value.trim();
+        htmlContent = null;
       }
     }
 
@@ -839,6 +834,9 @@ export async function submitEditMiniApp() {
 
     if (htmlUrl !== undefined) {
       updateData.html_url = htmlUrl;
+    }
+    if (htmlContent !== undefined) {
+      updateData.html_content = htmlContent;
     }
     if (iconFile) {
       const uploadedIconUrl = await uploadToCloudinary(iconFile);
@@ -911,7 +909,16 @@ export async function runMiniApp(id: string) {
     } else if (data.html_content && data.html_content.startsWith("https://")) {
       iframe.src = data.html_content;
     } else if (data.html_url) {
-      iframe.src = data.html_url;
+      if (data.html_url.includes("res.cloudinary.com") && data.html_url.includes("/raw/upload/")) {
+        fetch(data.html_url).then(res => res.text()).then(html => {
+          supabase.from("mini_apps").update({ html_content: html, html_url: null }).eq("id", id).then();
+          iframe.srcdoc = html;
+        }).catch(() => {
+          iframe.src = data.html_url;
+        });
+      } else {
+        iframe.src = data.html_url;
+      }
     } else if (data.html_content) {
       iframe.srcdoc = data.html_content;
     }
@@ -1044,7 +1051,16 @@ export async function runStandaloneMiniApp(id: string) {
     } else if (data.html_content && data.html_content.startsWith("https://")) {
       iframe.src = data.html_content;
     } else if (data.html_url) {
-      iframe.src = data.html_url;
+      if (data.html_url.includes("res.cloudinary.com") && data.html_url.includes("/raw/upload/")) {
+        fetch(data.html_url).then(res => res.text()).then(html => {
+          supabase.from("mini_apps").update({ html_content: html, html_url: null }).eq("id", id).then();
+          iframe.srcdoc = html;
+        }).catch(() => {
+          iframe.src = data.html_url;
+        });
+      } else {
+        iframe.src = data.html_url;
+      }
     } else if (data.html_content) {
       iframe.srcdoc = data.html_content;
     }
