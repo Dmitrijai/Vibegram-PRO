@@ -1,5 +1,6 @@
 import './index.css';
 import { supabase, state } from './supabase';
+import { escapeHtml } from './utils';
 import * as logic from './logic';
 import './ai';
 import './shorts'; // Add Shorts support
@@ -416,7 +417,8 @@ function setupRealtime() {
                 const badge = isPremium ? `<span class="inline-flex items-center justify-center ml-1 shrink-0" title="Vibegram Premium"><img src="./image/Google-Gemini-Logo-Transparent.png" class="w-3.5 h-3.5 object-contain" alt="Premium"></span>` : '';
                 const myNicknameEl = document.getElementById('my-nickname');
                 if (myNicknameEl) {
-                    myNicknameEl.innerHTML = `<span class="flex items-center">${payload.new.display_name || payload.new.username || ''}${badge}</span>`;
+                    const displayName = escapeHtml(payload.new.display_name || payload.new.username || '');
+                    myNicknameEl.innerHTML = `<span class="flex items-center">${displayName}${badge}</span>`;
                 }
             }
             if (state.activeChatId && ((payload.new.id === state.activeChatOtherUser?.id) || (payload.new.id === state.currentUser?.id))) {
@@ -442,7 +444,7 @@ function setupRealtime() {
                 }
                 const nameEl = document.getElementById('current-chat-name');
                 if (nameEl) {
-                    nameEl.innerHTML = `<span class="truncate shrink">${payload.new.title}</span>`;
+                    nameEl.innerHTML = `<span class="truncate shrink">${escapeHtml(payload.new.title)}</span>`;
                 }
             }
             if ((window as any).logic?.loadChats) (window as any).logic.loadChats();

@@ -1,5 +1,15 @@
 import { state, supabase } from './supabase';
 
+export function escapeHtml(unsafe: string): string {
+    if (!unsafe) return '';
+    return unsafe.toString()
+         .replace(/&/g, "&amp;")
+         .replace(/</g, "&lt;")
+         .replace(/>/g, "&gt;")
+         .replace(/"/g, "&quot;")
+         .replace(/'/g, "&#039;");
+}
+
 export function showLoadingModal(text: string = 'Загрузка...') {
     const overlay = document.getElementById('modal-overlay');
     const modal = document.getElementById('modal-content');

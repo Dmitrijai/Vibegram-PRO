@@ -1,5 +1,5 @@
 import { supabase, state } from "./supabase";
-import { getStatusText, customConfirm } from "./utils";
+import { getStatusText, customConfirm, escapeHtml } from "./utils";
 import { loadMessages, markMessagesAsRead } from "./messages";
 
 export async function loadChats() {
@@ -178,7 +178,7 @@ export async function loadChats() {
         return;
       }
 
-      let chatName = chat.title;
+      let chatName = escapeHtml(chat.title || "");
       let isOnline = false;
       let isSavedMessages = false;
 
@@ -202,7 +202,7 @@ export async function loadChats() {
           } else {
             const other = others[0];
             if (other?.profiles) {
-              chatName = other.profiles.display_name || other.profiles.username;
+              chatName = escapeHtml(other.profiles.display_name || other.profiles.username);
               const isTechSupport =
                 other.profiles.settings?.is_tech_support === true;
               if (isTechSupport) {
@@ -362,6 +362,7 @@ export async function loadChats() {
         ? `<span class="inline-flex items-center justify-center ml-1 shrink-0" title="Official"><svg class="w-3.5 h-3.5 text-blue-500" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"></path></svg></span>`
         : "";
 
+      const encodedName = encodeURIComponent(chatName).replace(/'/g, "%27");
       div.innerHTML = `
                 <div class="relative shrink-0 w-12 h-12 pointer-events-none">
                     <div class="w-full h-full rounded-full overflow-hidden relative">
@@ -751,7 +752,7 @@ export async function openChatById(chatId: string) {
     
     let isGroup = chat.type === "group" || chat.type === "channel";
     let isSavedMsgs = chat.description === "SAVED_MESSAGES";
-    let chatName = chat.title;
+    let chatName = escapeHtml(chat.title || "");
     let finalAvatarUrl = chat.avatar_url;
     
     if (chat.description === "TECH_SUPPORT_CHAT" && !state.currentProfile?.settings?.is_tech_support) {
@@ -766,7 +767,7 @@ export async function openChatById(chatId: string) {
                 const otherProfile = Array.isArray(others[0].profiles) ? others[0].profiles[0] : others[0].profiles;
                 if (otherProfile) {
                     if (otherProfile.settings?.deleted) return; 
-                    chatName = otherProfile.display_name || otherProfile.username || "User";
+                    chatName = escapeHtml(otherProfile.display_name || otherProfile.username || "User");
                     finalAvatarUrl = otherProfile.avatar_url;
                 }
             } else {

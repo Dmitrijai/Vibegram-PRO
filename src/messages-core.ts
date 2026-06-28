@@ -1,5 +1,5 @@
 import { supabase, state } from './supabase';
-import { scrollToBottom, customAlert, customConfirm, customPrompt, closeModal, customToast, confirmPaidMessageModal } from './utils';
+import { scrollToBottom, customAlert, customConfirm, customPrompt, closeModal, customToast, confirmPaidMessageModal, escapeHtml } from './utils';
 import { isSelectionMode, toggleSelectionMode, toggleMessageSelection, deleteSelectedMessages, forwardSelectedMessages, confirmForwardMultiple, selectedMessages, updateSelectionUI } from './selection';
 import { openLightbox, closeLightbox, lightboxNext, lightboxPrev } from './lightbox';
 import { toggleReactionMenu, toggleReaction, toggleMessageMenu, toggleEmojiMenu, sendEmojiMessage, getNotoEmojiUrl, closeAllMessageMenus, adjustMenuPosition, generateReactionsHtml } from './reactions';
@@ -332,9 +332,9 @@ export function renderMessages(messages: any[], isInitialLoad = false) {
                     <div class="p-3">
                         <div class="text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-blue-500 dark:text-blue-400 mb-1 flex items-center gap-1.5">
                             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
-                            ${shareData.content_type_label || 'Контент'}
+                            ${escapeHtml(shareData.content_type_label || 'Контент')}
                         </div>
-                        <div class="font-semibold text-sm text-gray-900 dark:text-white leading-tight line-clamp-2">${shareData.title || 'Смотреть'}</div>
+                        <div class="font-semibold text-sm text-gray-900 dark:text-white leading-tight line-clamp-2">${escapeHtml(shareData.title || 'Смотреть')}</div>
                     </div>
                 </div>
             `;
@@ -344,8 +344,8 @@ export function renderMessages(messages: any[], isInitialLoad = false) {
             replyHtml = `
                 <div class="flex items-center gap-2 mb-1.5 pl-2 border-l-2 border-blue-500 cursor-pointer hover:bg-black/5 dark:hover:bg-white/5 rounded-r transition-colors" onclick="if(window.highlightMessage) window.highlightMessage('${replyData.original_id}')">
                     <div class="flex-1 min-w-0">
-                        <div class="text-[13px] font-medium text-blue-500 dark:text-blue-400">${replyData.original_sender}</div>
-                        <div class="text-[13px] text-gray-500 dark:text-gray-400 truncate">${replyData.original_content}</div>
+                        <div class="text-[13px] font-medium text-blue-500 dark:text-blue-400">${escapeHtml(replyData.original_sender)}</div>
+                        <div class="text-[13px] text-gray-500 dark:text-gray-400 truncate">${escapeHtml(replyData.original_content)}</div>
                     </div>
                 </div>
             `;
@@ -355,7 +355,7 @@ export function renderMessages(messages: any[], isInitialLoad = false) {
             forwardHtml = `
                 <div class="text-[12px] text-gray-500 dark:text-gray-400 mb-1 flex items-center gap-1">
                     <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6"></path></svg>
-                    Переслано от: <span class="font-medium">${forwardData.original_sender}</span>
+                    Переслано от: <span class="font-medium">${escapeHtml(forwardData.original_sender)}</span>
                 </div>
             `;
         }
@@ -379,7 +379,7 @@ export function renderMessages(messages: any[], isInitialLoad = false) {
                                 <div class="w-4 h-4 rounded-full border-2 ${isVoted ? 'border-blue-500 bg-blue-500' : 'border-gray-400 group-hover:border-blue-400'} flex items-center justify-center transition-colors">
                                     ${isVoted ? '<svg class="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>' : ''}
                                 </div>
-                                <span class="text-sm font-medium text-gray-800 dark:text-gray-200">${opt.text}</span>
+                                <span class="text-sm font-medium text-gray-800 dark:text-gray-200">${escapeHtml(opt.text)}</span>
                             </div>
                             <span class="text-xs font-semibold text-gray-500 dark:text-gray-400">${percent}%</span>
                         </div>
@@ -503,7 +503,7 @@ export function renderMessages(messages: any[], isInitialLoad = false) {
                         </div>
                     `;
                 } else {
-                    fileHtml += `<a href="${file.url}" target="_blank" class="flex items-center gap-3 bg-black/5 dark:bg-white/5 hover:bg-black/10 dark:hover:bg-white/10 p-3 rounded-xl transition-colors border border-black/5 dark:border-white/5 w-full min-w-0 overflow-hidden"><div class="bg-blue-500 text-white p-2.5 rounded-lg shrink-0"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg></div><div class="flex-1 min-w-0"><span class="truncate font-semibold text-sm block w-full">${file.name || 'Файл'}</span><span class="text-xs opacity-70 mt-0.5 block">${file.size ? (file.size / 1024 / 1024).toFixed(2) + ' MB' : ''}</span></div></a>`;
+                    fileHtml += `<a href="${escapeHtml(file.url)}" target="_blank" class="flex items-center gap-3 bg-black/5 dark:bg-white/5 hover:bg-black/10 dark:hover:bg-white/10 p-3 rounded-xl transition-colors border border-black/5 dark:border-white/5 w-full min-w-0 overflow-hidden"><div class="bg-blue-500 text-white p-2.5 rounded-lg shrink-0"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg></div><div class="flex-1 min-w-0"><span class="truncate font-semibold text-sm block w-full">${escapeHtml(file.name || 'Файл')}</span><span class="text-xs opacity-70 mt-0.5 block">${file.size ? (file.size / 1024 / 1024).toFixed(2) + ' MB' : ''}</span></div></a>`;
                 }
             });
             fileHtml += '</div>';
@@ -520,7 +520,7 @@ export function renderMessages(messages: any[], isInitialLoad = false) {
             }
         }
 
-        let displaySenderName = msg.profiles?.display_name || msg.profiles?.username || 'User';
+        let displaySenderName = escapeHtml(msg.profiles?.display_name || msg.profiles?.username || 'User');
         let isSystemAdmin = false;
         
         if (state.activeChatType === 'group' || state.activeChatType === 'channel') {

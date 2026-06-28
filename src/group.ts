@@ -1,5 +1,5 @@
 import { supabase, state } from "./supabase";
-import { closeModal, customAlert, customConfirm, customToast } from "./utils";
+import { closeModal, customAlert, customConfirm, customToast, escapeHtml } from "./utils";
 import { loadChats, openChat } from "./chat";
 import { forwardSelectedMessages, selectedMessages } from "./selection";
 
@@ -612,7 +612,8 @@ export async function openChatInfo(skipPushState = false) {
       .single()
       .then(({data}) => {
           if (data?.username) {
-              usernameHtml = `<div class="text-sm text-blue-500 text-center select-all mt-1 cursor-pointer hover:text-blue-600 dark:hover:text-blue-400 transition-colors" onclick="navigator.clipboard.writeText('@${data.username}'); const old=this.innerHTML; this.innerHTML='✅ Скопировано'; setTimeout(()=>this.innerHTML=old, 2000);" title="Копировать ID">@${data.username}</div>`;
+              const safeUsername = escapeHtml(data.username);
+              usernameHtml = `<div class="text-sm text-blue-500 text-center select-all mt-1 cursor-pointer hover:text-blue-600 dark:hover:text-blue-400 transition-colors" onclick="navigator.clipboard.writeText('@${safeUsername}'); const old=this.innerHTML; this.innerHTML='✅ Скопировано'; setTimeout(()=>this.innerHTML=old, 2000);" title="Копировать ID">@${safeUsername}</div>`;
           }
           isVerified = data?.is_verified || false;
       });
@@ -624,7 +625,8 @@ export async function openChatInfo(skipPushState = false) {
       .single()
       .then(({data}) => {
           if (data?.username) {
-              usernameHtml = `<div class="text-sm text-blue-500 text-center select-all mt-1 cursor-pointer hover:text-blue-600 dark:hover:text-blue-400 transition-colors" onclick="navigator.clipboard.writeText('@${data.username}'); const old=this.innerHTML; this.innerHTML='✅ Скопировано'; setTimeout(()=>this.innerHTML=old, 2000);" title="Копировать ID">@${data.username}</div>`;
+              const safeUsername = escapeHtml(data.username);
+              usernameHtml = `<div class="text-sm text-blue-500 text-center select-all mt-1 cursor-pointer hover:text-blue-600 dark:hover:text-blue-400 transition-colors" onclick="navigator.clipboard.writeText('@${safeUsername}'); const old=this.innerHTML; this.innerHTML='✅ Скопировано'; setTimeout(()=>this.innerHTML=old, 2000);" title="Копировать ID">@${safeUsername}</div>`;
           }
       });
   }
@@ -1764,15 +1766,16 @@ export function renderCreateGroupModal(type: "group" | "channel" = "group") {
         const premiumBadgeHtml = isPremiumUser
           ? `<div class="absolute -top-0.5 -left-0.5 bg-white dark:bg-gray-800 rounded-full p-0.5 shadow-sm border border-gray-200 dark:border-gray-700 z-50 w-2.5 h-2.5 flex items-center justify-center"><img src="./image/Google-Gemini-Logo-Transparent.png" class="w-full h-full object-contain" alt="Premium"></div>`
           : "";
+        const name = escapeHtml(u.display_name || u.username);
         list.innerHTML += `
                     <div class="bg-white dark:bg-gray-700 text-blue-600 dark:text-blue-400 px-3 py-1.5 rounded-lg text-sm font-bold flex items-center gap-2 border border-blue-100 dark:border-blue-900/30 shadow-sm animate-fadeIn max-w-full">
                         <div class="relative w-5 h-5 rounded-full bg-blue-100 flex items-center justify-center text-[10px] shrink-0">
                             <div class="w-full h-full overflow-hidden rounded-full flex items-center justify-center bg-blue-100">
-                                ${u.avatar_url ? `<img src="${u.avatar_url}" class="w-full h-full object-cover">` : (u.display_name || u.username)[0].toUpperCase()}
+                                ${u.avatar_url ? `<img src="${u.avatar_url}" class="w-full h-full object-cover">` : name[0]?.toUpperCase() || ''}
                             </div>
                             ${premiumBadgeHtml}
                         </div>
-                        <span class="truncate">${u.display_name || u.username}</span>
+                        <span class="truncate">${name}</span>
                         <button class="text-gray-400 hover:text-red-500 ml-1 transition-colors shrink-0" onclick="removeGroupUser('${u.id}', '${type}')">
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
                         </button>
@@ -1821,14 +1824,15 @@ export async function searchGroupUsers(
         const div = document.createElement("div");
         div.className =
           "p-3 hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer border-b border-gray-50 dark:border-gray-700 flex items-center gap-3 transition-colors min-w-0";
+        const name = escapeHtml(u.display_name || u.username);
         div.innerHTML = `
                     <div class="relative w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900/50 flex items-center justify-center text-blue-500 dark:text-blue-400 font-bold text-xs shrink-0">
                         <div class="w-full h-full rounded-full overflow-hidden flex items-center justify-center bg-blue-100 dark:bg-blue-900/50">
-                            ${u.avatar_url ? `<img src="${u.avatar_url}" class="w-full h-full object-cover">` : (u.display_name || u.username)[0].toUpperCase()}
+                            ${u.avatar_url ? `<img src="${u.avatar_url}" class="w-full h-full object-cover">` : name[0]?.toUpperCase() || ''}
                         </div>
                         ${premiumBadgeHtml}
                     </div>
-                    <span class="font-semibold text-gray-800 dark:text-gray-100 truncate block">${u.display_name || u.username}</span>
+                    <span class="font-semibold text-gray-800 dark:text-gray-100 truncate block">${name}</span>
                 `;
         div.onclick = () => {
           state.groupCreationSelectedUsers.push(u);

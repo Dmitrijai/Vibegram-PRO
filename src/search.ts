@@ -1,5 +1,6 @@
 import { supabase, state } from './supabase';
 import { loadChats, openChat } from './chat';
+import { escapeHtml } from './utils';
 
 let searchTimeout: any;
 export function searchUsers(q: string) {
@@ -13,10 +14,10 @@ export function searchUsers(q: string) {
             const { data: channel } = await supabase.from('chats').select('*').eq('invite_key', q).single();
             if (channel) {
                 resultsBox.innerHTML = '';
-                const title = channel.title;
+                const title = escapeHtml(channel.title);
                 const div = document.createElement('div');
                 div.className = 'p-3 hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer flex items-center gap-3 border-b border-gray-100 dark:border-gray-700 transition-colors min-w-0';
-                const avatarHtml = channel.avatar_url ? `<img src="${channel.avatar_url}" class="w-full h-full object-cover rounded-full">` : `<div class="w-full h-full flex justify-center items-center">${title[0].toUpperCase()}</div>`;
+                const avatarHtml = channel.avatar_url ? `<img src="${channel.avatar_url}" class="w-full h-full object-cover rounded-full">` : `<div class="w-full h-full flex justify-center items-center">${title[0]?.toUpperCase() || ''}</div>`;
                 div.innerHTML = `<div class="w-10 h-10 bg-purple-500 text-white rounded-full flex items-center justify-center font-bold overflow-hidden shrink-0">${avatarHtml}</div><div class="flex-1 min-w-0"><span class="font-semibold text-gray-800 dark:text-gray-100 truncate block">${title}</span><span class="text-xs text-gray-500 truncate block">По ключу-приглашению</span></div>`;
                 div.onclick = () => { resultsBox.classList.add('hidden'); (document.getElementById('search-input') as HTMLInputElement).value = ''; joinChannelWithKey(channel, q); };
                 resultsBox.appendChild(div);
@@ -41,34 +42,34 @@ export function searchUsers(q: string) {
         } else {
             resultsBox.innerHTML = '';
             users?.forEach(u => {
-                const nickname = u.display_name || u.username;
+                const nickname = escapeHtml(u.display_name || u.username);
                 const div = document.createElement('div');
                 div.className = 'p-3 hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer flex items-center gap-3 border-b border-gray-100 dark:border-gray-700 transition-colors min-w-0';
-                const avatarHtml = u.avatar_url ? `<img src="${u.avatar_url}" class="w-full h-full object-cover rounded-full">` : `<div class="w-full h-full flex justify-center items-center">${nickname[0].toUpperCase()}</div>`;
+                const avatarHtml = u.avatar_url ? `<img src="${u.avatar_url}" class="w-full h-full object-cover rounded-full">` : `<div class="w-full h-full flex justify-center items-center">${nickname[0]?.toUpperCase() || ''}</div>`;
                 const isPremiumUser = u.is_premium && (!u.premium_until || new Date(u.premium_until) > new Date());
                 const premiumBadgeHtml = isPremiumUser ? `<div class="absolute -bottom-1 -right-1 bg-white dark:bg-gray-800 rounded-full p-0.5 shadow-sm border border-gray-200 dark:border-gray-700 z-50 w-4 h-4 flex items-center justify-center"><img src="./image/Google-Gemini-Logo-Transparent.png" class="w-full h-full object-contain" alt="Premium"></div>` : '';
-                let usernameTag = u.username ? `<span class="text-xs text-gray-500 truncate block">@${u.username}</span>` : '';
+                let usernameTag = u.username ? `<span class="text-xs text-gray-500 truncate block">@${escapeHtml(u.username)}</span>` : '';
                 div.innerHTML = `<div class="w-10 h-10 shrink-0 relative"><div class="w-full h-full bg-blue-500 text-white rounded-full flex items-center justify-center font-bold overflow-hidden">${avatarHtml}</div>${premiumBadgeHtml}</div><div class="flex-1 min-w-0"><span class="font-semibold text-gray-800 dark:text-gray-100 truncate block">${nickname}</span>${usernameTag}</div>`;
                 div.onclick = () => { resultsBox.classList.add('hidden'); (document.getElementById('search-input') as HTMLInputElement).value = ''; startChatWithUser(u); };
                 resultsBox.appendChild(div);
             });
             groups?.forEach(g => {
-                const title = g.title;
+                const title = escapeHtml(g.title);
                 const div = document.createElement('div');
                 div.className = 'p-3 hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer flex items-center gap-3 border-b border-gray-100 dark:border-gray-700 transition-colors min-w-0';
-                const avatarHtml = g.avatar_url ? `<img src="${g.avatar_url}" class="w-full h-full object-cover rounded-full">` : `<div class="w-full h-full flex justify-center items-center">${title[0].toUpperCase()}</div>`;
-                let usernameTag = g.username ? ` • @${g.username}` : '';
+                const avatarHtml = g.avatar_url ? `<img src="${g.avatar_url}" class="w-full h-full object-cover rounded-full">` : `<div class="w-full h-full flex justify-center items-center">${title[0]?.toUpperCase() || ''}</div>`;
+                let usernameTag = g.username ? ` • @${escapeHtml(g.username)}` : '';
                 const verifiedBadge = g.is_verified ? `<span class="inline-flex items-center justify-center ml-1" title="Official"><svg class="w-3.5 h-3.5 text-blue-500" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"></path></svg></span>` : '';
                 div.innerHTML = `<div class="w-10 h-10 bg-emerald-500 text-white rounded-full flex items-center justify-center font-bold overflow-hidden shrink-0">${avatarHtml}</div><div class="flex-1 min-w-0"><span class="font-semibold text-gray-800 dark:text-gray-100 truncate flex items-center">${title}${verifiedBadge}</span><span class="text-xs text-gray-500 truncate block">Группа${usernameTag}</span></div>`;
                 div.onclick = () => { resultsBox.classList.add('hidden'); (document.getElementById('search-input') as HTMLInputElement).value = ''; joinGroup(g); };
                 resultsBox.appendChild(div);
             });
             channels?.forEach(c => {
-                const title = c.title;
+                const title = escapeHtml(c.title);
                 const div = document.createElement('div');
                 div.className = 'p-3 hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer flex items-center gap-3 border-b border-gray-100 dark:border-gray-700 transition-colors min-w-0';
-                const avatarHtml = c.avatar_url ? `<img src="${c.avatar_url}" class="w-full h-full object-cover rounded-full">` : `<div class="w-full h-full flex justify-center items-center">${title[0].toUpperCase()}</div>`;
-                let usernameTag = c.username ? ` • @${c.username}` : '';
+                const avatarHtml = c.avatar_url ? `<img src="${c.avatar_url}" class="w-full h-full object-cover rounded-full">` : `<div class="w-full h-full flex justify-center items-center">${title[0]?.toUpperCase() || ''}</div>`;
+                let usernameTag = c.username ? ` • @${escapeHtml(c.username)}` : '';
                 const verifiedBadge = c.is_verified ? `<span class="inline-flex items-center justify-center ml-1" title="Official"><svg class="w-3.5 h-3.5 text-blue-500" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"></path></svg></span>` : '';
                 div.innerHTML = `<div class="w-10 h-10 bg-purple-500 text-white rounded-full flex items-center justify-center font-bold overflow-hidden shrink-0">${avatarHtml}</div><div class="flex-1 min-w-0"><span class="font-semibold text-gray-800 dark:text-gray-100 truncate flex items-center">${title}${verifiedBadge}</span><span class="text-xs text-gray-500 truncate block">Канал${usernameTag}</span></div>`;
                 div.onclick = () => { resultsBox.classList.add('hidden'); (document.getElementById('search-input') as HTMLInputElement).value = ''; joinChannel(c); };
