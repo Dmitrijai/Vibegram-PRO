@@ -244,7 +244,7 @@ export async function loadChats() {
         else if (lastMsg.message_type === "video") previewText = "🎥 Видео";
         else if (lastMsg.message_type === "document") previewText = "📁 Файл";
         else if (lastMsg.message_type === "poll") previewText = "📊 Опрос";
-        else previewText = lastMsg.content || "";
+        else previewText = escapeHtml(lastMsg.content || "");
 
         if (lastMsg.sender_id === state.currentUser.id) {
           previewText = `${lastMsg.is_read ? "✓✓" : "✓"} <span class="text-gray-600 truncate">${previewText}</span>`;
@@ -1160,13 +1160,16 @@ export async function openChat(
     if (data && data.length > 0) {
       resultsContainer.innerHTML = data
         .map(
-          (msg) => `
+          (msg) => {
+            const displayName = (Array.isArray(msg.profiles) ? msg.profiles[0]?.display_name : (msg.profiles as any)?.display_name) || "Неизвестно";
+            return `
                 <div class="text-sm p-2 bg-gray-50 dark:bg-gray-800 rounded-lg cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 transition" onclick="window.highlightMessage('${msg.id}')">
-                    <span class="font-semibold text-gray-700 dark:text-gray-300">${(Array.isArray(msg.profiles) ? msg.profiles[0]?.display_name : (msg.profiles as any)?.display_name) || "Неизвестно"}:</span>
-                    <span class="text-gray-600 dark:text-gray-400 line-clamp-1 break-words">${msg.content || "Медиа сообщение"}</span>
+                    <span class="font-semibold text-gray-700 dark:text-gray-300">${escapeHtml(displayName)}:</span>
+                    <span class="text-gray-600 dark:text-gray-400 line-clamp-1 break-words">${escapeHtml(msg.content || "Медиа сообщение")}</span>
                     <span class="text-[10px] text-gray-400">${new Date(msg.created_at).toLocaleDateString()}</span>
                 </div>
-            `,
+            `;
+          }
         )
         .join("");
     } else {

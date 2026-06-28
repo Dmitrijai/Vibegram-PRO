@@ -1578,17 +1578,19 @@ export async function searchUsersForAdding(query: string) {
       const premiumBadgeHtml = isPremiumUser
         ? `<div class="absolute -top-1 -left-1 bg-white dark:bg-gray-800 rounded-full p-0.5 shadow-sm border border-gray-200 dark:border-gray-700 z-50 w-3 h-3 flex items-center justify-center"><img src="./image/Google-Gemini-Logo-Transparent.png" class="w-full h-full object-contain" alt="Premium"></div>`
         : "";
+      const name = escapeHtml(u.display_name || u.username);
+      const safeUsername = escapeHtml(u.username);
       return `
-        <div class="flex items-center gap-3 p-3 hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer transition-colors border-b border-gray-50 dark:border-gray-700 last:border-0" onclick="selectUserForAdding('${u.id}', '${u.display_name || u.username}')">
+        <div class="flex items-center gap-3 p-3 hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer transition-colors border-b border-gray-50 dark:border-gray-700 last:border-0" onclick="selectUserForAdding('${u.id}', '${name}')">
             <div class="relative w-10 h-10 rounded-full bg-blue-100 dark:bg-blue-900/50 flex items-center justify-center text-blue-500 dark:text-blue-400 font-bold shrink-0">
                 <div class="w-full h-full rounded-full overflow-hidden flex items-center justify-center bg-blue-100 dark:bg-blue-900/50">
-                    ${u.avatar_url ? `<img src="${u.avatar_url}" class="w-full h-full object-cover">` : (u.display_name || u.username)[0].toUpperCase()}
+                    ${u.avatar_url ? `<img src="${u.avatar_url}" class="w-full h-full object-cover">` : name[0]?.toUpperCase() || ''}
                 </div>
                 ${premiumBadgeHtml}
             </div>
             <div class="min-w-0">
-                <div class="font-semibold text-gray-800 dark:text-gray-100 truncate">${u.display_name || u.username}</div>
-                <div class="text-xs text-gray-500 dark:text-gray-400 truncate">@${u.username}</div>
+                <div class="font-semibold text-gray-800 dark:text-gray-100 truncate">${name}</div>
+                <div class="text-xs text-gray-500 dark:text-gray-400 truncate">@${safeUsername}</div>
             </div>
         </div>
         `;
@@ -1619,7 +1621,7 @@ export function renderAddMemberSelectedUsers() {
     .map(
       (u) => `
         <div class="flex items-center gap-1.5 bg-blue-100 dark:bg-blue-900/50 text-blue-700 dark:text-blue-300 px-3 py-1.5 rounded-lg text-sm font-medium max-w-full">
-            <span class="truncate">${u.name}</span>
+            <span class="truncate">${escapeHtml(u.name)}</span>
             <button onclick="removeUserFromAdding('${u.id}')" class="hover:text-blue-900 dark:hover:text-blue-100 ml-1 transition-colors shrink-0">×</button>
         </div>
     `,
