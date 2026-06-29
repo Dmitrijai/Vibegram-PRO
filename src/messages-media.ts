@@ -82,6 +82,7 @@ export async function downloadMedia(url: string, filename: string) {
         a.click();
         document.body.removeChild(a);
         URL.revokeObjectURL(blobUrl);
+        customToast('Файл скачан');
     } catch (e) {
         console.error('Download failed', e);
         customToast('Ошибка при скачивании. Открываем в новой вкладке...');
