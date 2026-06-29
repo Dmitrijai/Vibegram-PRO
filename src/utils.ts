@@ -662,7 +662,11 @@ export async function softDeleteCloudinaryFile(fileUrl: string): Promise<boolean
 export async function uploadToCloudinary(file: File | Blob, isAvatar = false, abortSignal?: AbortSignal, targetBucket?: string): Promise<string> {
     const { cloudName, apiKey, apiSecret } = getCloudinaryConfig();
     
-    if (cloudName && apiKey && apiSecret) {
+    // Cloudinary is best for media (images, video, audio). 
+    // Raw files (like .zip, .pdf) often get 401 Unauthorized due to default strict delivery policies.
+    const isMedia = file.type.startsWith('image/') || file.type.startsWith('video/') || file.type.startsWith('audio/');
+    
+    if (cloudName && apiKey && apiSecret && isMedia) {
         try {
             const timestamp = Math.round((new Date()).getTime() / 1000).toString();
             const paramsToSign = { timestamp };
