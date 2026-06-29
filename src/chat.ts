@@ -244,11 +244,26 @@ export async function loadChats() {
         } else if (lastMsg.message_type === "voice") previewText = "голосовое";
         else if (lastMsg.message_type === "video_circle")
           previewText = "кружок";
-        else if (lastMsg.message_type === "photo") previewText = "медиа";
-        else if (lastMsg.message_type === "video") previewText = "медиа";
-        else if (lastMsg.message_type === "document") previewText = "файл";
+        else if (lastMsg.message_type === "photo") previewText = "медиа" + (lastMsg.content ? ` ${escapeHtml(lastMsg.content)}` : "");
+        else if (lastMsg.message_type === "video") previewText = "медиа" + (lastMsg.content ? ` ${escapeHtml(lastMsg.content)}` : "");
+        else if (lastMsg.message_type === "document") previewText = "файл" + (lastMsg.content ? ` ${escapeHtml(lastMsg.content)}` : "");
         else if (lastMsg.message_type === "poll") previewText = "опрос";
-        else previewText = escapeHtml(lastMsg.content || "");
+        else {
+            const actualMedia = mediaArr.filter((m: any) => m.type !== 'reply' && m.type !== 'forward' && m.type !== 'admin_mode' && m.type !== 'share_app_content');
+            if (actualMedia.length > 0) {
+                const firstMedia = actualMedia[0];
+                if (firstMedia.type?.startsWith('image/') || firstMedia.type?.startsWith('video/')) {
+                    previewText = "медиа";
+                } else {
+                    previewText = "файл";
+                }
+                if (lastMsg.content) {
+                    previewText += ` ${escapeHtml(lastMsg.content)}`;
+                }
+            } else {
+                previewText = escapeHtml(lastMsg.content || "");
+            }
+        }
 
         if (lastMsg.sender_id === state.currentUser.id) {
           previewText = `${lastMsg.is_read ? "✓✓" : "✓"} <span class="text-gray-600 truncate">${previewText}</span>`;
