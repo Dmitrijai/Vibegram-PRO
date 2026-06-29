@@ -71,19 +71,9 @@ export function toggleAttachMenu(event: Event) {
     }
 }
 export async function downloadMedia(url: string, filename: string) {
-    let finalUrl = url;
-    if (url.includes('res.cloudinary.com') && url.includes('/upload/') && !url.includes('/raw/')) {
-        finalUrl = url.replace('/upload/', `/upload/fl_attachment:${encodeURIComponent(filename)}/`);
-    }
-
     try {
-        const response = await fetch(finalUrl);
+        const response = await fetch(url);
         const blob = await response.blob();
-        
-        if (blob.size === 0) {
-             throw new Error("Blob is 0 bytes");
-        }
-        
         const blobUrl = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = blobUrl;
@@ -92,17 +82,10 @@ export async function downloadMedia(url: string, filename: string) {
         a.click();
         document.body.removeChild(a);
         URL.revokeObjectURL(blobUrl);
-        import('./utils').then(m => m.customToast('Файл успешно скачан'));
     } catch (e) {
         console.error('Download failed', e);
-        import('./utils').then(m => m.customToast('Открываем в новой вкладке для скачивания...'));
-        const a = document.createElement('a');
-        a.href = url;
-        a.target = '_blank';
-        a.download = filename || 'download';
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
+        customToast('Ошибка при скачивании. Открываем в новой вкладке...');
+        window.open(url, '_blank');
     }
 }
 (window as any).downloadMedia = downloadMedia;

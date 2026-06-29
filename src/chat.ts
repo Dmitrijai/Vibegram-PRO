@@ -241,15 +241,14 @@ export async function loadChats() {
         if (shareData) {
             let label = shareData.content_type_label ? shareData.content_type_label.charAt(0).toUpperCase() + shareData.content_type_label.slice(1).toLowerCase() : 'Контент';
             previewText = shareData.title ? `${label} «${shareData.title}»` : label;
-        } else if (lastMsg.message_type === "voice") previewText = "Голосовое";
-        else if (lastMsg.message_type === "video_circle") previewText = "Кружок";
-        else if (lastMsg.message_type === "photo") previewText = "Фото";
-        else if (lastMsg.message_type === "video") previewText = "Видео";
-        else if (lastMsg.message_type === "document") previewText = "Файл";
-        else if (lastMsg.message_type === "poll") previewText = "Опрос";
-        else {
-            previewText = escapeHtml(lastMsg.content || "");
-        }
+        } else if (lastMsg.message_type === "voice") previewText = "🎤 Голосовое";
+        else if (lastMsg.message_type === "video_circle")
+          previewText = "📹 Видеосообщение";
+        else if (lastMsg.message_type === "photo") previewText = "📷 Фото";
+        else if (lastMsg.message_type === "video") previewText = "🎥 Видео";
+        else if (lastMsg.message_type === "document") previewText = "📁 Файл";
+        else if (lastMsg.message_type === "poll") previewText = "📊 Опрос";
+        else previewText = escapeHtml(lastMsg.content || "");
 
         if (lastMsg.sender_id === state.currentUser.id) {
           previewText = `${lastMsg.is_read ? "✓✓" : "✓"} <span class="text-gray-600 truncate">${previewText}</span>`;
