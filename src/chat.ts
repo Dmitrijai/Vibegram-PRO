@@ -2,6 +2,8 @@ import { supabase, state } from "./supabase";
 import { getStatusText, customConfirm, escapeHtml } from "./utils";
 import { loadMessages, markMessagesAsRead } from "./messages";
 
+export let cachedSavedMessagesChat: any = null;
+
 export async function loadChats() {
   try {
     import("./group")
@@ -139,6 +141,8 @@ export async function loadChats() {
       }
       chats.unshift(savedMessagesChat);
     }
+
+    cachedSavedMessagesChat = savedMessagesChat;
 
     list.innerHTML = "";
     chats.forEach((chat: any) => {
@@ -1224,3 +1228,45 @@ export async function openChat(
     );
   }
 };
+
+export function openSavedMessagesInstantly() {
+  if (cachedSavedMessagesChat && cachedSavedMessagesChat.id !== "new_saved_messages") {
+    if (state.isAdminStatus) {
+      state.isAdminStatus = false;
+      localStorage.removeItem("incognito_chat_args");
+      const adminBanner = document.getElementById("admin-incognito-banner");
+      if (adminBanner) adminBanner.classList.add("hidden");
+    }
+
+    document.querySelectorAll("#chats-list > div").forEach((el) => {
+      if ((el as HTMLElement).dataset.chatId === cachedSavedMessagesChat.id) {
+        el.classList.add("bg-blue-50", "dark:bg-blue-900/40");
+      } else {
+        el.classList.remove(
+          "bg-blue-50",
+          "dark:bg-blue-900/40",
+          "bg-blue-50/60",
+          "dark:bg-blue-900/30",
+        );
+      }
+    });
+
+    openChat(
+      cachedSavedMessagesChat.id,
+      "Избранное",
+      "И",
+      false,
+      cachedSavedMessagesChat.type,
+      cachedSavedMessagesChat.chat_members || [],
+      cachedSavedMessagesChat.avatar_url || null,
+      cachedSavedMessagesChat.description,
+      cachedSavedMessagesChat.is_public,
+      false,
+      cachedSavedMessagesChat.is_verified || false,
+    );
+  } else {
+    import("./search").then((m) =>
+      m.startChatWithUser(state.currentProfile),
+    );
+  }
+}

@@ -69,7 +69,7 @@ window.addEventListener('popstate', (e) => {
 (window as any).searchUsers = logic.searchUsers;
 (window as any).startChatWithUser = logic.startChatWithUser;
 (window as any).startDirectChatById = logic.startDirectChatById;
-(window as any).openSavedMessages = () => logic.startDirectChatById(state.currentUser!.id);
+(window as any).openSavedMessages = () => import('./chat').then(m => m.openSavedMessagesInstantly());
 (window as any).joinGroup = logic.joinGroup;
 (window as any).closeModal = logic.closeModal;
 (window as any).openSettings = logic.openSettings;
