@@ -905,21 +905,27 @@ export async function runMiniApp(id: string) {
     }
 
     if (data.html_content && data.html_content.trim().startsWith("<")) {
+      iframe.removeAttribute("src");
       iframe.srcdoc = data.html_content;
     } else if (data.html_content && data.html_content.startsWith("https://")) {
+      iframe.removeAttribute("srcdoc");
       iframe.src = data.html_content;
     } else if (data.html_url) {
       if (data.html_url.includes("res.cloudinary.com") && data.html_url.includes("/raw/upload/")) {
         fetch(data.html_url).then(res => res.text()).then(html => {
           supabase.from("mini_apps").update({ html_content: html, html_url: null }).eq("id", id).then();
+          iframe.removeAttribute("src");
           iframe.srcdoc = html;
         }).catch(() => {
+          iframe.removeAttribute("srcdoc");
           iframe.src = data.html_url;
         });
       } else {
+        iframe.removeAttribute("srcdoc");
         iframe.src = data.html_url;
       }
     } else if (data.html_content) {
+      iframe.removeAttribute("src");
       iframe.srcdoc = data.html_content;
     }
 
@@ -1047,21 +1053,27 @@ export async function runStandaloneMiniApp(id: string) {
     if (error || !data) throw error || new Error("App Not Found");
 
     if (data.html_content && data.html_content.trim().startsWith("<")) {
+      iframe.removeAttribute("src");
       iframe.srcdoc = data.html_content;
     } else if (data.html_content && data.html_content.startsWith("https://")) {
+      iframe.removeAttribute("srcdoc");
       iframe.src = data.html_content;
     } else if (data.html_url) {
       if (data.html_url.includes("res.cloudinary.com") && data.html_url.includes("/raw/upload/")) {
         fetch(data.html_url).then(res => res.text()).then(html => {
           supabase.from("mini_apps").update({ html_content: html, html_url: null }).eq("id", id).then();
+          iframe.removeAttribute("src");
           iframe.srcdoc = html;
         }).catch(() => {
+          iframe.removeAttribute("srcdoc");
           iframe.src = data.html_url;
         });
       } else {
+        iframe.removeAttribute("srcdoc");
         iframe.src = data.html_url;
       }
     } else if (data.html_content) {
+      iframe.removeAttribute("src");
       iframe.srcdoc = data.html_content;
     }
 
