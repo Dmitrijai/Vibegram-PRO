@@ -62,8 +62,6 @@ export function setupMiniApps() {
         
         let iframe = document.getElementById("standalone-miniapp-frame") as HTMLIFrameElement;
         if (iframe) {
-            iframe.src = 'about:blank';
-            iframe.removeAttribute('srcdoc');
             const newIframe = document.createElement("iframe");
             newIframe.id = iframe.id;
             newIframe.className = iframe.className;
@@ -888,8 +886,6 @@ export async function runMiniApp(id: string) {
     "mini-app-frame",
   ) as HTMLIFrameElement;
   if (iframe) {
-    iframe.src = 'about:blank';
-    iframe.removeAttribute('srcdoc');
     const newIframe = document.createElement("iframe");
     newIframe.id = iframe.id;
     newIframe.className = iframe.className;
@@ -993,8 +989,6 @@ export function closeMiniApp() {
     document.getElementById("app-screen")?.classList.remove("hidden");
     let iframe = document.getElementById("standalone-miniapp-frame") as HTMLIFrameElement;
     if (iframe) {
-        iframe.src = 'about:blank';
-        iframe.removeAttribute('srcdoc');
         const newIframe = document.createElement("iframe");
         newIframe.id = iframe.id;
         newIframe.className = iframe.className;
@@ -1014,8 +1008,6 @@ export function closeMiniApp() {
         "mini-app-frame",
       ) as HTMLIFrameElement;
       if (iframe) {
-        iframe.src = 'about:blank';
-        iframe.removeAttribute('srcdoc');
         const newIframe = document.createElement("iframe");
         newIframe.id = iframe.id;
         newIframe.className = iframe.className;
@@ -1063,8 +1055,6 @@ export async function runStandaloneMiniApp(id: string) {
     "standalone-miniapp-frame",
   ) as HTMLIFrameElement;
   if (iframe) {
-    iframe.src = 'about:blank';
-    iframe.removeAttribute('srcdoc');
     const newIframe = document.createElement("iframe");
     newIframe.id = iframe.id;
     newIframe.className = iframe.className;
