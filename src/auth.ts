@@ -399,21 +399,31 @@ function finalizeAppSetup() {
             }
             
             // Trigger popstate so #chat=... is processed if app opened via URL/Push
-            setTimeout(() => {
-                const initialSearch = sessionStorage.getItem('initial_search') || window.location.search;
-                const urlParams = new URLSearchParams(initialSearch);
-                const queryMiniapp = urlParams.get('miniapp');
-                if (queryMiniapp) {
-                    import('./miniapps').then(m => m.runStandaloneMiniApp(queryMiniapp));
-                }
-
-                const initialHash = sessionStorage.getItem('initial_hash');
-                if (initialHash && (initialHash.startsWith('#chat=') || initialHash.startsWith('#shorts?id=')) && window.location.hash !== initialHash) {
-                    window.history.replaceState(null, '', initialHash);
-                }
-                sessionStorage.setItem('initial_hash_handled', 'true');
-                window.dispatchEvent(new Event('popstate'));
-            }, 500);
+            const initialSearch = sessionStorage.getItem('initial_search') || window.location.search;
+            const urlParams = new URLSearchParams(initialSearch);
+            const queryMiniapp = urlParams.get('miniapp');
+            
+            if (queryMiniapp) {
+                import('./miniapps').then(m => m.runStandaloneMiniApp(queryMiniapp));
+                // We still need to dispatch popstate for hash handling eventually, but no delay for miniapps
+                setTimeout(() => {
+                    const initialHash = sessionStorage.getItem('initial_hash');
+                    if (initialHash && (initialHash.startsWith('#chat=') || initialHash.startsWith('#shorts?id=')) && window.location.hash !== initialHash) {
+                        window.history.replaceState(null, '', initialHash);
+                    }
+                    sessionStorage.setItem('initial_hash_handled', 'true');
+                    window.dispatchEvent(new Event('popstate'));
+                }, 500);
+            } else {
+                setTimeout(() => {
+                    const initialHash = sessionStorage.getItem('initial_hash');
+                    if (initialHash && (initialHash.startsWith('#chat=') || initialHash.startsWith('#shorts?id=')) && window.location.hash !== initialHash) {
+                        window.history.replaceState(null, '', initialHash);
+                    }
+                    sessionStorage.setItem('initial_hash_handled', 'true');
+                    window.dispatchEvent(new Event('popstate'));
+                }, 500);
+            }
 }
 
 let vibHeartbeatTimer: any = null;

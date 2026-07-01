@@ -60,10 +60,13 @@ export function setupMiniApps() {
         // We only restore app screen here, assuming user is logged in
         document.getElementById("app-screen")?.classList.remove("hidden");
         
-        const iframe = document.getElementById("standalone-miniapp-frame") as HTMLIFrameElement;
+        let iframe = document.getElementById("standalone-miniapp-frame") as HTMLIFrameElement;
         if (iframe) {
-           iframe.removeAttribute("srcdoc");
-           iframe.removeAttribute("src");
+            const newIframe = document.createElement("iframe");
+            newIframe.id = iframe.id;
+            newIframe.className = iframe.className;
+            newIframe.sandbox.value = iframe.sandbox.value;
+            iframe.parentNode!.replaceChild(newIframe, iframe);
         }
         currentRunningAppId = null;
       }
@@ -879,11 +882,18 @@ export async function runMiniApp(id: string) {
   const iconEl = document.getElementById("run-app-icon")!;
   iconEl.innerHTML = `<div class="w-full h-full rounded-lg animate-pulse bg-gray-700"></div>`;
   
-  const iframe = document.getElementById(
+  let iframe = document.getElementById(
     "mini-app-frame",
   ) as HTMLIFrameElement;
-  iframe.removeAttribute("srcdoc");
-  iframe.removeAttribute("src");
+  if (iframe) {
+    const newIframe = document.createElement("iframe");
+    newIframe.id = iframe.id;
+    newIframe.className = iframe.className;
+    newIframe.sandbox.value = iframe.sandbox.value;
+    iframe.parentNode!.replaceChild(newIframe, iframe);
+    iframe = newIframe;
+  }
+
   
   // Show spinner overlay in iframe container if possible, or just wait
   // (We'll just wait for the db fetch)
@@ -977,10 +987,13 @@ export function closeMiniApp() {
     standaloneScreen.classList.add("hidden");
     standaloneScreen.classList.remove("flex");
     document.getElementById("app-screen")?.classList.remove("hidden");
-    const iframe = document.getElementById("standalone-miniapp-frame") as HTMLIFrameElement;
+    let iframe = document.getElementById("standalone-miniapp-frame") as HTMLIFrameElement;
     if (iframe) {
-        iframe.removeAttribute("srcdoc");
-        iframe.removeAttribute("src");
+        const newIframe = document.createElement("iframe");
+        newIframe.id = iframe.id;
+        newIframe.className = iframe.className;
+        newIframe.sandbox.value = iframe.sandbox.value;
+        iframe.parentNode!.replaceChild(newIframe, iframe);
     }
     currentRunningAppId = null;
     miniAppContentData = null;
@@ -991,12 +1004,15 @@ export function closeMiniApp() {
     runModal.classList.add("translate-y-full");
     setTimeout(() => {
       runModal.classList.add("hidden");
-      const iframe = document.getElementById(
+      let iframe = document.getElementById(
         "mini-app-frame",
       ) as HTMLIFrameElement;
       if (iframe) {
-        iframe.removeAttribute("srcdoc");
-        iframe.removeAttribute("src");
+        const newIframe = document.createElement("iframe");
+        newIframe.id = iframe.id;
+        newIframe.className = iframe.className;
+        newIframe.sandbox.value = iframe.sandbox.value;
+        iframe.parentNode!.replaceChild(newIframe, iframe);
       }
       currentRunningAppId = null;
       miniAppContentData = null;
@@ -1035,12 +1051,18 @@ export async function runStandaloneMiniApp(id: string) {
   standaloneScreen.classList.remove("hidden");
   standaloneScreen.classList.add("flex");
 
-  const iframe = document.getElementById(
+  let iframe = document.getElementById(
     "standalone-miniapp-frame",
   ) as HTMLIFrameElement;
-  
-  iframe.removeAttribute("srcdoc");
-  iframe.removeAttribute("src");
+  if (iframe) {
+    const newIframe = document.createElement("iframe");
+    newIframe.id = iframe.id;
+    newIframe.className = iframe.className;
+    newIframe.sandbox.value = iframe.sandbox.value;
+    iframe.parentNode!.replaceChild(newIframe, iframe);
+    iframe = newIframe;
+  }
+
   iframe.srcdoc = `
     <div style="display:flex;justify-content:center;align-items:center;height:100vh;font-family:sans-serif;color:#888;">
       Загрузка приложения...
