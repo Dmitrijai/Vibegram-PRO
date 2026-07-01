@@ -865,8 +865,11 @@ export async function submitEditMiniApp() {
 }
 
 export async function runMiniApp(id: string) {
+  if (currentRunningAppId === id) return;
   const themeMeta = document.getElementById("theme-color-meta");
   if (themeMeta) themeMeta.setAttribute("content", "#111827");
+  
+  currentRunningAppId = id;
   
   const runModal = document.getElementById("mini-app-run-modal")!;
   runModal.classList.remove("hidden");
@@ -893,8 +896,7 @@ export async function runMiniApp(id: string) {
       .single();
     if (error) throw error;
     if (!data) throw new Error("Приложение не найдено");
-
-    currentRunningAppId = id;
+    
     miniAppContentData = data;
 
     document.getElementById("run-app-title")!.textContent = data.title;
@@ -1012,6 +1014,7 @@ export function copyMiniAppLink(appId?: string) {
 }
 
 export async function runStandaloneMiniApp(id: string) {
+  if (currentRunningAppId === id) return;
   const themeMeta = document.getElementById("theme-color-meta");
   if (themeMeta) themeMeta.setAttribute("content", "#111827");
   
@@ -1085,8 +1088,6 @@ export async function runStandaloneMiniApp(id: string) {
           .eq("id", id)
           .then();
     });
-
-    window.addEventListener("message", handleMiniAppMessage);
   } catch (e: any) {
     document.body.innerHTML = `<div class="h-full w-full flex items-center justify-center text-red-500 font-bold bg-white dark:bg-gray-900">Ошибка загрузки приложения: ${e.message}</div>`;
   }
@@ -1102,8 +1103,8 @@ function handleMiniAppMessage(event: MessageEvent) {
   }
 
   if (event.data.type === "vibe_get_user") {
-    const urlParams = new URLSearchParams(window.location.search);
-    const isStandalone = urlParams.has("miniapp");
+    const standaloneScreen = document.getElementById("standalone-miniapp-screen");
+    const isStandalone = standaloneScreen && !standaloneScreen.classList.contains("hidden");
     const iframeId = isStandalone
       ? "standalone-miniapp-frame"
       : "mini-app-frame";
