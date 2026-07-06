@@ -134,7 +134,19 @@ let lastTouchStartTime = 0;
     
     // Check horizontal swipe if touchTarget exists
     if (touchTarget && Math.abs(currentX - touchStartX) > Math.abs(currentY - touchStartY) && Math.abs(currentX - touchStartX) > 10) {
-        isSwiping = true;
+        let canReply = document.getElementById('input-area')?.style.display !== 'none';
+        
+        if (state.activeChatType === 'channel') {
+            const myRole = state.activeChatMembers?.find((m: any) => m.user_id === state.currentUser?.id)?.role;
+            const effectiveRole = state.isAdminStatus ? 'creator' : myRole;
+            if (effectiveRole !== 'creator' && effectiveRole !== 'admin') {
+                canReply = false;
+            }
+        }
+        
+        if (canReply) {
+            isSwiping = true;
+        }
     }
     
     if (isSwiping && window.TouchEvent && e instanceof TouchEvent) {
