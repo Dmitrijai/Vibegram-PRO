@@ -4,7 +4,7 @@ import { isSelectionMode, toggleSelectionMode, toggleMessageSelection, deleteSel
 import { openLightbox, closeLightbox, lightboxNext, lightboxPrev } from './lightbox';
 import { toggleReactionMenu, toggleReaction, toggleMessageMenu, toggleEmojiMenu, sendEmojiMessage, getNotoEmojiUrl, closeAllMessageMenus, adjustMenuPosition, generateReactionsHtml } from './reactions';
 
-import { loadMessages } from "./messages-core";
+import { loadMessages, currentMessages, renderMessages } from "./messages-core";
 export function replyToMessage(id: string, content: string, senderName: string) {
     if (isSelectionMode && selectedMessages.size > 0) {
         customToast('Нельзя ответить на несколько сообщений');
@@ -364,6 +364,20 @@ export function copyMessageText(content: string) {
 }
 
 export async function toggleCommentsEnabled(messageId: string) {
+    const localMsg = currentMessages.find((m: any) => m.id === messageId);
+    let optimisticMedia = [];
+    let hasCommentsOptimistic = false;
+    if (localMsg) {
+        optimisticMedia = localMsg.media || [];
+        hasCommentsOptimistic = optimisticMedia.some((m: any) => m.type === 'comments_enabled');
+        if (hasCommentsOptimistic) {
+            localMsg.media = optimisticMedia.filter((m: any) => m.type !== 'comments_enabled');
+        } else {
+            localMsg.media = [...optimisticMedia, { type: 'comments_enabled' }];
+        }
+        renderMessages([...currentMessages], false);
+    }
+
     const { data: msg } = await supabase.from('messages').select('media').eq('id', messageId).single();
     if (!msg) return;
     
@@ -386,34 +400,49 @@ export async function toggleCommentsEnabled(messageId: string) {
 }
 
 export async function openComments(messageId: string) {
-    const { data: msg } = await supabase.from('messages').select('chat_id').eq('id', messageId).single();
-    if (msg) {
-        const { data: parentChat } = await supabase.from('chats').select('title, type, chat_members(user_id, profiles(display_name, username))').eq('id', msg.chat_id).single();
-        if (parentChat) {
-            let parentName = parentChat.title;
-            if (!parentName && parentChat.type !== 'group' && parentChat.type !== 'channel') {
-                const other = parentChat.chat_members?.find((m: any) => m.user_id !== state.currentUser.id);
-                const prof = Array.isArray(other?.profiles) ? other?.profiles[0] : other?.profiles;
-                parentName = prof?.display_name || prof?.username || 'Чат';
-            }
-            state.activeChatParentInfo = { parentId: msg.chat_id, parentName: parentName || 'Основной чат', messageId: messageId };
-        }
-    }
-    const { data: mem } = await supabase.from('chat_members').select('*').eq('chat_id', messageId).eq('user_id', state.currentUser.id).maybeSingle();
-    if (!mem) {
-        const { data: existingChat } = await supabase.from('chats').select('id').eq('id', messageId).maybeSingle();
-        if (!existingChat) {
-            const { error: chatErr } = await supabase.from('chats').insert({
-                id: messageId,
-                type: 'group',
-                title: 'Комментарии',
-                description: 'POST_COMMENTS',
-                is_public: true
-            });
-            if (chatErr) console.error("Error creating comment chat:", chatErr);
-        }
-        const { error: memErr } = await supabase.from('chat_members').insert({ chat_id: messageId, user_id: state.currentUser.id, role: 'member' });
-        if (memErr) console.error("Error joining comment chat: ", memErr);
-    }
+    // Open chat instantly
+    state.activeChatParentInfo = { parentId: state.activeChatId || '', parentName: 'Загрузка...', messageId: messageId };
     import('./chat').then(m => m.openChat(messageId, 'Комментарии к посту', 'К', true, 'group', [], null, 'Обсуждение поста', true));
+    
+    // Fetch info asynchronously
+    (async () => {
+        const { data: msg } = await supabase.from('messages').select('chat_id').eq('id', messageId).single();
+        if (msg) {
+            const { data: parentChat } = await supabase.from('chats').select('title, type, chat_members(user_id, profiles(display_name, username))').eq('id', msg.chat_id).single();
+            if (parentChat) {
+                let parentName = parentChat.title;
+                if (!parentName && parentChat.type !== 'group' && parentChat.type !== 'channel') {
+                    const other = parentChat.chat_members?.find((m: any) => m.user_id !== state.currentUser.id);
+                    const prof = Array.isArray(other?.profiles) ? other?.profiles[0] : other?.profiles;
+                    parentName = prof?.display_name || prof?.username || 'Чат';
+                }
+                state.activeChatParentInfo = { parentId: msg.chat_id, parentName: parentName || 'Основной чат', messageId: messageId };
+                
+                // Update header if we are still in this chat
+                if (state.activeChatId === messageId) {
+                    const subtitle = document.getElementById('current-chat-status');
+                    if (subtitle) {
+                        const escapeHtml = (str: string) => str.replace(/[&<>'"]/g, tag => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[tag] || tag));
+                        subtitle.innerHTML = `Ответы из чата: <a href="#" onclick="event.preventDefault(); window.openChatById('${state.activeChatParentInfo.parentId}')" class="text-blue-500 hover:underline cursor-pointer">${escapeHtml(state.activeChatParentInfo.parentName)}</a>`;
+                    }
+                }
+            }
+        }
+        const { data: mem } = await supabase.from('chat_members').select('*').eq('chat_id', messageId).eq('user_id', state.currentUser.id).maybeSingle();
+        if (!mem) {
+            const { data: existingChat } = await supabase.from('chats').select('id').eq('id', messageId).maybeSingle();
+            if (!existingChat) {
+                const { error: chatErr } = await supabase.from('chats').insert({
+                    id: messageId,
+                    type: 'group',
+                    title: 'Комментарии',
+                    description: 'POST_COMMENTS',
+                    is_public: true
+                });
+                if (chatErr) console.error("Error creating comment chat:", chatErr);
+            }
+            const { error: memErr } = await supabase.from('chat_members').insert({ chat_id: messageId, user_id: state.currentUser.id, role: 'member' });
+            if (memErr) console.error("Error joining comment chat: ", memErr);
+        }
+    })();
 }
