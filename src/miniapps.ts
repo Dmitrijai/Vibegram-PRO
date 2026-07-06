@@ -67,6 +67,21 @@ export function setupMiniApps() {
         }
         currentRunningAppId = null;
       }
+      
+      const runModal = document.getElementById("mini-app-run-modal");
+      if (runModal && !runModal.classList.contains("hidden")) {
+          runModal.classList.add("translate-y-full");
+          setTimeout(() => {
+              runModal.classList.add("hidden");
+              const iframe = document.getElementById("mini-app-frame") as HTMLIFrameElement;
+              if (iframe) {
+                  iframe.removeAttribute("srcdoc");
+                  iframe.removeAttribute("src");
+              }
+          }, 300);
+          currentRunningAppId = null;
+          miniAppContentData = null;
+      }
     } else {
       const appId = urlParams.get("miniapp");
       if (appId && currentRunningAppId !== appId) {
@@ -966,10 +981,15 @@ export function closeMiniApp() {
 
   const urlParams = new URLSearchParams(window.location.search);
   const wasStandalone = urlParams.has("miniapp");
-  if (urlParams.has("miniapp")) {
-    urlParams.delete("miniapp");
-    const newSearch = urlParams.toString() ? `?${urlParams.toString()}` : "";
-    window.history.pushState(null, "", window.location.pathname + newSearch + window.location.hash);
+  if (wasStandalone) {
+    const isFromInternal = window.history.state?.fromInternal;
+    if (isFromInternal) {
+      window.history.back();
+    } else {
+      urlParams.delete("miniapp");
+      const newSearch = urlParams.toString() ? `?${urlParams.toString()}` : "";
+      window.history.replaceState(null, "", window.location.pathname + newSearch + window.location.hash);
+    }
   }
 
   const standaloneScreen = document.getElementById("standalone-miniapp-screen");

@@ -497,9 +497,11 @@ export function closeShorts() {
     } else {
       import("./supabase").then(({ state }) => {
         if (state.activeChatId) {
-          window.location.hash = "#chat=" + state.activeChatId;
+          window.history.replaceState(null, "", "#chat=" + state.activeChatId);
+          window.dispatchEvent(new Event("popstate"));
         } else {
-          window.location.hash = ""; // Clear all shorts modal hashes
+          window.history.replaceState(null, "", window.location.pathname + window.location.search);
+          window.dispatchEvent(new Event("popstate"));
         }
       });
     }
