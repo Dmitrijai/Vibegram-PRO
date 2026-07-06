@@ -336,7 +336,7 @@ export function adjustMenuPosition(menu: HTMLElement | null) {
 export function generateReactionsHtml(msgId: string, reactions: any) {
     let reactionsHtml = '';
     if (reactions && Object.keys(reactions).length > 0) {
-        const visibleReactions = Object.entries(reactions).filter(([emoji]) => emoji !== '__read__').sort(([a], [b]) => a.localeCompare(b));
+        const visibleReactions = Object.entries(reactions).filter(([emoji]) => emoji !== '__read__');
         if (visibleReactions.length > 0) {
             reactionsHtml = '<div class="flex flex-wrap gap-1 mt-1">';
             for (const [emoji, users] of visibleReactions) {
