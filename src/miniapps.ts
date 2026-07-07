@@ -971,7 +971,7 @@ export async function runMiniApp(id: string) {
   }
 }
 
-export function closeMiniApp() {
+export function closeMiniApp(skipHistoryBack = false) {
   const themeMeta = document.getElementById("theme-color-meta");
   if (themeMeta) {
       if (!document.documentElement.classList.contains('dark')) {
@@ -979,16 +979,18 @@ export function closeMiniApp() {
       }
   }
 
-  const urlParams = new URLSearchParams(window.location.search);
-  const wasStandalone = urlParams.has("miniapp");
-  if (wasStandalone) {
-    const isFromInternal = window.history.state?.fromInternal;
-    if (isFromInternal) {
-      window.history.back();
-    } else {
-      urlParams.delete("miniapp");
-      const newSearch = urlParams.toString() ? `?${urlParams.toString()}` : "";
-      window.history.replaceState(null, "", window.location.pathname + newSearch + window.location.hash);
+  if (!skipHistoryBack) {
+    const urlParams = new URLSearchParams(window.location.search);
+    const wasStandalone = urlParams.has("miniapp");
+    if (wasStandalone) {
+      const isFromInternal = window.history.state?.fromInternal;
+      if (isFromInternal) {
+        window.history.back();
+      } else {
+        urlParams.delete("miniapp");
+        const newSearch = urlParams.toString() ? `?${urlParams.toString()}` : "";
+        window.history.replaceState(null, "", window.location.pathname + newSearch + window.location.hash);
+      }
     }
   }
 

@@ -244,8 +244,12 @@ export function closeChatMobile(skipHistoryBack = false) {
     }
 
     if (!skipHistoryBack && window.location.hash === '#chat') {
-        window.history.back();
-        return;
+        if (window.innerWidth < 768) {
+            window.history.back();
+            return;
+        } else {
+            window.history.replaceState(null, '', window.location.pathname + window.location.search);
+        }
     }
 
     if ((window as any).logic?.pauseAllMedia) {

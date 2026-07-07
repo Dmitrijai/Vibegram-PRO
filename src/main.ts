@@ -11,6 +11,29 @@ import { requestPushPermissionAndToken } from './push';
 
 window.addEventListener('popstate', (e) => {
     const hash = window.location.hash;
+    const urlParams = new URLSearchParams(window.location.search);
+    
+    // If we're not in a miniapp anymore, make sure it's closed visually
+    if (!urlParams.has("miniapp")) {
+        const standaloneScreen = document.getElementById("standalone-miniapp-screen");
+        const runModal = document.getElementById("mini-app-run-modal");
+        if ((standaloneScreen && !standaloneScreen.classList.contains("hidden")) || 
+            (runModal && !runModal.classList.contains("hidden"))) {
+            if ((window as any).logic && (window as any).logic.closeMiniApp) {
+                (window as any).logic.closeMiniApp(true);
+            }
+        }
+    }
+
+    // If we're not in shorts anymore, make sure it's closed visually
+    if (!hash.startsWith("#shorts")) {
+        const shortsScreen = document.getElementById("shorts-screen");
+        if (shortsScreen && !shortsScreen.classList.contains("hidden")) {
+            if ((window as any).logic && (window as any).logic.closeShorts) {
+                (window as any).logic.closeShorts(true);
+            }
+        }
+    }
     
     // Restore theme color
     const themeMeta = document.getElementById("theme-color-meta");

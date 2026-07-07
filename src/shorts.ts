@@ -482,7 +482,7 @@ export function closeShortsAnalytics() {
 }
 (window as any).closeShortsAnalytics = closeShortsAnalytics;
 
-export function closeShorts() {
+export function closeShorts(skipHistoryBack = false) {
   const themeMeta = document.getElementById("theme-color-meta");
   if (themeMeta) {
       if (!document.documentElement.classList.contains('dark')) {
@@ -490,7 +490,7 @@ export function closeShorts() {
       }
   }
 
-  if (window.location.hash.startsWith("#shorts")) {
+  if (!skipHistoryBack && window.location.hash.startsWith("#shorts")) {
     const isFromInternal = window.history.state?.fromInternal;
     if (isFromInternal) {
       window.history.back();
