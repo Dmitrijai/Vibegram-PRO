@@ -5,6 +5,7 @@ import {defineConfig, loadEnv} from 'vite';
 
 export default defineConfig(({mode}) => {
   const env = loadEnv(mode, '.', '');
+  const repoName = process.env.GITHUB_REPOSITORY ? `/${process.env.GITHUB_REPOSITORY.split('/')[1]}/` : '/';
   
   const rawAiKey = process.env.GEMINI_API_KEY || env.GEMINI_API_KEY || '';
   // Простая обфускация ключа на этапе сборки, чтобы он не лежал в открытом виде (Base64 + реверс)
@@ -21,7 +22,7 @@ export default defineConfig(({mode}) => {
   const cloudinaryApiSecret = process.env.CLOUDINARY_API_SECRET || env.CLOUDINARY_API_SECRET || '';
   
   return {
-    base: '/', // Фикс для кастомного домена (чтобы не было белого экрана)
+    base: repoName,
     plugins: [react(), tailwindcss()],
     define: {
       'process.env.GEMINI_API_KEY_OBFUSCATED': JSON.stringify(obfuscatedAiKey),
