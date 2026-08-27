@@ -36,6 +36,21 @@ export async function checkUser(authEvent?: string) {
         const { data: { user }, error } = await supabase.auth.getUser();
         if (error) {
             console.error('Auth error:', error.message || error);
+            if (error.message?.includes('claim in JWT') || error.message?.includes('session') || (error as any).status === 403) {
+                // Clear stale invalid session tokens so user can log in cleanly
+                await supabase.auth.signOut().catch(() => {});
+                localStorage.removeItem('sb-dxoyyflsqrzgzjfihgcx-auth-token');
+                state.currentUser = null;
+                state.currentProfile = null;
+                const loader = document.getElementById('initial-loader');
+                if (loader) {
+                    loader.classList.add('opacity-0', 'pointer-events-none');
+                    setTimeout(() => loader.remove(), 300);
+                }
+                document.getElementById('auth-screen')?.classList.remove('hidden');
+                document.getElementById('app-screen')?.classList.add('hidden');
+                return;
+            }
             if (error.message === 'Failed to fetch') {
                 import('./utils').then(m => m.showError('Не удалось подключиться к серверу (Failed to fetch). Возможно, база данных Supabase остановлена.'));
             }
