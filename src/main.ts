@@ -503,7 +503,16 @@ function setupRealtime() {
                 }, 300);
             }
         })
-        .subscribe();
+        .subscribe((status: string) => {
+            if (status === 'SUBSCRIBED') {
+                if ((window as any).logic?.loadChats) {
+                    (window as any).logic.loadChats();
+                }
+                if (state.activeChatId && (window as any).logic?.loadMessages) {
+                    (window as any).logic.loadMessages(state.activeChatId);
+                }
+            }
+        });
 }
 
 // Setup UI event listeners
