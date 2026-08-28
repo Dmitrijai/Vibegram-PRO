@@ -201,7 +201,7 @@ export async function loadMessagesUntil(chatId: string, targetMsgId: string) {
     }
     return false;
 }
-export async function loadMessages(chatId: string, isInitialLoad = false) {
+export async function loadMessages(chatId: string, isInitialLoad = false, retriesLeft = 2) {
     if (isInitialLoad) {
         import('./messages-recording').then(m => m.cancelRecording());
         currentMessageLimit = 50;
@@ -221,10 +221,21 @@ export async function loadMessages(chatId: string, isInitialLoad = false) {
             hasMoreMessages = messages.length === currentMessageLimit;
             renderMessages(messages.reverse(), isInitialLoad);
         }
-    } catch (error) {
+    } catch (error: any) {
+        const isNetworkGlitch = error?.message === "Failed to fetch" || error?.message?.includes("Failed to fetch");
+        
+        if (isNetworkGlitch && retriesLeft > 0) {
+            await new Promise((r) => setTimeout(r, 1500));
+            return loadMessages(chatId, isInitialLoad, retriesLeft - 1);
+        }
+        
         console.error('Error loading messages:', error);
         const list = document.getElementById('messages-list')!;
-        list.innerHTML = '<div class="flex h-full items-center justify-center"><div class="bg-red-500/80 text-white px-5 py-2 rounded-full text-sm font-medium backdrop-blur-md shadow-lg">Ошибка загрузки сообщений</div></div>';
+        if (isNetworkGlitch) {
+            list.innerHTML = '<div class="flex h-full items-center justify-center"><div class="bg-red-500/80 text-white px-5 py-2 rounded-full text-sm font-medium backdrop-blur-md shadow-lg text-center">Нет соединения с сервером.<br>Проверьте интернет.</div></div>';
+        } else {
+            list.innerHTML = '<div class="flex h-full items-center justify-center"><div class="bg-red-500/80 text-white px-5 py-2 rounded-full text-sm font-medium backdrop-blur-md shadow-lg">Ошибка загрузки сообщений</div></div>';
+        }
     }
 }
 export function renderMessages(messages: any[], isInitialLoad = false) {

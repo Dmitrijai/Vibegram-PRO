@@ -4,7 +4,7 @@ import { loadMessages, markMessagesAsRead } from "./messages";
 
 export let cachedSavedMessagesChat: any = null;
 
-export async function loadChats() {
+export async function loadChats(retriesLeft = 2) {
   try {
     import("./group")
       .then((m) => {
@@ -426,13 +426,19 @@ export async function loadChats() {
       });
     });
   } catch (error: any) {
+    const isNetworkGlitch =
+      error?.message === "Failed to fetch" ||
+      error?.message?.includes("Failed to fetch");
+
+    if (isNetworkGlitch && retriesLeft > 0) {
+      await new Promise((r) => setTimeout(r, 1500));
+      return loadChats(retriesLeft - 1);
+    }
+
     console.error("Error loading chats:", error.message || error);
     const list = document.getElementById("chats-list")!;
-    if (
-      error?.message === "Failed to fetch" ||
-      error?.message?.includes("Failed to fetch")
-    ) {
-      list.innerHTML = `<div class="text-center text-red-500 mt-20 p-6"><span class="text-sm">Нет соединения с базой данных (Failed to fetch).<br>Возможно, проект Supabase приостановлен.</span></div>`;
+    if (isNetworkGlitch) {
+      list.innerHTML = `<div class="text-center text-red-500 mt-20 p-6"><span class="text-sm">Нет соединения с сервером.<br>Проверьте интернет или включите Secure DNS в настройках браузера.</span></div>`;
     } else {
       list.innerHTML = `<div class="text-center text-red-400 mt-20 p-6"><span class="text-sm">Ошибка загрузки чатов.<br>Проверьте подключение к сети.</span></div>`;
     }
