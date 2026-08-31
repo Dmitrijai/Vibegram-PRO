@@ -306,8 +306,9 @@ function setupRealtime() {
     supabase.channel('public:messages')
         .on('postgres_changes', { event: '*', schema: 'public', table: 'messages' }, async payload => {
             if (payload.eventType === 'INSERT') {
-                if (payload.new.sender_id !== state.currentUser?.id) {
-                    const { data: member } = await supabase.from('chat_members').select('id').eq('chat_id', payload.new.chat_id).eq('user_id', state.currentUser?.id || '').single();
+                if (!state.currentUser?.id) return;
+                if (payload.new.sender_id !== state.currentUser.id) {
+                    const { data: member } = await supabase.from('chat_members').select('id').eq('chat_id', payload.new.chat_id).eq('user_id', state.currentUser.id).single();
                     if (!member) return;
                 }
                 
