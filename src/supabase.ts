@@ -9,9 +9,20 @@ if (!SUPABASE_URL || !SUPABASE_KEY) {
     console.error('Ключи Supabase не настроены. Добавьте SUPABASE_URL и SUPABASE_ANON_KEY в AI Studio Secrets.');
 }
 
+function fetchWithTimeout(url: RequestInfo | URL, options: RequestInit = {}) {
+    const timeoutSignal = AbortSignal.timeout(10000); // жёсткий потолок в 10 сек вместо зависания на 30+
+    const signal = options.signal
+        ? AbortSignal.any([options.signal, timeoutSignal])
+        : timeoutSignal;
+    return fetch(url, { ...options, signal });
+}
+
 export const supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
     auth: {
         flowType: 'implicit'
+    },
+    global: {
+        fetch: fetchWithTimeout
     }
 });
 
