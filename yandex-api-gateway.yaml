@@ -1,0 +1,36 @@
+openapi: 3.0.0
+info:
+  title: Vibegram Anti-RKN Supabase Gateway
+  version: 1.0.0
+  description: >-
+    Бесплатный шлюз Yandex Cloud API Gateway (внутри РФ, не блокируется ТСПУ/РКН).
+    Создайте API Gateway в console.yandex.cloud, вставьте этот YAML-файл и скопируйте
+    полученный домен (https://d5d...apigw.yandexcloud.net) в Настройки -> Сеть и обход РКН в Vibegram.
+x-yc-apigateway:
+  cors:
+    origin: '*'
+    methods: '*'
+    allowedHeaders: '*'
+    exposeHeaders:
+      - Content-Range
+      - Range-Unit
+paths:
+  /{proxy+}:
+    x-yc-apigateway-any-method:
+      parameters:
+        - name: proxy
+          in: path
+          required: true
+          schema:
+            type: string
+      x-yc-apigateway-integration:
+        type: http
+        url: https://dxoyyflsqrzgzjfihgcx.supabase.co/{proxy}
+        headers:
+          Host: dxoyyflsqrzgzjfihgcx.supabase.co
+           '* ': '*'
+        query:
+          '*': '*'
+        timeouts:
+          connect: 5
+          read: 25

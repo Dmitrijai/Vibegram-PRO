@@ -1,0 +1,6 @@
+{
+  "summary":  "Комплексный план обхода блокировок ТСПУ/РКН для Vibegram (GitHub Pages и Android APK) без VPN на 100% бесплатной инфраструктуре: мульти-шлюзовый роутер с автопереключением на не-Cloudflare прокси (Vercel Edge / Yandex Cloud / Cloud Run), гибридный движок доставки сообщений (WebSocket + HTTP Delta Polling при блокировке WSS) и мгновенный Cache-First запуск без вечной загрузки.",
+  "updatedAt":  "2026-10-29T21:41:58.207443094Z",
+  "requestFeedback":  true,
+  "userFacing":  true
+}

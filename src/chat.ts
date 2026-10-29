@@ -1,10 +1,32 @@
 import { supabase, state } from "./supabase";
 import { getStatusText, customConfirm, escapeHtml } from "./utils";
-import { loadMessages, markMessagesAsRead } from "./messages";
+import { loadMessages, markMessagesAsRead, renderMessages } from "./messages";
+import { getCachedChats, saveCachedChats, getCachedMessages } from "./cache";
+import { setSyncingState } from "./network";
 
 export let cachedSavedMessagesChat: any = null;
+let isLoadChatsInFlight = false;
+
+export function renderCachedChatsImmediately(): boolean {
+  const list = document.getElementById("chats-list");
+  if (!list || list.children.length > 0) return false;
+  const cached = getCachedChats();
+  if (cached && cached.length > 0 && state.currentUser) {
+    renderChatsDataToDOM(cached, true);
+    return true;
+  }
+  return false;
+}
 
 export async function loadChats(retriesLeft = 2) {
+  if (!state.currentUser?.id) return;
+  if (isLoadChatsInFlight && retriesLeft === 2) return;
+  isLoadChatsInFlight = true;
+
+  // Render cached snapshot in 0ms if sidebar is currently empty
+  renderCachedChatsImmediately();
+  setSyncingState(true);
+
   try {
     import("./group")
       .then((m) => {
@@ -143,9 +165,42 @@ export async function loadChats(retriesLeft = 2) {
     }
 
     cachedSavedMessagesChat = savedMessagesChat;
+    saveCachedChats(chats);
+    renderChatsDataToDOM(chats, false);
+  } catch (error: any) {
+    const isNetworkGlitch =
+      error?.message === "Failed to fetch" ||
+      error?.message?.includes("Failed to fetch") ||
+      error?.name === "TimeoutError" ||
+      error?.name === "AbortError";
 
-    list.innerHTML = "";
-    chats.forEach((chat: any) => {
+    if (isNetworkGlitch && retriesLeft > 0) {
+      await new Promise((r) => setTimeout(r, 800));
+      return loadChats(retriesLeft - 1);
+    }
+
+    console.warn("Network delay loading chats:", error.message || error);
+    const list = document.getElementById("chats-list")!;
+    // Only show error placeholder if we have no cached chats rendered at all
+    if (!list.children.length) {
+      const cached = getCachedChats();
+      if (cached && cached.length > 0) {
+        renderChatsDataToDOM(cached, true);
+      } else {
+        list.innerHTML = `<div class="text-center text-gray-500 dark:text-gray-400 mt-16 p-6"><div class="text-sm font-medium mb-2">Ожидание ответа от сети...</div><div class="text-xs opacity-80 mb-4">ТСПУ замедляет соединение. Выберите другой шлюз в настройках сети.</div><button onclick="window.openSettings('full')" class="px-4 py-2 bg-blue-500 text-white rounded-xl text-xs font-semibold shadow-sm hover:bg-blue-600 transition-colors">Настройки обхода РКН</button></div>`;
+      }
+    }
+  } finally {
+    isLoadChatsInFlight = false;
+    setSyncingState(false);
+  }
+}
+
+export function renderChatsDataToDOM(chats: any[], isFromCache = false) {
+  const list = document.getElementById("chats-list");
+  if (!list || !state.currentUser) return;
+  list.innerHTML = "";
+  chats.forEach((chat: any) => {
       if (
         chat.description === "POST_COMMENTS" ||
         (chat.title === "Комментарии" &&
@@ -425,24 +480,6 @@ export async function loadChats(retriesLeft = 2) {
         openChatContextMenu(chat.id, chatName || "Чат", e, isSavedMessages);
       });
     });
-  } catch (error: any) {
-    const isNetworkGlitch =
-      error?.message === "Failed to fetch" ||
-      error?.message?.includes("Failed to fetch");
-
-    if (isNetworkGlitch && retriesLeft > 0) {
-      await new Promise((r) => setTimeout(r, 1500));
-      return loadChats(retriesLeft - 1);
-    }
-
-    console.error("Error loading chats:", error.message || error);
-    const list = document.getElementById("chats-list")!;
-    if (isNetworkGlitch) {
-      list.innerHTML = `<div class="text-center text-red-500 mt-20 p-6"><span class="text-sm">Нет соединения с сервером.<br>Проверьте интернет или включите Secure DNS в настройках браузера.</span></div>`;
-    } else {
-      list.innerHTML = `<div class="text-center text-red-400 mt-20 p-6"><span class="text-sm">Ошибка загрузки чатов.<br>Проверьте подключение к сети.</span></div>`;
-    }
-  }
 }
 
 export async function openChatContextMenu(
@@ -1116,10 +1153,15 @@ export async function openChat(
     (window as any).handleInput();
   }
 
-  // Fast chat switching: show loader
+  // Fast chat switching: render cached messages in 0ms if available, otherwise show loader
   const list = document.getElementById("messages-list")!;
-  list.innerHTML =
-    '<div class="flex h-full items-center justify-center"><div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div></div>';
+  const cachedMsgs = getCachedMessages(chatId);
+  if (cachedMsgs && cachedMsgs.length > 0) {
+    renderMessages(cachedMsgs, true);
+  } else {
+    list.innerHTML =
+      '<div class="flex h-full items-center justify-center"><div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div></div>';
+  }
 
   loadMessages(chatId, true);
   markMessagesAsRead(chatId);

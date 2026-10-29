@@ -6,6 +6,7 @@ import { toggleReactionMenu, toggleReaction, toggleMessageMenu, toggleEmojiMenu,
 
 import { getMediaObserver, clearFile } from "./messages-media";
 import { cancelReply } from "./messages-actions";
+import { saveCachedMessages, getCachedMessages } from "./cache";
 
 export let currentMessageLimit = 50;
 let isSendingMessage = false;
@@ -219,23 +220,73 @@ export async function loadMessages(chatId: string, isInitialLoad = false, retrie
         
         if (messages) {
             hasMoreMessages = messages.length === currentMessageLimit;
-            renderMessages(messages.reverse(), isInitialLoad);
+            const ordered = messages.reverse();
+            saveCachedMessages(chatId, ordered);
+            // If we loaded from cache initially, pass isInitialLoad=false on network completion so scroll position doesn't jump
+            const list = document.getElementById('messages-list');
+            const alreadyHasRenderedMsgs = list && list.querySelector('.msg-wrapper') !== null;
+            renderMessages(ordered, isInitialLoad && !alreadyHasRenderedMsgs);
         }
     } catch (error: any) {
-        const isNetworkGlitch = error?.message === "Failed to fetch" || error?.message?.includes("Failed to fetch");
+        const isNetworkGlitch =
+            error?.message === "Failed to fetch" ||
+            error?.message?.includes("Failed to fetch") ||
+            error?.name === "TimeoutError" ||
+            error?.name === "AbortError";
         
         if (isNetworkGlitch && retriesLeft > 0) {
-            await new Promise((r) => setTimeout(r, 1500));
+            await new Promise((r) => setTimeout(r, 800));
             return loadMessages(chatId, isInitialLoad, retriesLeft - 1);
         }
         
-        console.error('Error loading messages:', error);
+        console.warn('Network delay loading messages:', error);
         const list = document.getElementById('messages-list')!;
-        if (isNetworkGlitch) {
-            list.innerHTML = '<div class="flex h-full items-center justify-center"><div class="bg-red-500/80 text-white px-5 py-2 rounded-full text-sm font-medium backdrop-blur-md shadow-lg text-center">Нет соединения с сервером.<br>Проверьте интернет.</div></div>';
-        } else {
-            list.innerHTML = '<div class="flex h-full items-center justify-center"><div class="bg-red-500/80 text-white px-5 py-2 rounded-full text-sm font-medium backdrop-blur-md shadow-lg">Ошибка загрузки сообщений</div></div>';
+        const alreadyHasMessages = list.querySelector('.msg-wrapper') !== null;
+        if (!alreadyHasMessages) {
+            const cached = getCachedMessages(chatId);
+            if (cached && cached.length > 0) {
+                renderMessages(cached, true);
+            } else {
+                list.innerHTML = '<div class="flex h-full items-center justify-center"><div class="bg-black/50 text-white px-5 py-2.5 rounded-2xl text-xs font-medium backdrop-blur-md shadow-lg text-center">Синхронизация сообщений через резервный шлюз...</div></div>';
+            }
         }
+    }
+}
+
+let isDeltaPolling = false;
+export async function pollActiveChatDelta() {
+    const chatId = state.activeChatId;
+    if (!chatId || chatId === 'new_saved_messages' || isDeltaPolling || isLoadingMore) return;
+    isDeltaPolling = true;
+    try {
+        const { data: latestMsgs, error } = await supabase.from('messages')
+            .select('*, profiles(username, display_name, is_premium, premium_until, avatar_url)')
+            .eq('chat_id', chatId)
+            .order('created_at', { ascending: false })
+            .limit(20);
+
+        if (error || !latestMsgs || state.activeChatId !== chatId) return;
+
+        const orderedLatest = latestMsgs.reverse();
+        const existingTail = currentMessages.slice(-orderedLatest.length);
+
+        const getSignature = (arr: any[]) =>
+            arr.map(m => `${m.id}:${m.is_read ? 1 : 0}:${m.content || ''}:${JSON.stringify(m.reactions || {})}`).join('|');
+
+        if (getSignature(orderedLatest) !== getSignature(existingTail)) {
+            await loadMessages(chatId, false, 1);
+            const list = document.getElementById('messages-list');
+            if (list && list.scrollHeight - list.scrollTop - list.clientHeight < 120) {
+                const hasUnreadFromOthers = orderedLatest.some(m => !m.is_read && m.sender_id !== state.currentUser?.id);
+                if (hasUnreadFromOthers) {
+                    markMessagesAsRead(chatId);
+                }
+            }
+        }
+    } catch (e) {
+        // Silent ignore during background delta poll
+    } finally {
+        isDeltaPolling = false;
     }
 }
 export function renderMessages(messages: any[], isInitialLoad = false) {

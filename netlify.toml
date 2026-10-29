@@ -1,0 +1,37 @@
+[[redirects]]
+  from = "/api/supabase/*"
+  to = "https://dxoyyflsqrzgzjfihgcx.supabase.co/:splat"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/rest/v1/*"
+  to = "https://dxoyyflsqrzgzjfihgcx.supabase.co/rest/v1/:splat"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/auth/v1/*"
+  to = "https://dxoyyflsqrzgzjfihgcx.supabase.co/auth/v1/:splat"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/storage/v1/*"
+  to = "https://dxoyyflsqrzgzjfihgcx.supabase.co/storage/v1/:splat"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/functions/v1/*"
+  to = "https://dxoyyflsqrzgzjfihgcx.supabase.co/functions/v1/:splat"
+  status = 200
+  force = true
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    Access-Control-Allow-Origin = "*"
+    Access-Control-Allow-Methods = "GET, POST, PUT, PATCH, DELETE, OPTIONS"
+    Access-Control-Allow-Headers = "Authorization, apikey, Content-Type, Prefer, Range, x-client-info, Content-Profile, Accept-Profile"
+    Access-Control-Expose-Headers = "Content-Range, Range-Unit"

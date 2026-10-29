@@ -1,9 +1,256 @@
 import { supabase, state } from './supabase';
-import { closeModal } from './utils';
+import { closeModal, customToast, escapeHtml } from './utils';
 import { loadChats } from './chat';
 import { logout } from './auth';
+import {
+    networkState,
+    raceGateways,
+    selectGatewayById,
+    getCustomGatewayUrl,
+    setCustomGatewayUrl,
+    subscribeNetworkState
+} from './network';
 
 let bonusTimerInterval: any = null;
+let unsubscribeNetworkUI: (() => void) | null = null;
+
+export function renderNetworkDiagnosticsContent(): string {
+    const activeGw = networkState.gateways.find((g) => g.id === networkState.activeGatewayId) || networkState.gateways[0];
+    const pingText = networkState.lastPingMs !== null ? `${networkState.lastPingMs} мс` : 'Измерение...';
+    const pingColor =
+        networkState.lastPingMs === null
+            ? 'text-gray-500 dark:text-gray-400'
+            : networkState.lastPingMs < 400
+            ? 'text-emerald-600 dark:text-emerald-400'
+            : networkState.lastPingMs < 1000
+            ? 'text-amber-600 dark:text-amber-400'
+            : 'text-red-500';
+
+    const transportBadge = networkState.realtimeConnected
+        ? `<span class="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-600 dark:text-emerald-400"><span class="w-2 h-2 rounded-full bg-emerald-500"></span>WebSocket (Прямой Realtime)</span>`
+        : `<span class="inline-flex items-center gap-1.5 text-xs font-semibold text-blue-600 dark:text-blue-400"><span class="w-2 h-2 rounded-full bg-blue-500 animate-pulse"></span>HTTPS Турбо-синхронизация (Обход DPI)</span>`;
+
+    const customUrl = getCustomGatewayUrl();
+
+    const gatewaysHtml = networkState.gateways
+        .map((gw) => {
+            const isSelected = gw.id === networkState.activeGatewayId;
+            let statusDot = `<span class="w-2.5 h-2.5 rounded-full bg-gray-400 shrink-0"></span>`;
+            let latencyBadge = `<span class="text-xs text-gray-400 font-mono tabular-nums">—</span>`;
+
+            if (gw.status === 'testing') {
+                statusDot = `<span class="w-2.5 h-2.5 rounded-full bg-amber-400 animate-ping shrink-0"></span>`;
+                latencyBadge = `<span class="text-xs text-amber-500 font-mono">Проверка...</span>`;
+            } else if (gw.status === 'online') {
+                statusDot = `<span class="w-2.5 h-2.5 rounded-full bg-emerald-500 shrink-0"></span>`;
+                latencyBadge = `<span class="text-xs font-semibold text-emerald-600 dark:text-emerald-400 font-mono tabular-nums">${gw.latencyMs} мс</span>`;
+            } else if (gw.status === 'blocked') {
+                statusDot = `<span class="w-2.5 h-2.5 rounded-full bg-red-500 shrink-0"></span>`;
+                latencyBadge = `<span class="text-[11px] font-medium text-red-500">Таймаут ТСПУ</span>`;
+            }
+
+            return `
+                <button type="button" onclick="window.switchNetworkGateway('${gw.id}')" class="w-full text-left p-3 rounded-xl border transition-all flex items-center justify-between gap-2 min-h-[48px] ${
+                isSelected
+                    ? 'bg-blue-50/80 dark:bg-blue-900/30 border-blue-500 dark:border-blue-500/80 shadow-sm'
+                    : 'bg-gray-50 dark:bg-gray-900/50 border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-700/60'
+            }">
+                    <div class="flex items-center gap-2.5 min-w-0 flex-1">
+                        ${statusDot}
+                        <div class="min-w-0 flex-1">
+                            <div class="text-xs sm:text-sm font-semibold text-gray-800 dark:text-gray-100 truncate flex items-center gap-1.5">
+                                <span class="truncate">${escapeHtml(gw.name)}</span>
+                                ${isSelected ? '<span class="text-[10px] px-1.5 py-0.5 rounded bg-blue-500 text-white font-bold uppercase shrink-0">Активен</span>' : ''}
+                            </div>
+                            <div class="text-[11px] text-gray-500 dark:text-gray-400 font-mono truncate">${escapeHtml(gw.url)}</div>
+                        </div>
+                    </div>
+                    <div class="shrink-0 text-right">${latencyBadge}</div>
+                </button>
+            `;
+        })
+        .join('');
+
+    return `
+        <div class="space-y-4">
+            <div class="bg-gray-50 dark:bg-gray-900/70 rounded-xl p-3.5 border border-gray-200 dark:border-gray-700 space-y-2.5">
+                <div class="flex items-center justify-between gap-2">
+                    <span class="text-xs text-gray-500 dark:text-gray-400">Текущий узел связи:</span>
+                    <span class="text-xs font-semibold text-gray-900 dark:text-gray-100 truncate max-w-[190px]">${escapeHtml(activeGw?.name || 'Авто')}</span>
+                </div>
+                <div class="flex items-center justify-between gap-2">
+                    <span class="text-xs text-gray-500 dark:text-gray-400">Отклик сервера (Пинг):</span>
+                    <span class="text-xs font-bold font-mono tabular-nums ${pingColor}">${pingText}</span>
+                </div>
+                <div class="flex items-center justify-between gap-2 pt-1 border-t border-gray-200/70 dark:border-gray-700/70">
+                    <span class="text-xs text-gray-500 dark:text-gray-400">Транспорт чатов:</span>
+                    ${transportBadge}
+                </div>
+            </div>
+
+            <div>
+                <div class="flex items-center justify-between mb-2">
+                    <span class="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Доступные шлюзы обхода</span>
+                </div>
+                <div class="space-y-2">
+                    ${gatewaysHtml}
+                </div>
+                <button type="button" id="race-gateways-btn" onclick="window.runNetworkGatewayRace()" class="mt-3 w-full min-h-[44px] bg-blue-500 hover:bg-blue-600 active:scale-[0.99] text-white font-semibold py-2.5 px-4 rounded-xl text-sm transition-all shadow-sm flex items-center justify-center gap-2">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+                    Найти лучший сервер обхода
+                </button>
+            </div>
+
+            <div class="pt-3 border-t border-gray-200 dark:border-gray-700">
+                <label class="block text-xs font-semibold text-gray-700 dark:text-gray-200 mb-1">
+                    Свой адрес прокси / зеркала (без пересборки APK)
+                </label>
+                <p class="text-[11px] text-gray-500 dark:text-gray-400 mb-2 leading-relaxed">
+                    Вставьте ссылку на ваш шлюз Yandex Cloud, Vercel или Netlify — приложение сразу переключит весь трафик на него.
+                </p>
+                <div class="flex flex-col sm:flex-row gap-2">
+                    <input
+                        type="url"
+                        id="custom-gateway-input"
+                        value="${escapeHtml(customUrl)}"
+                        placeholder="https://d5d...apigw.yandexcloud.net"
+                        class="flex-1 min-h-[44px] px-3 py-2 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 text-xs sm:text-sm font-mono outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                    <div class="flex gap-2">
+                        <button type="button" onclick="window.saveCustomGatewayFromUI()" class="flex-1 sm:flex-none min-h-[44px] px-4 py-2 bg-emerald-500 hover:bg-emerald-600 text-white font-semibold rounded-xl text-xs sm:text-sm transition-colors whitespace-nowrap">
+                            Подключить
+                        </button>
+                        ${
+                            customUrl
+                                ? `<button type="button" onclick="window.clearCustomGatewayFromUI()" class="min-h-[44px] px-3 py-2 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 font-medium rounded-xl text-xs transition-colors">Сброс</button>`
+                                : ''
+                        }
+                    </div>
+                </div>
+            </div>
+
+            <details class="bg-blue-50/60 dark:bg-blue-950/30 border border-blue-200/70 dark:border-blue-800/50 rounded-xl p-3 text-xs">
+                <summary class="font-semibold text-blue-700 dark:text-blue-300 cursor-pointer select-none">
+                    Как бесплатно создать неубиваемый шлюз в РФ за 1 минуту?
+                </summary>
+                <div class="mt-2.5 space-y-2 text-gray-700 dark:text-gray-300 leading-relaxed">
+                    <p><b>Вариант 1: Yandex Cloud API Gateway (Рекомендуется для РФ)</b></p>
+                    <ol class="list-decimal list-inside space-y-1 text-[11px]">
+                        <li>Откройте <b>console.yandex.cloud</b> → сервис <b>API Gateway</b> (бесплатно 100 000 запросов в месяц, российские IP Яндекса никогда не режутся ТСПУ).</li>
+                        <li>Нажмите «Создать API-шлюз» и вставьте содержимое файла <code class="px-1 py-0.5 bg-black/10 dark:bg-white/10 rounded font-mono">yandex-api-gateway.yaml</code> из корня проекта.</li>
+                        <li>Скопируйте выданный служебный домен вида <code class="px-1 py-0.5 bg-black/10 dark:bg-white/10 rounded font-mono">https://d5d...apigw.yandexcloud.net</code> в поле выше и нажмите «Подключить».</li>
+                    </ol>
+                    <p class="pt-1"><b>Вариант 2: Vercel / Netlify (100 ГБ/мес бесплатно на IP Amazon AWS)</b></p>
+                    <p class="text-[11px]">В проект уже добавлены файлы <code class="px-1 py-0.5 bg-black/10 dark:bg-white/10 rounded font-mono">vercel.json</code> и <code class="px-1 py-0.5 bg-black/10 dark:bg-white/10 rounded font-mono">netlify.toml</code>. Достаточно импортировать репозиторий в Vercel или Netlify в 1 клик и вставить полученный домен в поле выше.</p>
+                </div>
+            </details>
+        </div>
+    `;
+}
+
+function attachNetworkWindowHandlers() {
+    (window as any).switchNetworkGateway = async (id: string) => {
+        selectGatewayById(id);
+        refreshNetworkPanelIfOpen();
+        customToast('Шлюз переключен. Синхронизация...');
+        loadChats(1);
+        if (state.activeChatId && (window as any).logic?.loadMessages) {
+            (window as any).logic.loadMessages(state.activeChatId, false, 1);
+        }
+    };
+
+    (window as any).runNetworkGatewayRace = async () => {
+        const btn = document.getElementById('race-gateways-btn') as HTMLButtonElement | null;
+        if (btn) {
+            btn.disabled = true;
+            btn.innerHTML = `<div class="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div> Проверка всех шлюзов...`;
+        }
+        const winner = await raceGateways(true);
+        refreshNetworkPanelIfOpen();
+        if (winner) {
+            customToast(`Выбран лучший шлюз: ${winner.name} (${winner.latencyMs} мс)`);
+            loadChats(1);
+            if (state.activeChatId && (window as any).logic?.loadMessages) {
+                (window as any).logic.loadMessages(state.activeChatId, false, 1);
+            }
+        } else {
+            customToast('Все стандартные узлы медленные. Укажите личный шлюз.');
+        }
+    };
+
+    (window as any).saveCustomGatewayFromUI = async () => {
+        const input = document.getElementById('custom-gateway-input') as HTMLInputElement | null;
+        if (!input) return;
+        const val = input.value.trim();
+        if (val && !val.startsWith('http://') && !val.startsWith('https://')) {
+            customToast('URL должен начинаться с https://');
+            return;
+        }
+        setCustomGatewayUrl(val);
+        refreshNetworkPanelIfOpen();
+        if (val) {
+            customToast('Проверка вашего прокси-шлюза...');
+            await raceGateways(false);
+            refreshNetworkPanelIfOpen();
+            loadChats(1);
+        } else {
+            customToast('Личный шлюз отключен');
+        }
+    };
+
+    (window as any).clearCustomGatewayFromUI = async () => {
+        setCustomGatewayUrl('');
+        refreshNetworkPanelIfOpen();
+        customToast('Сброшено на автоматический выбор шлюза');
+        await raceGateways(true);
+        refreshNetworkPanelIfOpen();
+    };
+
+    (window as any).openNetworkModalStandalone = () => {
+        const modal = document.getElementById('modal-content')!;
+        modal.innerHTML = `
+            <div class="p-6 overflow-y-auto custom-scrollbar flex-1">
+                <div class="flex justify-between items-center mb-4">
+                    <h3 class="text-xl font-bold text-gray-800 dark:text-gray-100">Сеть и обход блокировок</h3>
+                    <button onclick="closeModal()" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 bg-gray-100 dark:bg-gray-800 p-2 rounded-full transition-colors">✕</button>
+                </div>
+                <div id="network-diagnostics-container">
+                    ${renderNetworkDiagnosticsContent()}
+                </div>
+            </div>
+        `;
+        document.getElementById('modal-overlay')!.classList.remove('hidden');
+        setupLiveNetworkUISubscription();
+    };
+}
+
+function refreshNetworkPanelIfOpen() {
+    const container = document.getElementById('network-diagnostics-container');
+    if (!container) return;
+    // Preserve input focus/value if user is typing in #custom-gateway-input
+    const activeEl = document.activeElement as HTMLElement | null;
+    if (activeEl && activeEl.id === 'custom-gateway-input') return;
+    container.innerHTML = renderNetworkDiagnosticsContent();
+}
+
+function setupLiveNetworkUISubscription() {
+    if (unsubscribeNetworkUI) {
+        unsubscribeNetworkUI();
+        unsubscribeNetworkUI = null;
+    }
+    unsubscribeNetworkUI = subscribeNetworkState(() => {
+        if (document.getElementById('modal-overlay')?.classList.contains('hidden')) {
+            if (unsubscribeNetworkUI) {
+                unsubscribeNetworkUI();
+                unsubscribeNetworkUI = null;
+            }
+            return;
+        }
+        refreshNetworkPanelIfOpen();
+    });
+}
+
+attachNetworkWindowHandlers();
 
 export function openSettings(modeOrSkip: 'full' | 'profile' | boolean = 'full', skipPushStateArg = false) {
     let mode = 'full';
@@ -51,6 +298,24 @@ export function openSettings(modeOrSkip: 'full' | 'profile' | boolean = 'full', 
             </div>
 
         <div class="space-y-3 mb-6 mt-4">
+            <details class="group bg-gray-50 dark:bg-gray-800 rounded-xl overflow-hidden border border-emerald-500/30 dark:border-emerald-500/30 open:shadow-sm transition-all ${mode === 'profile' ? 'hidden' : ''}">
+                <summary class="flex justify-between items-center p-4 cursor-pointer select-none font-medium text-gray-800 dark:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-700/50 transition-colors">
+                    <div class="flex items-center gap-3 min-w-0">
+                        <div class="w-8 h-8 rounded-full bg-emerald-100 dark:bg-emerald-900/50 flex items-center justify-center text-emerald-600 dark:text-emerald-400 shrink-0">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path></svg>
+                        </div>
+                        <div class="min-w-0">
+                            <div class="truncate">Сеть и обход РКН</div>
+                            <div class="text-[11px] text-emerald-600 dark:text-emerald-400 font-normal truncate">Мульти-шлюз и защита от ТСПУ</div>
+                        </div>
+                    </div>
+                    <svg class="w-5 h-5 text-gray-400 group-open:rotate-180 transition-transform shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+                </summary>
+                <div class="border-t border-gray-100 dark:border-gray-700 bg-white dark:bg-gray-800/80 p-4" id="network-diagnostics-container">
+                    ${renderNetworkDiagnosticsContent()}
+                </div>
+            </details>
+
             <details class="group bg-gray-50 dark:bg-gray-800 rounded-xl overflow-hidden border border-gray-100 dark:border-gray-700 open:shadow-sm transition-all ${mode === 'profile' ? 'hidden' : ''}">
                 <summary class="flex justify-between items-center p-4 cursor-pointer select-none font-medium text-gray-800 dark:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-700/50 transition-colors">
                     <div class="flex items-center gap-3">
@@ -373,6 +638,7 @@ export function openSettings(modeOrSkip: 'full' | 'profile' | boolean = 'full', 
         </div>
     `;
     document.getElementById('modal-overlay')!.classList.remove('hidden');
+    setupLiveNetworkUISubscription();
 
     if (bonusTimerInterval) clearInterval(bonusTimerInterval);
     bonusTimerInterval = setInterval(() => {

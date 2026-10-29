@@ -1,7 +1,49 @@
 import { supabase, state } from './supabase';
 import { getFakeEmail, showError, customConfirm } from './utils';
-import { loadChats } from './chat';
+import { loadChats, renderCachedChatsImmediately } from './chat';
 import { initWebRTC } from './webrtc';
+import { getCachedBootstrap, saveCachedBootstrap, clearAllVibegramCache } from './cache';
+
+let hasFinalizedAppSetup = false;
+
+export function hydrateFromCacheOnBoot(): boolean {
+    if ((window as any).originalAdminUser || hasFinalizedAppSetup) return false;
+    try {
+        // Verify auth token exists in localStorage
+        const hasAuthToken =
+            !!localStorage.getItem('sb-vibegram-auth-token') ||
+            !!localStorage.getItem('sb-dxoyyflsqrzgzjfihgcx-auth-token');
+        if (!hasAuthToken) return false;
+
+        const cached = getCachedBootstrap();
+        if (!cached || !cached.user || !cached.profile) return false;
+
+        state.currentUser = cached.user;
+        state.currentProfile = cached.profile;
+
+        const data = cached.profile;
+        const user = cached.user;
+        const twoStepPasscode = data.settings?.twoStepPasscode;
+        const appLock = localStorage.getItem('vibegram_app_lock_' + user.id);
+
+        if (twoStepPasscode && !localStorage.getItem('vibegram_2fa_trusted_' + user.id)) {
+            state.pendingLockType = '2fa';
+            state.pendingLockValue = twoStepPasscode;
+            showLockScreen('Двухэтапный пароль', 'Введите пароль вашего аккаунта');
+            return true;
+        } else if (appLock && !sessionStorage.getItem('vibegram_applock_passed')) {
+            state.pendingLockType = 'applock';
+            state.pendingLockValue = appLock;
+            showLockScreen('Блокировка', 'Введите локальный PIN-код');
+            return true;
+        }
+
+        finalizeAppSetup(true);
+        return true;
+    } catch (e) {
+        return false;
+    }
+}
 
 export async function loginWithGoogle() {
     const btn = event?.currentTarget as HTMLButtonElement | undefined;
@@ -40,6 +82,8 @@ export async function checkUser(authEvent?: string) {
                 // Clear stale invalid session tokens so user can log in cleanly
                 await supabase.auth.signOut().catch(() => {});
                 localStorage.removeItem('sb-dxoyyflsqrzgzjfihgcx-auth-token');
+                localStorage.removeItem('sb-vibegram-auth-token');
+                clearAllVibegramCache();
                 state.currentUser = null;
                 state.currentProfile = null;
                 const loader = document.getElementById('initial-loader');
@@ -51,8 +95,10 @@ export async function checkUser(authEvent?: string) {
                 document.getElementById('app-screen')?.classList.add('hidden');
                 return;
             }
-            if (error.message === 'Failed to fetch') {
-                import('./utils').then(m => m.showError('Не удалось подключиться к серверу (Failed to fetch). Возможно, база данных Supabase остановлена.'));
+            if (!state.currentUser && !hasFinalizedAppSetup) {
+                if (error.message === 'Failed to fetch') {
+                    import('./utils').then(m => m.showError('Переключение на резервный шлюз обхода блокировок...'));
+                }
             }
             return;
         }
@@ -102,6 +148,7 @@ export async function checkUser(authEvent?: string) {
             }
             
             state.currentProfile = data;
+            saveCachedBootstrap(user, data);
             
             if (data.settings?.force_pin_reset) {
                 localStorage.removeItem('vibegram_app_lock_' + user.id);
@@ -109,6 +156,7 @@ export async function checkUser(authEvent?: string) {
                 delete newSettings.force_pin_reset;
                 await supabase.from('profiles').update({ settings: newSettings }).eq('id', user.id);
                 data.settings = newSettings;
+                saveCachedBootstrap(user, data);
             }
 
             // Clear URL to prevent OAuth token leak or reload loops
@@ -140,19 +188,18 @@ export async function checkUser(authEvent?: string) {
             }
             
             // If passed or not set, continue to app setup
-            finalizeAppSetup();
+            finalizeAppSetup(false);
         }
     } catch (err: any) {
-        console.error('Failed to check user:', err);
+        console.warn('Network delay in checkUser:', err);
         const loader = document.getElementById('initial-loader');
         if (loader) {
             loader.classList.add('opacity-0', 'pointer-events-none');
             setTimeout(() => loader.remove(), 300);
         }
-        if (err?.message === 'Failed to fetch' || err?.message?.includes('Failed to fetch')) {
-            import('./utils').then(m => m.showError('Не удалось подключиться к серверу (Failed to fetch). Возможно, проект Supabase приостановлен.'));
-        } else {
-            import('./utils').then(m => m.showError('Ошибка сети. Проверьте подключение или статус Supabase.'));
+        // Only show error toast if we haven't already hydrated the UI from cache
+        if (!hasFinalizedAppSetup && !state.currentProfile) {
+            import('./utils').then(m => m.showError('Медленный ответ сети (ТСПУ). Переключаем шлюз...'));
         }
     }
 }
@@ -316,7 +363,9 @@ export async function verifyRecoveryCode() {
     }
 }
 
-function finalizeAppSetup() {
+function finalizeAppSetup(isFromCache = false) {
+            const alreadySetup = hasFinalizedAppSetup;
+            hasFinalizedAppSetup = true;
             const initialSearchCheck = sessionStorage.getItem('initial_search') || window.location.search;
             const isStandalone = new URLSearchParams(initialSearchCheck).get('miniapp');
             
@@ -381,25 +430,34 @@ function finalizeAppSetup() {
                     chatContainer.classList.add('chat-bg');
                 }
             }
-            
-            setOnlineStatus(document.hasFocus() && !document.hidden);
-            window.addEventListener('focus', () => setOnlineStatus(true));
-            window.addEventListener('blur', () => setOnlineStatus(false));
-            document.addEventListener('visibilitychange', () => {
-                setOnlineStatus(document.hasFocus() && !document.hidden);
-            });
-            window.addEventListener('beforeunload', () => setOnlineStatus(false));
 
-            if ("Notification" in window) {
-                if (Notification.permission !== "granted" && Notification.permission !== "denied") {
-                    Notification.requestPermission();
+            if (isFromCache) {
+                renderCachedChatsImmediately();
+                return;
+            }
+            
+            if (!alreadySetup) {
+                setOnlineStatus(document.hasFocus() && !document.hidden);
+                window.addEventListener('focus', () => setOnlineStatus(true));
+                window.addEventListener('blur', () => setOnlineStatus(false));
+                document.addEventListener('visibilitychange', () => {
+                    setOnlineStatus(document.hasFocus() && !document.hidden);
+                });
+                window.addEventListener('beforeunload', () => setOnlineStatus(false));
+
+                if ("Notification" in window) {
+                    if (Notification.permission !== "granted" && Notification.permission !== "denied") {
+                        Notification.requestPermission();
+                    }
                 }
             }
 
             loadChats();
-            initWebRTC(); // Initialize WebRTC listener for incoming calls
-            handleInviteLink();
-            startVibHeartbeat();
+            if (!alreadySetup) {
+                initWebRTC(); // Initialize WebRTC listener for incoming calls
+                handleInviteLink();
+                startVibHeartbeat();
+            }
             
             const savedIncognito = localStorage.getItem('incognito_chat_args');
             if (savedIncognito) {
@@ -618,13 +676,15 @@ export async function setOnlineStatus(isOnline: boolean) {
 
 export async function forceLogout() {
     // Used from lock screen without confirmation
-    await setOnlineStatus(false);
+    await setOnlineStatus(false).catch(() => {});
     if (state.currentUser) {
         localStorage.removeItem('vibegram_2fa_trusted_' + state.currentUser.id);
     }
+    clearAllVibegramCache();
+    localStorage.removeItem('sb-vibegram-auth-token');
     sessionStorage.removeItem('vibegram_2fa_passed');
     sessionStorage.removeItem('vibegram_applock_passed');
-    await supabase.auth.signOut(); 
+    await supabase.auth.signOut().catch(() => {}); 
     window.location.reload(); 
 }
 

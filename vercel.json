@@ -1,0 +1,39 @@
+{
+  "rewrites": [
+    {
+      "source": "/api/supabase/:path*",
+      "destination": "https://dxoyyflsqrzgzjfihgcx.supabase.co/:path*"
+    },
+    {
+      "source": "/rest/v1/:path*",
+      "destination": "https://dxoyyflsqrzgzjfihgcx.supabase.co/rest/v1/:path*"
+    },
+    {
+      "source": "/auth/v1/:path*",
+      "destination": "https://dxoyyflsqrzgzjfihgcx.supabase.co/auth/v1/:path*"
+    },
+    {
+      "source": "/storage/v1/:path*",
+      "destination": "https://dxoyyflsqrzgzjfihgcx.supabase.co/storage/v1/:path*"
+    },
+    {
+      "source": "/functions/v1/:path*",
+      "destination": "https://dxoyyflsqrzgzjfihgcx.supabase.co/functions/v1/:path*"
+    },
+    {
+      "source": "/realtime/v1/:path*",
+      "destination": "https://dxoyyflsqrzgzjfihgcx.supabase.co/realtime/v1/:path*"
+    }
+  ],
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        { "key": "Access-Control-Allow-Origin", "value": "*" },
+        { "key": "Access-Control-Allow-Methods", "value": "GET, POST, PUT, PATCH, DELETE, OPTIONS" },
+        { "key": "Access-Control-Allow-Headers", "value": "Authorization, apikey, Content-Type, Prefer, Range, x-client-info, Content-Profile, Accept-Profile" },
+        { "key": "Access-Control-Expose-Headers", "value": "Content-Range, Range-Unit" }
+      ]
+    }
+  ]
+}

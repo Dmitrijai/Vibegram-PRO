@@ -49,6 +49,72 @@ async function startServer() {
   const app = express();
   const PORT = 3000;
 
+  const SUPABASE_ORIGIN = "https://dxoyyflsqrzgzjfihgcx.supabase.co";
+
+  // Reverse proxy for Supabase to bypass RKN/TSPU Cloudflare blocks
+  app.use("/api/supabase", express.raw({ type: "*/*", limit: "25mb" }), async (req, res) => {
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD");
+    res.setHeader(
+      "Access-Control-Allow-Headers",
+      "Authorization, apikey, Content-Type, Prefer, Range, x-client-info, Content-Profile, Accept-Profile, x-upsert"
+    );
+    res.setHeader("Access-Control-Expose-Headers", "Content-Range, Range-Unit, x-total-count");
+
+    if (req.method === "OPTIONS") {
+      res.status(204).end();
+      return;
+    }
+
+    try {
+      const targetUrl = `${SUPABASE_ORIGIN}${req.url}`;
+      const forwardHeaders: Record<string, string> = {};
+      const allowedHeaders = [
+        "authorization",
+        "apikey",
+        "content-type",
+        "prefer",
+        "range",
+        "x-client-info",
+        "content-profile",
+        "accept-profile",
+        "x-upsert",
+        "accept"
+      ];
+
+      for (const h of allowedHeaders) {
+        const val = req.headers[h];
+        if (typeof val === "string") {
+          forwardHeaders[h] = val;
+        }
+      }
+
+      const hasBody = !["GET", "HEAD"].includes(req.method) && req.body && (Buffer.isBuffer(req.body) ? req.body.length > 0 : true);
+
+      const upstreamRes = await fetch(targetUrl, {
+        method: req.method,
+        headers: forwardHeaders,
+        body: hasBody ? req.body : undefined,
+      });
+
+      res.status(upstreamRes.status);
+      upstreamRes.headers.forEach((value, key) => {
+        const lower = key.toLowerCase();
+        if (
+          !["content-encoding", "transfer-encoding", "connection", "access-control-allow-origin"].includes(lower)
+        ) {
+          res.setHeader(key, value);
+        }
+      });
+
+      const arrayBuffer = await upstreamRes.arrayBuffer();
+      res.send(Buffer.from(arrayBuffer));
+    } catch (err: any) {
+      console.error("Supabase proxy error:", err.message || err);
+      res.status(502).json({ error: "Gateway proxy error", details: err.message });
+    }
+  });
+
   app.use(express.json());
 
   // API Route for soft-delete

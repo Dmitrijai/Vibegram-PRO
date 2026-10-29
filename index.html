@@ -1,8 +1,7 @@
 <!DOCTYPE html>
 <html lang="ru">
 <head>
-    <script src="https://cdn.jsdelivr.net/npm/eruda"></script>
-    <script>eruda.init();</script>
+    <script async defer src="https://cdn.jsdelivr.net/npm/eruda" onload="if(window.eruda) window.eruda.init();" onerror="var s=document.createElement('script');s.src='https://unpkg.com/eruda';s.async=true;s.onload=function(){if(window.eruda)window.eruda.init();};document.head.appendChild(s);"></script>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>Vibegram</title>
@@ -57,7 +56,11 @@
                 </svg>
                 Продолжить с Google
             </button>
-            <p id="auth-error" class="text-red-500 mt-4 text-sm font-medium min-h-[1rem] transition-all"></p>
+            <button type="button" onclick="if(window.openNetworkModalStandalone) window.openNetworkModalStandalone()" class="mt-3 w-full py-2.5 px-4 rounded-xl text-xs font-medium text-gray-500 dark:text-gray-400 hover:text-blue-500 dark:hover:text-blue-400 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors flex items-center justify-center gap-2">
+                <svg class="w-4 h-4 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path></svg>
+                Сеть и обход блокировок (Анти-РКН)
+            </button>
+            <p id="auth-error" class="text-red-500 mt-3 text-sm font-medium min-h-[1rem] transition-all"></p>
         </div>
     </div>
 
@@ -117,6 +120,7 @@
                 <div id="search-results" class="hidden mt-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-xl absolute w-[calc(100%-24px)] z-50 max-h-64 overflow-y-auto"></div>
             </div>
 
+            <div id="network-status-banner" class="hidden shrink-0"></div>
             <div id="chats-list" class="flex-1 overflow-y-auto bg-white dark:bg-gray-900"></div>
         </div>
 

@@ -260,17 +260,25 @@ if (idToken) {
     window.history.replaceState({}, document.title, window.location.pathname);
 }
 
+if (!idToken && !hashError) {
+    // Hydrate UI in 0ms from local snapshot if user was previously logged in
+    logic.hydrateFromCacheOnBoot();
+}
+
 supabase.auth.getSession().then(({ data: { session }, error }) => {
     if (error) {
-        import('./utils').then(m => m.showError('Session error: ' + error.message));
+        console.warn('Session check warning:', error.message);
     }
-    if (!session && !isHandlingIdToken) {
+    if (!session && !isHandlingIdToken && !state.currentUser) {
         const loader = document.getElementById('initial-loader');
         if (loader) {
             loader.classList.add('opacity-0', 'pointer-events-none');
             setTimeout(() => loader.remove(), 300);
         }
         document.getElementById('auth-screen')!.classList.remove('hidden');
+    } else if (session?.user && !subscriptionsSetup) {
+        state.currentUser = session.user;
+        setupRealtime();
     }
 });
 
@@ -281,7 +289,7 @@ supabase.auth.onAuthStateChange((event, session) => {
             state.currentUser = session.user;
             logic.checkUser(event);
             setupRealtime();
-        } else if (event === 'INITIAL_SESSION' && !isHandlingIdToken) {
+        } else if (event === 'INITIAL_SESSION' && !isHandlingIdToken && !state.currentUser) {
             document.getElementById('auth-screen')!.classList.remove('hidden');
             const loader = document.getElementById('initial-loader');
             if (loader) {
@@ -290,25 +298,75 @@ supabase.auth.onAuthStateChange((event, session) => {
             }
         }
     } else if (event === 'SIGNED_OUT') {
+        state.currentUser = null;
+        state.currentProfile = null;
         document.getElementById('auth-screen')!.classList.remove('hidden');
         document.getElementById('app-screen')!.classList.add('hidden');
         subscriptionsSetup = false;
+        stopHybridRealtimeSync();
     }
 });
 
-// Setup Realtime subscriptions
+// Setup Realtime subscriptions + Hybrid HTTP Delta Polling fallback
 let subscriptionsSetup = false;
+let hybridMsgTimer: any = null;
+let hybridChatsTimer: any = null;
+
+function startHybridRealtimeSync() {
+    stopHybridRealtimeSync();
+
+    // Active chat delta sync: runs every 2.8s when WebSocket is blocked by TSPU, or every 10s as backup
+    hybridMsgTimer = setInterval(() => {
+        if (document.hidden || !state.currentUser?.id || !state.activeChatId) return;
+        import('./network').then(({ networkState }) => {
+            if (!networkState.realtimeConnected || Date.now() % 3 === 0) {
+                if ((window as any).logic?.pollActiveChatDelta) {
+                    (window as any).logic.pollActiveChatDelta();
+                }
+            }
+        });
+    }, 2800);
+
+    // Chat list sync: runs every 9s when WebSocket is blocked by TSPU
+    hybridChatsTimer = setInterval(() => {
+        if (document.hidden || !state.currentUser?.id) return;
+        import('./network').then(({ networkState }) => {
+            if (!networkState.realtimeConnected) {
+                if ((window as any).logic?.loadChats) {
+                    (window as any).logic.loadChats(1);
+                }
+            }
+        });
+    }, 9000);
+}
+
+function stopHybridRealtimeSync() {
+    if (hybridMsgTimer) {
+        clearInterval(hybridMsgTimer);
+        hybridMsgTimer = null;
+    }
+    if (hybridChatsTimer) {
+        clearInterval(hybridChatsTimer);
+        hybridChatsTimer = null;
+    }
+}
 
 function setupRealtime() {
     if (subscriptionsSetup || !state.currentUser) return;
     subscriptionsSetup = true;
+    startHybridRealtimeSync();
 
     supabase.channel('public:messages')
         .on('postgres_changes', { event: '*', schema: 'public', table: 'messages' }, async payload => {
             if (payload.eventType === 'INSERT') {
-                if (!state.currentUser?.id) return;
+                if (!state.currentUser?.id || !payload.new?.chat_id) return;
                 if (payload.new.sender_id !== state.currentUser.id) {
-                    const { data: member } = await supabase.from('chat_members').select('id').eq('chat_id', payload.new.chat_id).eq('user_id', state.currentUser.id).single();
+                    const { data: member } = await supabase
+                        .from('chat_members')
+                        .select('id')
+                        .eq('chat_id', payload.new.chat_id)
+                        .eq('user_id', state.currentUser.id)
+                        .maybeSingle();
                     if (!member) return;
                 }
                 
@@ -324,8 +382,8 @@ function setupRealtime() {
                             }
                         }
                         
-                        const { data: profile } = await supabase.from('profiles').select('settings').eq('id', state.currentUser.id).single();
-                        const { data: chatData } = await supabase.from('chats').select('description, type, title').eq('id', payload.new.chat_id).single();
+                        const { data: profile } = await supabase.from('profiles').select('settings').eq('id', state.currentUser.id).maybeSingle();
+                        const { data: chatData } = await supabase.from('chats').select('description, type, title').eq('id', payload.new.chat_id).maybeSingle();
                         const isCommentChat = chatData?.description === 'POST_COMMENTS' || (chatData?.type === 'group' && chatData?.title === 'Комментарии');
                         
                         const settings = profile?.settings || {};
@@ -337,7 +395,7 @@ function setupRealtime() {
                         
                         if (document.hidden && "Notification" in window && Notification.permission === "granted" && !isCommentChat) {
                             try {
-                                const { data: sender } = await supabase.from('profiles').select('display_name, username').eq('id', payload.new.sender_id).single();
+                                const { data: sender } = await supabase.from('profiles').select('display_name, username').eq('id', payload.new.sender_id).maybeSingle();
                                 const senderName = sender?.display_name || sender?.username || 'Пользователь';
                                 const text = payload.new.content || (payload.new.message_type === 'voice' ? '🎤 Голосовое сообщение' : 'Медиа сообщение');
                                 new Notification(`Новое сообщение от ${senderName}`, { body: text });
@@ -346,14 +404,14 @@ function setupRealtime() {
                     }
                 } else {
                     if (payload.new.sender_id !== state.currentUser?.id) {
-                        const { data: profile } = await supabase.from('profiles').select('settings').eq('id', state.currentUser.id).single();
-                        const { data: chatData } = await supabase.from('chats').select('description, type, title').eq('id', payload.new.chat_id).single();
+                        const { data: profile } = await supabase.from('profiles').select('settings').eq('id', state.currentUser.id).maybeSingle();
+                        const { data: chatData } = await supabase.from('chats').select('description, type, title').eq('id', payload.new.chat_id).maybeSingle();
                         const isCommentChat = chatData?.description === 'POST_COMMENTS' || (chatData?.type === 'group' && chatData?.title === 'Комментарии');
                         
                         const settings = profile?.settings || {};
                         const mutedChats = settings.muted_chats || [];
                         if (!mutedChats.includes(payload.new.chat_id) && settings.notifications !== false && !isCommentChat) {
-                            const { data: sender } = await supabase.from('profiles').select('display_name, username, avatar_url').eq('id', payload.new.sender_id).single();
+                            const { data: sender } = await supabase.from('profiles').select('display_name, username, avatar_url').eq('id', payload.new.sender_id).maybeSingle();
                             const senderName = sender?.display_name || sender?.username || 'Пользователь';
                             const text = payload.new.content || (payload.new.message_type === 'voice' ? '🎤 Голосовое сообщение' : 'Медиа сообщение');
                             
@@ -386,7 +444,11 @@ function setupRealtime() {
                  (window as any).logic.loadChats();
             }
         })
-        .subscribe();
+        .subscribe((status: string) => {
+            import('./network').then(({ setRealtimeConnectedState }) => {
+                setRealtimeConnectedState(status === 'SUBSCRIBED');
+            });
+        });
 
     supabase.channel('public:profiles')
         .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'profiles' }, payload => {
@@ -505,6 +567,9 @@ function setupRealtime() {
             }
         })
         .subscribe((status: string) => {
+            import('./network').then(({ setRealtimeConnectedState }) => {
+                setRealtimeConnectedState(status === 'SUBSCRIBED');
+            });
             if (status === 'SUBSCRIBED') {
                 if ((window as any).logic?.loadChats) {
                     (window as any).logic.loadChats();

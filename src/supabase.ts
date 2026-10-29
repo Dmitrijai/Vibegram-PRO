@@ -1,7 +1,8 @@
 import { createClient } from '@supabase/supabase-js';
+import { initNetworkManager, smartSupabaseFetch, DIRECT_SUPABASE_URL, networkState } from './network';
 
-// Используем переменные окружения, если они установлены, иначе падаем с ошибкой, чтобы было понятно
-const rawSupabaseUrl = process.env.SUPABASE_URL || (import.meta as any).env?.VITE_SUPABASE_URL || '';
+// Используем переменные окружения, если они установлены, иначе резервный прямой узел
+const rawSupabaseUrl = process.env.SUPABASE_URL || (import.meta as any).env?.VITE_SUPABASE_URL || DIRECT_SUPABASE_URL;
 const SUPABASE_URL = rawSupabaseUrl.replace(/\/rest\/v[0-9]+\/?$/, '').replace(/\/$/, '');
 const SUPABASE_KEY = process.env.SUPABASE_ANON_KEY || (import.meta as any).env?.VITE_SUPABASE_ANON_KEY || '';
 
@@ -9,20 +10,48 @@ if (!SUPABASE_URL || !SUPABASE_KEY) {
     console.error('Ключи Supabase не настроены. Добавьте SUPABASE_URL и SUPABASE_ANON_KEY в AI Studio Secrets.');
 }
 
-function fetchWithTimeout(url: RequestInfo | URL, options: RequestInit = {}) {
-    const timeoutSignal = AbortSignal.timeout(10000); // жёсткий потолок в 10 сек вместо зависания на 30+
-    const signal = options.signal
-        ? AbortSignal.any([options.signal, timeoutSignal])
-        : timeoutSignal;
-    return fetch(url, { ...options, signal });
+// Migrate legacy auth token key if present so switching gateways never logs out existing users
+try {
+    const unifiedKey = 'sb-vibegram-auth-token';
+    if (!localStorage.getItem(unifiedKey)) {
+        for (let i = 0; i < localStorage.length; i++) {
+            const k = localStorage.key(i);
+            if (k && k.startsWith('sb-') && k.endsWith('-auth-token') && k !== unifiedKey) {
+                const val = localStorage.getItem(k);
+                if (val) {
+                    localStorage.setItem(unifiedKey, val);
+                    break;
+                }
+            }
+        }
+    }
+} catch (e) {}
+
+initNetworkManager(SUPABASE_URL, SUPABASE_KEY);
+
+// Lock-free queue per auth key to prevent navigator.locks 5000ms steal AbortError on slow mobile DPI connections
+const authLocks = new Map<string, Promise<any>>();
+async function safeAuthLock<R>(name: string, _acquireTimeout: number, fn: () => Promise<R>): Promise<R> {
+    const prev = authLocks.get(name) || Promise.resolve();
+    const next = prev.catch(() => {}).then(() => fn());
+    authLocks.set(name, next);
+    try {
+        return await next;
+    } finally {
+        if (authLocks.get(name) === next) {
+            authLocks.delete(name);
+        }
+    }
 }
 
-export const supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
+export const supabase = createClient(SUPABASE_URL || DIRECT_SUPABASE_URL, SUPABASE_KEY, {
     auth: {
-        flowType: 'implicit'
+        flowType: 'implicit',
+        storageKey: 'sb-vibegram-auth-token',
+        lock: safeAuthLock
     },
     global: {
-        fetch: fetchWithTimeout
+        fetch: smartSupabaseFetch
     }
 });
 
@@ -65,11 +94,17 @@ export const state = {
 };
 
 export function broadcastUpdate(chatId: string, type: string = 'message') {
-    if (state.globalChannel) {
+    if (state.globalChannel && networkState.realtimeConnected) {
         state.globalChannel.send({
             type: 'broadcast',
             event: 'update_trigger',
             payload: { chatId, type, senderId: state.currentUser?.id }
-        }).catch(console.error);
+        }).catch(() => {});
+    } else if (state.globalChannel && typeof state.globalChannel.httpSend === 'function') {
+        state.globalChannel.httpSend('update_trigger', {
+            chatId,
+            type,
+            senderId: state.currentUser?.id
+        }).catch(() => {});
     }
 }
