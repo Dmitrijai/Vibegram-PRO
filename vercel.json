@@ -2,27 +2,35 @@
   "rewrites": [
     {
       "source": "/api/supabase/:path*",
-      "destination": "https://dxoyyflsqrzgzjfihgcx.supabase.co/:path*"
+      "destination": "https://vibegram-edge-gw.vercel.app/:path*"
     },
     {
       "source": "/rest/v1/:path*",
-      "destination": "https://dxoyyflsqrzgzjfihgcx.supabase.co/rest/v1/:path*"
+      "destination": "https://vibegram-edge-gw.vercel.app/rest/v1/:path*"
     },
     {
       "source": "/auth/v1/:path*",
-      "destination": "https://dxoyyflsqrzgzjfihgcx.supabase.co/auth/v1/:path*"
+      "destination": "https://vibegram-edge-gw.vercel.app/auth/v1/:path*"
     },
     {
       "source": "/storage/v1/:path*",
-      "destination": "https://dxoyyflsqrzgzjfihgcx.supabase.co/storage/v1/:path*"
+      "destination": "https://vibegram-edge-gw.vercel.app/storage/v1/:path*"
     },
     {
       "source": "/functions/v1/:path*",
-      "destination": "https://dxoyyflsqrzgzjfihgcx.supabase.co/functions/v1/:path*"
+      "destination": "https://vibegram-edge-gw.vercel.app/functions/v1/:path*"
     },
     {
       "source": "/realtime/v1/:path*",
-      "destination": "https://dxoyyflsqrzgzjfihgcx.supabase.co/realtime/v1/:path*"
+      "destination": "https://vibegram-edge-gw.vercel.app/realtime/v1/:path*"
+    },
+    {
+      "source": "/cloudinary/:path*",
+      "destination": "https://vibegram-edge-gw.vercel.app/cloudinary/:path*"
+    },
+    {
+      "source": "/cloudinary-api/:path*",
+      "destination": "https://vibegram-edge-gw.vercel.app/cloudinary-api/:path*"
     }
   ],
   "headers": [
@@ -30,9 +38,9 @@
       "source": "/(.*)",
       "headers": [
         { "key": "Access-Control-Allow-Origin", "value": "*" },
-        { "key": "Access-Control-Allow-Methods", "value": "GET, POST, PUT, PATCH, DELETE, OPTIONS" },
-        { "key": "Access-Control-Allow-Headers", "value": "Authorization, apikey, Content-Type, Prefer, Range, x-client-info, Content-Profile, Accept-Profile" },
-        { "key": "Access-Control-Expose-Headers", "value": "Content-Range, Range-Unit" }
+        { "key": "Access-Control-Allow-Methods", "value": "GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD" },
+        { "key": "Access-Control-Allow-Headers", "value": "Authorization, apikey, Content-Type, Prefer, Range, x-client-info, Content-Profile, Accept-Profile, accept-profile, content-profile, x-supabase-api-version" },
+        { "key": "Access-Control-Expose-Headers", "value": "Content-Range, Range-Unit, Accept-Ranges, Content-Length" }
       ]
     }
   ]

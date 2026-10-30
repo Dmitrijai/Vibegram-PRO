@@ -1,3 +1,5 @@
+import { rewriteLegacyStorageUrlsInJson } from './network';
+
 const BOOTSTRAP_KEY = 'vibegram_cache_bootstrap_v1';
 const CHATS_KEY = 'vibegram_cache_chats_v1';
 const MSGS_PREFIX = 'vibegram_cache_msgs_v1_';
@@ -25,7 +27,7 @@ export function getCachedBootstrap(): { user: any; profile: any; updatedAt: numb
     try {
         const raw = localStorage.getItem(BOOTSTRAP_KEY);
         if (!raw) return null;
-        const parsed = JSON.parse(raw);
+        const parsed = JSON.parse(rewriteLegacyStorageUrlsInJson(raw));
         if (parsed && parsed.user?.id && parsed.profile?.id) {
             return parsed;
         }
@@ -36,7 +38,6 @@ export function getCachedBootstrap(): { user: any; profile: any; updatedAt: numb
 export function saveCachedChats(chats: any[]) {
     if (!Array.isArray(chats)) return;
     try {
-        // Trim messages array inside each chat to the last 5 messages to keep localStorage lightweight
         const compactChats = chats.slice(0, 60).map((c) => {
             const msgs = Array.isArray(c.messages) ? c.messages : [];
             const unreadCount = msgs.filter((m: any) => !m.is_read).length;
@@ -57,7 +58,7 @@ export function getCachedChats(): any[] | null {
     try {
         const raw = localStorage.getItem(CHATS_KEY);
         if (!raw) return null;
-        const parsed = JSON.parse(raw);
+        const parsed = JSON.parse(rewriteLegacyStorageUrlsInJson(raw));
         if (Array.isArray(parsed) && parsed.length > 0) {
             return parsed;
         }
@@ -97,7 +98,7 @@ export function getCachedMessages(chatId: string): any[] | null {
     try {
         const raw = localStorage.getItem(MSGS_PREFIX + chatId);
         if (!raw) return null;
-        const parsed = JSON.parse(raw);
+        const parsed = JSON.parse(rewriteLegacyStorageUrlsInJson(raw));
         if (Array.isArray(parsed) && parsed.length > 0) {
             return parsed;
         }

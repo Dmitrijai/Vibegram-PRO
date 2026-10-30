@@ -68,7 +68,7 @@ export async function loadChats(retriesLeft = 2) {
       )
       .in("id", chatIds)
       .order("created_at", { referencedTable: "messages", ascending: false })
-      .limit(15, { referencedTable: "messages" });
+      .limit(5, { referencedTable: "messages" });
     if (chatsError) throw chatsError;
     if (!chats) return;
 

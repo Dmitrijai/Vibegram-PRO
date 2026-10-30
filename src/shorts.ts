@@ -591,17 +591,53 @@ async function fetchShortsBatch(
   authorFilterId?: string,
 ) {
   try {
-    const { data: viewedRecords } = await supabase
-      .from("short_views")
-      .select("short_id")
-      .eq("user_id", state.currentUser!.id);
-    const viewedSet = new Set(viewedRecords?.map((v) => v.short_id) || []);
+    let query = supabase
+      .from("shorts")
+      .select(
+        `*, profiles:author_id(display_name, username, avatar_url, is_premium, premium_until)`,
+      );
 
-    const { data: myLikedShorts } = await supabase
-      .from("short_likes")
-      .select("shorts(title, description)")
-      .eq("user_id", state.currentUser!.id)
-      .limit(50);
+    if (authorFilterId) {
+      if (authorFilterId === "subscriptions") {
+        const subs = state.currentProfile?.settings?.subscriptions || [];
+        if (subs.length > 0) {
+          query = query
+            .in("author_id", subs)
+            .order("created_at", { ascending: false })
+            .limit(60);
+        } else {
+          return [];
+        }
+      } else {
+        query = query
+          .eq("author_id", authorFilterId)
+          .order("created_at", { ascending: false })
+          .limit(60);
+      }
+    } else {
+      query = query.order("created_at", { ascending: false }).limit(60);
+    }
+
+    const [
+      { data: viewedRecords },
+      { data: myLikedShorts },
+      { data: shorts, error }
+    ] = await Promise.all([
+      supabase
+        .from("short_views")
+        .select("short_id")
+        .eq("user_id", state.currentUser!.id),
+      supabase
+        .from("short_likes")
+        .select("shorts(title, description)")
+        .eq("user_id", state.currentUser!.id)
+        .limit(30),
+      query
+    ]);
+
+    if (error) throw error;
+
+    const viewedSet = new Set(viewedRecords?.map((v) => v.short_id) || []);
     let preferredWords = new Set<string>();
     if (myLikedShorts) {
       myLikedShorts.forEach((item) => {
@@ -617,38 +653,6 @@ async function fetchShortsBatch(
         }
       });
     }
-
-    let query = supabase
-      .from("shorts")
-      .select(
-        `*, profiles:author_id(display_name, username, avatar_url, is_premium, premium_until)`,
-      );
-
-    if (authorFilterId) {
-      if (authorFilterId === "subscriptions") {
-        const subs = state.currentProfile?.settings?.subscriptions || [];
-        if (subs.length > 0) {
-          query = query
-            .in("author_id", subs)
-            .order("created_at", { ascending: false })
-            .limit(200);
-        } else {
-          // Empty list if no subs
-          return [];
-        }
-      } else {
-        query = query
-          .eq("author_id", authorFilterId)
-          .order("created_at", { ascending: false })
-          .limit(200);
-      }
-    } else {
-      query = query.order("created_at", { ascending: false }).limit(200);
-    }
-
-    const { data: shorts, error } = await query;
-
-    if (error) throw error;
 
     let allShorts = shorts || [];
 
@@ -867,7 +871,7 @@ function appendShortsFromQueue(count: number) {
         const isPreloaded = i < 3;
         const shortHTML = `
             <div class="short-video-wrapper w-full h-full snap-start relative bg-black flex items-center justify-center overflow-hidden" data-index="${index}" data-id="${short.id}">
-                <video ${isPreloaded ? `src="${short.video_url}" preload="auto"` : `data-src="${short.video_url}" preload="metadata"`} loop playsinline class="max-w-full max-h-full object-contain cursor-pointer" onclick="window.togglePlayShort(this)"></video>
+                <video ${isPreloaded ? `src="${short.video_url}"` : ""} data-src="${short.video_url}" preload="${index === 0 ? "auto" : "metadata"}" loop playsinline onerror="window.handleMediaError(this, '${short.video_url}')" class="max-w-full max-h-full object-contain cursor-pointer" onclick="window.togglePlayShort(this)"></video>
                 
                 <div class="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/20 pointer-events-none"></div>
                 
