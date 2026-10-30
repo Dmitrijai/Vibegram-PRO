@@ -7,6 +7,7 @@ import { toggleReactionMenu, toggleReaction, toggleMessageMenu, toggleEmojiMenu,
 import { getMediaObserver, clearFile } from "./messages-media";
 import { cancelReply } from "./messages-actions";
 import { saveCachedMessages, getCachedMessages } from "./cache";
+import { getVideoPosterUrl } from "./network";
 
 export let currentMessageLimit = 50;
 let isSendingMessage = false;
@@ -16,11 +17,11 @@ export let messageScrollListener: any = null;
 export let typingTimeout: any = null;
 export let currentMessages: any[] = [];
 export const commentCountsMap = new Map<string, number>();
-
-
+let lastCommentCountFetchChatId = '';
+let lastCommentCountFetchAt = 0;
 
 export async function markMessagesAsRead(chatId: string) {
-    if (state.isAdminStatus) return;
+    if (state.isAdminStatus || !state.currentUser) return;
 
     // Optimistically update UI
     const unreadBadge = document.querySelector(`#chats-list > div[data-chat-id="${chatId}"] .bg-blue-500.text-white.rounded-full`);
@@ -35,37 +36,46 @@ export async function markMessagesAsRead(chatId: string) {
         }
     }
 
-    // Fetch recent unread messages to track who read them (capped at 50 to keep payload under 16KB DPI limit)
-    const { data: unreadMsgs } = await supabase.from('messages')
-        .select('id, reactions')
-        .eq('chat_id', chatId)
-        .neq('sender_id', state.currentUser.id)
-        .order('created_at', { ascending: false })
-        .limit(50);
+    // In group chats, record per-user read receipts on up to 10 recent unread messages
+    if (state.activeChatIsGroup && state.activeChatType === 'group') {
+        const { data: unreadMsgs } = await supabase.from('messages')
+            .select('id, reactions')
+            .eq('chat_id', chatId)
+            .neq('sender_id', state.currentUser.id)
+            .eq('is_read', false)
+            .order('created_at', { ascending: false })
+            .limit(10);
 
-    if (unreadMsgs && unreadMsgs.length > 0) {
-        const msgsToUpdate = unreadMsgs.filter(m => {
-            const reads = m.reactions?.['__read__'] || [];
-            return !reads.includes(state.currentUser.id);
-        });
+        if (unreadMsgs && unreadMsgs.length > 0) {
+            const msgsToUpdate = unreadMsgs.filter(m => {
+                const reads = m.reactions?.['__read__'] || [];
+                return !reads.includes(state.currentUser.id);
+            });
 
-        if (msgsToUpdate.length > 0) {
-            const batch = msgsToUpdate.slice(-50);
-            await Promise.all(batch.map(msg => {
-                const newReactions = { ...(msg.reactions || {}) };
-                if (!newReactions['__read__']) newReactions['__read__'] = [];
-                if (!newReactions['__read__'].includes(state.currentUser.id)) {
-                    newReactions['__read__'].push(state.currentUser.id);
-                }
-                return supabase.from('messages').update({ 
-                    is_read: true,
-                    reactions: newReactions
-                }).eq('id', msg.id);
-            }));
+            if (msgsToUpdate.length > 0) {
+                await Promise.all(msgsToUpdate.map(msg => {
+                    const newReactions = { ...(msg.reactions || {}) };
+                    if (!newReactions['__read__']) newReactions['__read__'] = [];
+                    if (!newReactions['__read__'].includes(state.currentUser.id)) {
+                        newReactions['__read__'].push(state.currentUser.id);
+                    }
+                    return supabase.from('messages').update({ 
+                        is_read: true,
+                        reactions: newReactions
+                    }).eq('id', msg.id);
+                }));
+            }
         }
     }
 
-    const { error } = await supabase.from('messages').update({ is_read: true }).eq('chat_id', chatId).neq('sender_id', state.currentUser.id).eq('is_read', false);
+    // Single fast batch update for all unread messages in the chat
+    const { error } = await supabase
+        .from('messages')
+        .update({ is_read: true })
+        .eq('chat_id', chatId)
+        .neq('sender_id', state.currentUser.id)
+        .eq('is_read', false);
+
     if (!error) {
         if ((window as any).logic?.loadChats) {
             (window as any).logic.loadChats();
@@ -467,7 +477,7 @@ export function renderMessages(messages: any[], isInitialLoad = false) {
                         <svg class="w-5 h-5 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path></svg>
                         <span class="text-xs font-semibold text-gray-500 uppercase tracking-wider">${pollData.anonymous ? 'Анонимный опрос' : 'Опрос'}</span>
                     </div>
-                    <h4 class="font-bold text-gray-900 dark:text-white mb-3 text-[15px] leading-tight">${pollData.question}</h4>
+                    <h4 class="font-bold text-gray-900 dark:text-white mb-3 text-[15px] leading-tight">${escapeHtml(pollData.question)}</h4>
                     <div class="poll-options">
                         ${optionsHtml}
                     </div>
@@ -478,7 +488,7 @@ export function renderMessages(messages: any[], isInitialLoad = false) {
                 </div>
             `;
         } else if (msg.message_type === 'voice' && actualMedia.length > 0) {
-            const transcriptionText = `<div id="transcription-text-${msg.id}" class="w-full">${actualMedia[0].transcription ? `<div class="mt-1 text-sm text-gray-700 dark:text-gray-200 bg-black/5 dark:bg-white/5 p-2 rounded-lg">${actualMedia[0].transcription}</div>` : ''}</div>`;
+            const transcriptionText = `<div id="transcription-text-${msg.id}" class="w-full">${actualMedia[0].transcription ? `<div class="mt-1 text-sm text-gray-700 dark:text-gray-200 bg-black/5 dark:bg-white/5 p-2 rounded-lg">${escapeHtml(actualMedia[0].transcription)}</div>` : ''}</div>`;
             const transcribeBtn = !actualMedia[0].transcription ? `<button id="transcribe-btn-${msg.id}" onclick="transcribeMedia('${actualMedia[0].url}', '${msg.id}', 'voice')" class="w-7 h-7 shrink-0 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-600 dark:text-gray-300 rounded-full flex items-center justify-center transition-colors ml-1" title="Расшифровать"><span class="text-[10px] font-bold">Aa</span></button>` : '';
             
             fileHtml = `
@@ -500,14 +510,15 @@ export function renderMessages(messages: any[], isInitialLoad = false) {
                 </div>
             `;
         } else if (msg.message_type === 'video_circle' && actualMedia.length > 0) {
-            const transcriptionText = `<div id="transcription-text-${msg.id}" class="w-full flex justify-end">${actualMedia[0].transcription ? `<div class="mt-1 text-sm text-gray-700 dark:text-gray-200 bg-black/5 dark:bg-white/5 p-2 rounded-lg max-w-[200px]">${actualMedia[0].transcription}</div>` : ''}</div>`;
+            const circlePoster = getVideoPosterUrl(actualMedia[0].url);
+            const transcriptionText = `<div id="transcription-text-${msg.id}" class="w-full flex ${isMe ? 'justify-end' : 'justify-start'}">${actualMedia[0].transcription ? `<div class="mt-1 text-sm text-gray-700 dark:text-gray-200 bg-black/5 dark:bg-white/5 p-2 rounded-lg max-w-[200px]">${escapeHtml(actualMedia[0].transcription)}</div>` : ''}</div>`;
             const transcribeBtn = !actualMedia[0].transcription ? `<button id="transcribe-btn-${msg.id}" onclick="transcribeMedia('${actualMedia[0].url}', '${msg.id}', 'video_circle')" class="absolute bottom-0 right-0 w-8 h-8 bg-gray-800/70 hover:bg-gray-800 text-white rounded-full flex items-center justify-center transition-colors z-10 backdrop-blur-sm" title="Расшифровать"><span class="text-[11px] font-bold">Aa</span></button>` : '';
 
             fileHtml = `
-                <div class="flex flex-col mb-1 items-end">
+                <div class="flex flex-col mb-1 ${isMe ? 'items-end' : 'items-start'}">
                     <div class="relative">
                         <div class="video-circle-container uninteracted" onclick="handleVideoCircleClick(event, this)">
-                            <video src="${actualMedia[0].url}" loop muted playsinline data-autoplay="true" ontimeupdate="updateVideoProgress(this)" onerror="this.onerror=null; window.handleMediaError(this, '${actualMedia[0].url}');"></video>
+                            <video data-src="${actualMedia[0].url}" ${circlePoster ? `poster="${circlePoster}"` : ''} preload="metadata" loop muted playsinline data-autoplay="true" ontimeupdate="updateVideoProgress(this)" onerror="this.onerror=null; window.handleMediaError(this, '${actualMedia[0].url}');"></video>
                             <svg class="video-progress-ring" viewBox="0 0 100 100">
                                 <circle cx="50" cy="50" r="48" stroke-linecap="round"></circle>
                             </svg>
@@ -530,7 +541,7 @@ export function renderMessages(messages: any[], isInitialLoad = false) {
                         <svg class="w-5 h-5 pause-icon hidden" fill="currentColor" viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
                     </button>
                     <div class="flex-1 min-w-0 flex flex-col justify-center">
-                        <div class="text-sm font-semibold text-gray-800 dark:text-gray-200 truncate w-full mb-1">${file.name || 'Аудио'}</div>
+                        <div class="text-sm font-semibold text-gray-800 dark:text-gray-200 truncate w-full mb-1">${escapeHtml(file.name || 'Аудио')}</div>
                         <div class="flex items-center gap-2">
                             <div class="flex-1 h-1.5 bg-gray-200 dark:bg-gray-700 rounded-full relative overflow-hidden cursor-pointer media-progress-container">
                                 <div class="absolute left-0 top-0 h-full bg-blue-500 progress-bar" style="width: 0%"></div>
@@ -551,9 +562,10 @@ export function renderMessages(messages: any[], isInitialLoad = false) {
                 if(file.type?.startsWith('image/') && !file.asFile) {
                     fileHtml += `<img data-src="${file.url}" class="${aspectCls} w-full rounded-xl object-cover cursor-pointer hover:opacity-95 shadow-sm border border-black/5 chat-media-item bg-gray-200 dark:bg-gray-800" onclick="openLightbox('${file.url}')" onload="const l=this.closest('#messages-list'); if(l && l.scrollHeight - l.scrollTop - l.clientHeight < 250) l.scrollTop = l.scrollHeight;" onerror="this.onerror=null; window.handleMediaError(this, '${file.url}');">`;
                 } else if(file.type?.startsWith('video/') && !file.asFile) {
+                    const videoPoster = getVideoPosterUrl(file.url);
                     fileHtml += `
                         <div class="relative ${aspectCls} w-full rounded-xl overflow-hidden shadow-sm border border-black/5 group chat-media-item-container mb-1 bg-gray-800">
-                            <video src="${file.url}" preload="metadata" class="w-full h-full object-cover chat-media-item cursor-pointer" onclick="toggleInlineVideo(this)" onloadeddata="const l=this.closest('#messages-list'); if(l && l.scrollHeight - l.scrollTop - l.clientHeight < 250) l.scrollTop = l.scrollHeight;" onloadedmetadata="this.parentElement.querySelector('.video-time').textContent = Math.floor(this.duration / 60) + ':' + Math.floor(this.duration % 60).toString().padStart(2, '0')" onerror="this.onerror=null; window.handleMediaError(this, '${file.url}');"></video>
+                            <video data-src="${file.url}" ${videoPoster ? `poster="${videoPoster}"` : ''} preload="metadata" class="w-full h-full object-cover chat-media-item cursor-pointer" onclick="toggleInlineVideo(this)" onloadeddata="const l=this.closest('#messages-list'); if(l && l.scrollHeight - l.scrollTop - l.clientHeight < 250) l.scrollTop = l.scrollHeight;" onloadedmetadata="this.parentElement.querySelector('.video-time').textContent = Math.floor(this.duration / 60) + ':' + Math.floor(this.duration % 60).toString().padStart(2, '0')" onerror="this.onerror=null; window.handleMediaError(this, '${file.url}');"></video>
                             <div class="absolute inset-0 bg-black/20 group-hover:bg-black/30 transition-colors flex items-center justify-center pointer-events-none video-overlay">
                                 <div class="w-12 h-12 bg-black/50 rounded-full flex items-center justify-center text-white backdrop-blur-sm">
                                     <svg class="w-6 h-6 ml-0.5 play-icon" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
@@ -885,36 +897,42 @@ export function renderMessages(messages: any[], isInitialLoad = false) {
         updateSelectionUI();
     }
     
-    // Fetch comment counts
-    setTimeout(async () => {
-        const commentBadges = Array.from(document.querySelectorAll('.comment-count-badge')) as HTMLElement[];
-        const postIds = commentBadges.map(b => b.dataset.postId).filter(Boolean);
-        if (postIds.length > 0) {
-            try {
-                // To fetch counts, we can select chat_members? No, messages.
-                // Since this could be up to 50 posts, we use a single query to get the number of messages for each.
-                const { data } = await supabase.from('messages').select('chat_id').in('chat_id', postIds);
-                if (data) {
-                    const counts: Record<string, number> = {};
-                    data.forEach(m => {
-                        counts[m.chat_id] = (counts[m.chat_id] || 0) + 1;
-                    });
-                    for (const badge of commentBadges) {
-                        const count = counts[badge.dataset.postId!] || 0;
-                        commentCountsMap.set(badge.dataset.postId!, count);
-                        if (count > 0) {
-                            badge.innerText = String(count);
-                            badge.classList.remove('hidden');
-                        } else {
-                            badge.classList.add('hidden');
+    // Fetch comment counts (throttled to once every 15s per channel to avoid redundant DB queries on delta polls)
+    const now = Date.now();
+    if (
+        state.activeChatType === 'channel' &&
+        (lastCommentCountFetchChatId !== state.activeChatId || now - lastCommentCountFetchAt > 15000)
+    ) {
+        lastCommentCountFetchChatId = state.activeChatId || '';
+        lastCommentCountFetchAt = now;
+        setTimeout(async () => {
+            const commentBadges = Array.from(document.querySelectorAll('.comment-count-badge')) as HTMLElement[];
+            const postIds = commentBadges.map(b => b.dataset.postId).filter(Boolean);
+            if (postIds.length > 0) {
+                try {
+                    const { data } = await supabase.from('messages').select('chat_id').in('chat_id', postIds);
+                    if (data) {
+                        const counts: Record<string, number> = {};
+                        data.forEach(m => {
+                            counts[m.chat_id] = (counts[m.chat_id] || 0) + 1;
+                        });
+                        for (const badge of commentBadges) {
+                            const count = counts[badge.dataset.postId!] || 0;
+                            commentCountsMap.set(badge.dataset.postId!, count);
+                            if (count > 0) {
+                                badge.innerText = String(count);
+                                badge.classList.remove('hidden');
+                            } else {
+                                badge.classList.add('hidden');
+                            }
                         }
                     }
+                } catch (e) {
+                    console.error('Error fetching comment counts:', e);
                 }
-            } catch (e) {
-                console.error('Error fetching comment counts:', e);
             }
-        }
-    }, 100);
+        }, 150);
+    }
 }
 function updateUnreadFloatingCounter(messages: any[]) {
     let counter = document.getElementById('unread-floating-counter');
@@ -1255,15 +1273,19 @@ async function actuallySend(text: string, files: File[], input: HTMLTextAreaElem
         cancelReply();
         delete (window as any).pendingUploads[tempId];
         
-        // Remove tempDiv, since we will render the new one
+        // Remove tempDiv and immediately render the inserted message in 0ms without flicker
         const tempDivEl = document.getElementById(tempId);
         if (tempDivEl) tempDivEl.remove();
 
-        // Local UI update immediately
         if (state.activeChatId) {
-            import('./messages-core').then(m => m.loadMessages(state.activeChatId!));
+            if (insertedMsg && !currentMessages.some((m) => m.id === insertedMsg.id)) {
+                const nextMsgs = [...currentMessages, insertedMsg];
+                saveCachedMessages(state.activeChatId, nextMsgs);
+                renderMessages(nextMsgs, false);
+            } else {
+                loadMessages(state.activeChatId);
+            }
             import('./chat').then(c => c.loadChats());
-            // Broadcast to other users
             import('./supabase').then(s => s.broadcastUpdate(state.activeChatId!, 'message'));
         }
 

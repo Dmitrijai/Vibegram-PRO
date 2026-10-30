@@ -21,6 +21,12 @@ export function getMediaObserver() {
                         observer.unobserve(target);
                     }
                     if (target.tagName === 'VIDEO' && target.hasAttribute('data-autoplay') && !target.hasAttribute('data-src')) {
+                        // Pause other autoplaying muted video circles so at most 1 video circle streams at once
+                        document.querySelectorAll('.video-circle-container video').forEach((otherVid) => {
+                            if (otherVid !== target && (otherVid as HTMLVideoElement).muted && !(otherVid as HTMLVideoElement).paused) {
+                                (otherVid as HTMLVideoElement).pause();
+                            }
+                        });
                         (target as HTMLVideoElement).play().catch(() => {});
                     }
                 } else {
@@ -50,7 +56,7 @@ export function getMediaObserver() {
                     }
                 }
             });
-        }, { threshold: 0.1, rootMargin: '300px' });
+        }, { threshold: 0.1, rootMargin: '250px' });
     }
     return mediaObserver;
 }
@@ -225,9 +231,9 @@ export function renderMediaModal() {
         const url = URL.createObjectURL(file);
         let previewContent = '';
         if (file.type.startsWith('image/')) {
-            previewContent = `<img src="${url}" class="w-24 h-24 object-cover rounded-xl border border-gray-200 dark:border-gray-700">`;
+            previewContent = `<img src="${url}" onload="URL.revokeObjectURL(this.src)" class="w-24 h-24 object-cover rounded-xl border border-gray-200 dark:border-gray-700">`;
         } else if (file.type.startsWith('video/')) {
-            previewContent = `<video src="${url}" class="w-24 h-24 object-cover rounded-xl border border-gray-200 dark:border-gray-700"></video>`;
+            previewContent = `<video src="${url}" onloadeddata="URL.revokeObjectURL(this.src)" class="w-24 h-24 object-cover rounded-xl border border-gray-200 dark:border-gray-700"></video>`;
         }
         
         mediaPreviewsHtml += `
@@ -351,7 +357,12 @@ export function handleVideoCircleClick(event: MouseEvent, container: HTMLElement
         return; // Handled by wrapper onclick
     }
     const video = container.querySelector('video')!;
-    if (!video || !video.src) return;
+    if (!video) return;
+    if (!video.src && video.hasAttribute('data-src')) {
+        video.src = video.getAttribute('data-src')!;
+        video.removeAttribute('data-src');
+    }
+    if (!video.src) return;
     
     if (container.classList.contains('uninteracted')) {
         container.classList.remove('uninteracted');
@@ -447,6 +458,10 @@ export function toggleInlineVideo(video: HTMLVideoElement) {
     if (isSelectionMode) {
         return; // Handled by wrapper onclick
     }
+    if (!video.src && video.hasAttribute('data-src')) {
+        video.src = video.getAttribute('data-src')!;
+        video.removeAttribute('data-src');
+    }
     if (!video.src) return;
     const container = video.closest('.chat-media-item-container') as HTMLElement;
     if (!container) return;
@@ -477,7 +492,7 @@ export function toggleInlineVideo(video: HTMLVideoElement) {
                 if (isDraggingMedia && currentDragContainer === container.querySelector('.media-progress-container')) return;
                 const progressBar = container.querySelector('.video-progress-bar') as HTMLElement;
                 const timeDisplay = container.querySelector('.video-time') as HTMLElement;
-                if (progressBar && video.duration) {
+                if (progressBar && Number.isFinite(video.duration) && video.duration > 0) {
                     const percent = (video.currentTime / video.duration) * 100;
                     progressBar.style.width = `${percent}%`;
                 }
@@ -517,6 +532,7 @@ export function toggleAudio(btn: HTMLElement, url: string) {
 
     if (!player) {
         player = new Audio(url);
+        player.preload = 'auto';
         state.audioPlayers.set(url, player);
     }
     
@@ -537,19 +553,27 @@ export function toggleAudio(btn: HTMLElement, url: string) {
     };
     player.ontimeupdate = () => {
         if (isDraggingMedia && currentDragContainer === progressBar?.closest('.media-progress-container')) return;
-        if (isNaN(player!.duration) || player!.duration === 0) return;
-        const percent = (player!.currentTime / player!.duration) * 100;
+        const cur = player!.currentTime || 0;
+        const dur = player!.duration;
+        if (Number.isFinite(dur) && dur > 0) {
+            (player as any)._knownDuration = dur;
+        }
+        const effectiveDur = (Number.isFinite(dur) && dur > 0) ? dur : ((player as any)._knownDuration || Math.max(cur + 2, 10));
+        const percent = Math.min(100, (cur / effectiveDur) * 100);
         if (progressBar && !isNaN(percent)) progressBar.style.width = `${percent}%`;
         
         if (timeDisplay) {
-            const mins = Math.floor(player!.currentTime / 60);
-            const secs = Math.floor(player!.currentTime % 60);
+            const mins = Math.floor(cur / 60);
+            const secs = Math.floor(cur % 60);
             if (!isNaN(mins) && !isNaN(secs)) {
                 timeDisplay.textContent = `${mins}:${secs.toString().padStart(2, '0')}`;
             }
         }
     };
     player.onended = () => {
+        if (player && player.currentTime > 0) {
+            (player as any)._knownDuration = player.currentTime;
+        }
         playIcon.classList.remove('hidden');
         pauseIcon.classList.add('hidden');
         if (progressBar) progressBar.style.width = '0%';

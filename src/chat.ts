@@ -1166,7 +1166,11 @@ export async function openChat(
   }
 
   loadMessages(chatId, true);
-  markMessagesAsRead(chatId);
+  setTimeout(() => {
+    if (state.activeChatId === chatId) {
+      markMessagesAsRead(chatId);
+    }
+  }, 350);
 }
 
 (window as any).toggleChatSearch = () => {

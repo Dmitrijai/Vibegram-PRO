@@ -217,13 +217,13 @@ function renderExpandableReactions(title: string, items: {emoji: string, name: s
     
     html += `<div class="flex flex-col gap-1 text-xs">`;
     displayItems.forEach(item => {
-        html += `<div class="flex items-center gap-2 truncate text-gray-800 dark:text-gray-200"><img src="${getNotoEmojiUrl(item.emoji)}" class="w-3 h-3" onerror="this.onerror=null; this.outerHTML='<span>${item.emoji}</span>';"> <span>${item.name}</span></div>`;
+        html += `<div class="flex items-center gap-2 truncate text-gray-800 dark:text-gray-200"><img src="${getNotoEmojiUrl(item.emoji)}" class="w-3 h-3" onerror="this.onerror=null; this.outerHTML='<span>${item.emoji}</span>';"> <span>${escapeHtml(item.name)}</span></div>`;
     });
     
     if (hasMore) {
         html += `
             <div id="${idPrefix}-hidden" class="hidden flex-col gap-1 mt-1 max-h-32 overflow-y-auto custom-scrollbar pr-1">
-                ${hiddenItems.map(item => `<div class="flex items-center gap-2 truncate text-gray-800 dark:text-gray-200"><img src="${getNotoEmojiUrl(item.emoji)}" class="w-3 h-3" onerror="this.onerror=null; this.outerHTML='<span>${item.emoji}</span>';"> <span>${item.name}</span></div>`).join('')}
+                ${hiddenItems.map(item => `<div class="flex items-center gap-2 truncate text-gray-800 dark:text-gray-200"><img src="${getNotoEmojiUrl(item.emoji)}" class="w-3 h-3" onerror="this.onerror=null; this.outerHTML='<span>${item.emoji}</span>';"> <span>${escapeHtml(item.name)}</span></div>`).join('')}
             </div>
             <button onclick="event.stopPropagation(); const el = document.getElementById('${idPrefix}-hidden'); el.classList.toggle('hidden'); el.classList.toggle('flex'); this.textContent = this.textContent === 'Развернуть' ? 'Свернуть' : 'Развернуть'; setTimeout(() => { if(window.adjustMenuPosition) window.adjustMenuPosition(this.closest('.msg-menu-dropdown')); }, 10);" class="text-blue-500 hover:text-blue-600 text-[11px] text-left mt-1 font-medium transition-colors">Развернуть</button>
         `;

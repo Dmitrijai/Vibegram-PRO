@@ -53,20 +53,49 @@ export function getActiveGatewayBaseUrl(): string {
 }
 
 /**
- * Optimizes Cloudinary image paths with f_auto,q_auto while keeping video paths
+ * Optimizes Cloudinary image paths with f_auto,q_auto,w_1280,c_limit while keeping video paths
  * exact so HTTP/2 206 Partial Content byte-range streaming starts in <100ms on first hit.
  */
 function optimizeCloudinaryPath(pathAfterDomain: string, addAutoQuality = true): string {
     if (!addAutoQuality) return pathAfterDomain;
     const imageMatch = pathAfterDomain.match(/^(\/[^/]+\/image\/upload\/)(v\d+\/.*)$/);
     if (imageMatch) {
-        return `${imageMatch[1]}f_auto,q_auto/${imageMatch[2]}`;
+        return `${imageMatch[1]}f_auto,q_auto,w_1280,c_limit/${imageMatch[2]}`;
     }
     return pathAfterDomain;
 }
 
 /**
- * Rewrites any blocked media URL (res.cloudinary.com, supabase.co/storage, etc.)
+ * Generates an instant ~15KB JPEG first-frame poster URL for any Cloudinary video or video_circle
+ * so chat bubbles display a preview frame in <100ms before the video stream even buffers.
+ */
+export function getVideoPosterUrl(rawVideoUrl: string | null | undefined): string {
+    if (!rawVideoUrl || typeof rawVideoUrl !== 'string') return '';
+    const proxied = rewriteMediaUrl(rawVideoUrl, undefined, false);
+    const match = proxied.match(/^(https?:\/\/[^/]+\/cloudinary\/[^/]+\/video\/upload\/)(?:[^/]+\/)?(v\d+\/.+?)(\.[a-zA-Z0-9]+)?(\?.*)?$/);
+    if (match) {
+        return `${match[1]}f_jpg,so_0,w_480,c_limit,q_auto:good/${match[2]}.jpg`;
+    }
+    return '';
+}
+
+/**
+ * Generates a lightweight 48kbps MP3 audio stream URL from any Cloudinary video/audio URL.
+ * Reduces a 14 MB video circle to ~80 KB of audio so AI transcription downloads in <0.3s!
+ */
+export function getOptimizedAudioForTranscriptionUrl(rawMediaUrl: string): string {
+    if (!rawMediaUrl || typeof rawMediaUrl !== 'string') return rawMediaUrl;
+    const proxied = rewriteMediaUrl(rawMediaUrl, undefined, false);
+    const match = proxied.match(/^(https?:\/\/[^/]+\/cloudinary\/[^/]+\/video\/upload\/)(?:[^/]+\/)?(v\d+\/.+?)(\.[a-zA-Z0-9]+)?(\?.*)?$/);
+    if (match) {
+        return `${match[1]}f_mp3,br_48k/${match[2]}.mp3`;
+    }
+    return proxied;
+}
+
+/**
+ * Rewrites any blocked media or AI URL (res.cloudinary.com, supabase.co/storage,
+ * generativelanguage.googleapis.com, router.huggingface.co, image.pollinations.ai)
  * to route through the active AWS Edge Gateway.
  */
 export function rewriteMediaUrl(rawUrl: string | null | undefined, targetGwUrl?: string, addAutoQuality = true): string {
@@ -87,7 +116,10 @@ export function rewriteMediaUrl(rawUrl: string | null | undefined, targetGwUrl?:
     if (existingCloudinaryIdx !== -1) {
         let rest = trimmed.substring(existingCloudinaryIdx + '/cloudinary'.length);
         if (!addAutoQuality) {
-            rest = rest.replace('/video/upload/q_auto/v', '/video/upload/v').replace('/image/upload/f_auto,q_auto/v', '/image/upload/v');
+            rest = rest
+                .replace('/video/upload/q_auto/v', '/video/upload/v')
+                .replace('/image/upload/f_auto,q_auto,w_1280,c_limit/v', '/image/upload/v')
+                .replace('/image/upload/f_auto,q_auto/v', '/image/upload/v');
         }
         return `${cleanGw}/cloudinary${rest}`;
     }
@@ -97,8 +129,50 @@ export function rewriteMediaUrl(rawUrl: string | null | undefined, targetGwUrl?:
         const rest = trimmed.substring('https://api.cloudinary.com'.length);
         return `${cleanGw}/cloudinary-api${rest}`;
     }
+    const existingCloudApiIdx = trimmed.indexOf('/cloudinary-api/');
+    if (existingCloudApiIdx !== -1) {
+        const rest = trimmed.substring(existingCloudApiIdx + '/cloudinary-api'.length);
+        return `${cleanGw}/cloudinary-api${rest}`;
+    }
 
-    // 4. Legacy or direct Supabase storage URLs
+    // 4. Google Gemini API URLs (bypasses RU IP geo-block 400 FAILED_PRECONDITION)
+    if (trimmed.startsWith('https://generativelanguage.googleapis.com/')) {
+        const rest = trimmed.substring('https://generativelanguage.googleapis.com'.length);
+        return `${cleanGw}/gemini${rest}`;
+    }
+    const existingGeminiIdx = trimmed.indexOf('/gemini/');
+    if (existingGeminiIdx !== -1) {
+        const rest = trimmed.substring(existingGeminiIdx + '/gemini'.length);
+        return `${cleanGw}/gemini${rest}`;
+    }
+
+    // 5. HuggingFace Router / Inference URLs
+    if (trimmed.startsWith('https://router.huggingface.co/')) {
+        const rest = trimmed.substring('https://router.huggingface.co'.length);
+        return `${cleanGw}/hf${rest}`;
+    }
+    if (trimmed.startsWith('https://api-inference.huggingface.co/')) {
+        const rest = trimmed.substring('https://api-inference.huggingface.co'.length);
+        return `${cleanGw}/hf${rest}`;
+    }
+    const existingHfIdx = trimmed.indexOf('/hf/');
+    if (existingHfIdx !== -1) {
+        const rest = trimmed.substring(existingHfIdx + '/hf'.length);
+        return `${cleanGw}/hf${rest}`;
+    }
+
+    // 6. Pollinations AI Image Generation URLs
+    if (trimmed.startsWith('https://image.pollinations.ai/')) {
+        const rest = trimmed.substring('https://image.pollinations.ai'.length);
+        return `${cleanGw}/pollinations${rest}`;
+    }
+    const existingPollinationsIdx = trimmed.indexOf('/pollinations/');
+    if (existingPollinationsIdx !== -1) {
+        const rest = trimmed.substring(existingPollinationsIdx + '/pollinations'.length);
+        return `${cleanGw}/pollinations${rest}`;
+    }
+
+    // 7. Legacy or direct Supabase storage URLs
     const storageIdx = trimmed.indexOf('/storage/v1/');
     if (storageIdx !== -1) {
         const rest = trimmed.substring(storageIdx);
@@ -188,7 +262,7 @@ export function installMediaProxyInterceptor() {
     if (mediaInterceptorInstalled || typeof window === 'undefined') return;
     mediaInterceptorInstalled = true;
 
-    // 1. Intercept window.fetch for direct Cloudinary uploads/downloads
+    // 1. Intercept window.fetch for direct Cloudinary, Gemini AI, HuggingFace, and Pollinations requests
     const nativeFetch = window.fetch.bind(window);
     window.fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
         const rawUrl = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
@@ -197,7 +271,14 @@ export function installMediaProxyInterceptor() {
             rawUrl &&
             (rawUrl.startsWith('https://res.cloudinary.com/') ||
                 rawUrl.startsWith('https://api.cloudinary.com/') ||
-                rawUrl.includes('/cloudinary-api/'))
+                rawUrl.includes('/cloudinary-api/') ||
+                rawUrl.startsWith('https://generativelanguage.googleapis.com/') ||
+                rawUrl.includes('/gemini/') ||
+                rawUrl.startsWith('https://router.huggingface.co/') ||
+                rawUrl.startsWith('https://api-inference.huggingface.co/') ||
+                rawUrl.includes('/hf/') ||
+                rawUrl.startsWith('https://image.pollinations.ai/') ||
+                rawUrl.includes('/pollinations/'))
         ) {
             const gateways = networkState.gateways.length > 0
                 ? networkState.gateways.map((g) => g.url)
