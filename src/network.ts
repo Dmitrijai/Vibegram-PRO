@@ -280,28 +280,46 @@ async function fetchSingleAttempt(
     supabasePath: string,
     init: RequestInit,
     timeoutMs: number,
-    parentSignal?: AbortSignal
+    attemptController?: AbortController
 ): Promise<{ gw: GatewayNode; response: Response; elapsed: number }> {
     const targetUrl = `${gw.url}${supabasePath}`;
-    const timeoutSignal = AbortSignal.timeout(timeoutMs);
-    const signals: AbortSignal[] = [timeoutSignal];
-    if (init.signal) signals.push(init.signal);
-    if (parentSignal) signals.push(parentSignal);
-    const combinedSignal = signals.length > 1 ? AbortSignal.any(signals) : timeoutSignal;
+    const ctrl = attemptController || new AbortController();
 
-    const start = performance.now();
-    const response = await window.fetch(targetUrl, {
-        ...init,
-        signal: combinedSignal
-    });
-
-    if (isGatewayErrorResponse(gw, response)) {
-        gw.status = 'blocked';
-        throw new Error(`Gateway ${gw.id} HTTP ${response.status}`);
+    if (init.signal?.aborted) {
+        ctrl.abort(init.signal.reason);
+    }
+    const onCallerAbort = () => ctrl.abort(init.signal?.reason);
+    if (init.signal && !init.signal.aborted) {
+        init.signal.addEventListener('abort', onCallerAbort, { once: true });
     }
 
-    const elapsed = Math.max(1, Math.round(performance.now() - start));
-    return { gw, response, elapsed };
+    const timer = setTimeout(() => {
+        ctrl.abort(new DOMException('Gateway timeout', 'TimeoutError'));
+    }, timeoutMs);
+
+    const start = performance.now();
+    try {
+        const response = await window.fetch(targetUrl, {
+            ...init,
+            signal: ctrl.signal
+        });
+        clearTimeout(timer);
+
+        if (isGatewayErrorResponse(gw, response)) {
+            gw.status = 'blocked';
+            throw new Error(`Gateway ${gw.id} HTTP ${response.status}`);
+        }
+
+        const elapsed = Math.max(1, Math.round(performance.now() - start));
+        return { gw, response, elapsed };
+    } catch (err) {
+        clearTimeout(timer);
+        throw err;
+    } finally {
+        if (init.signal) {
+            init.signal.removeEventListener('abort', onCallerAbort);
+        }
+    }
 }
 
 function createGraceRefreshResponse(): Response | null {
@@ -328,9 +346,9 @@ function createGraceRefreshResponse(): Response | null {
 
 /**
  * Resilient Fetch Engine for Supabase:
- * 1. Uses fast 4.5s socket timeouts so TSPU-stalled TCP sockets never hang for 30-60s.
- * 2. For read/auth-refresh requests, launches a hedged parallel socket after 2.0s if the first socket is stalled by DPI.
- * 3. Automatically retries across fresh sockets and backup gateways before ever returning an error.
+ * 1. Uses fast 5s socket timeouts so TSPU-stalled TCP sockets never hang for 30-60s.
+ * 2. For read/auth-refresh requests, launches a hedged parallel socket after 2.2s if the first socket is stalled by DPI.
+ * 3. Uses dedicated AbortControllers per socket so aborting a losing hedge socket NEVER aborts the winning Response body stream.
  * 4. Protects token refresh from logging the user out if mobile internet briefly drops.
  */
 export async function smartSupabaseFetch(input: RequestInfo | URL, init: RequestInit = {}): Promise<Response> {
@@ -338,9 +356,7 @@ export async function smartSupabaseFetch(input: RequestInfo | URL, init: Request
     const supabasePath = extractSupabasePath(rawUrl);
 
     if (!supabasePath || networkState.gateways.length === 0) {
-        const timeoutSignal = AbortSignal.timeout(8000);
-        const signal = init.signal ? AbortSignal.any([init.signal, timeoutSignal]) : timeoutSignal;
-        return window.fetch(input, { ...init, signal });
+        return window.fetch(input, init);
     }
 
     const method = (init.method || 'GET').toUpperCase();
@@ -357,23 +373,36 @@ export async function smartSupabaseFetch(input: RequestInfo | URL, init: Request
     for (let i = 0; i < sequence.length; i++) {
         const gw = sequence[i];
         const nextGw = sequence[(i + 1) % sequence.length];
-        const raceController = new AbortController();
 
         try {
             let winner: { gw: GatewayNode; response: Response; elapsed: number };
 
             if (isHedgeable && nextGw) {
+                const ctrl1 = new AbortController();
+                const ctrl2 = new AbortController();
+                let hedgeStarted = false;
+
                 // Start primary socket immediately; if it stalls > 2.2s due to TSPU, launch a parallel hedged socket
                 winner = await new Promise((resolve, reject) => {
                     let settled = false;
                     let pendingCount = 1;
                     let hedgeTimer: any = null;
 
-                    const onSuccess = (res: { gw: GatewayNode; response: Response; elapsed: number }) => {
-                        if (settled) return;
+                    const onSuccess = (res: { gw: GatewayNode; response: Response; elapsed: number }, which: 1 | 2) => {
+                        if (settled) {
+                            // If the other socket already won, abort this late socket
+                            if (which === 1) ctrl1.abort();
+                            else ctrl2.abort();
+                            return;
+                        }
                         settled = true;
                         if (hedgeTimer) clearTimeout(hedgeTimer);
-                        raceController.abort();
+                        // IMPORTANT: Only abort the LOSING socket controller so the WINNING Response body stream stays open!
+                        if (which === 1 && hedgeStarted) {
+                            ctrl2.abort();
+                        } else if (which === 2) {
+                            ctrl1.abort();
+                        }
                         resolve(res);
                     };
 
@@ -385,20 +414,21 @@ export async function smartSupabaseFetch(input: RequestInfo | URL, init: Request
                         }
                     };
 
-                    fetchSingleAttempt(gw, supabasePath, init, 5000, raceController.signal)
-                        .then(onSuccess)
+                    fetchSingleAttempt(gw, supabasePath, init, 5500, ctrl1)
+                        .then((res) => onSuccess(res, 1))
                         .catch(onError);
 
                     hedgeTimer = setTimeout(() => {
                         if (settled || init.signal?.aborted) return;
+                        hedgeStarted = true;
                         pendingCount++;
-                        fetchSingleAttempt(nextGw, supabasePath, init, 5000, raceController.signal)
-                            .then(onSuccess)
+                        fetchSingleAttempt(nextGw, supabasePath, init, 5500, ctrl2)
+                            .then((res) => onSuccess(res, 2))
                             .catch(onError);
                     }, 2200);
                 });
             } else {
-                winner = await fetchSingleAttempt(gw, supabasePath, init, 6000);
+                winner = await fetchSingleAttempt(gw, supabasePath, init, 6500);
             }
 
             winner.gw.latencyMs = winner.elapsed;

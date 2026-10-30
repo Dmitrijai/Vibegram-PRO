@@ -228,6 +228,9 @@ const hashError = hashParams.get('error_description') || hashParams.get('error')
 const idToken = hashParams.get('id_token') || queryParams.get('id_token');
 
 let isHandlingIdToken = false;
+let subscriptionsSetup = false;
+let hybridMsgTimer: any = null;
+let hybridChatsTimer: any = null;
 
 if (idToken) {
     isHandlingIdToken = true;
@@ -311,9 +314,6 @@ supabase.auth.onAuthStateChange((event, session) => {
 });
 
 // Setup Realtime subscriptions + Hybrid HTTP Delta Polling fallback
-let subscriptionsSetup = false;
-let hybridMsgTimer: any = null;
-let hybridChatsTimer: any = null;
 
 function startHybridRealtimeSync() {
     stopHybridRealtimeSync();
