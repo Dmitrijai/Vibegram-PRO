@@ -262,7 +262,10 @@ if (idToken) {
 
 if (!idToken && !hashError) {
     // Hydrate UI in 0ms from local snapshot if user was previously logged in
-    logic.hydrateFromCacheOnBoot();
+    if (logic.hydrateFromCacheOnBoot()) {
+        setupRealtime();
+        logic.loadChats();
+    }
 }
 
 supabase.auth.getSession().then(({ data: { session }, error }) => {
@@ -276,17 +279,17 @@ supabase.auth.getSession().then(({ data: { session }, error }) => {
             setTimeout(() => loader.remove(), 300);
         }
         document.getElementById('auth-screen')!.classList.remove('hidden');
-    } else if (session?.user && !subscriptionsSetup) {
-        state.currentUser = session.user;
+    } else if ((session?.user || state.currentUser) && !subscriptionsSetup) {
+        if (session?.user) state.currentUser = session.user;
         setupRealtime();
     }
 });
 
 supabase.auth.onAuthStateChange((event, session) => {
     console.log("Auth State Changed:", event, "Session exists?", !!session);
-    if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION') {
-        if (session?.user) {
-            state.currentUser = session.user;
+    if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION' || event === 'TOKEN_REFRESHED') {
+        if (session?.user || state.currentUser) {
+            if (session?.user) state.currentUser = session.user;
             logic.checkUser(event);
             setupRealtime();
         } else if (event === 'INITIAL_SESSION' && !isHandlingIdToken && !state.currentUser) {
@@ -315,19 +318,19 @@ let hybridChatsTimer: any = null;
 function startHybridRealtimeSync() {
     stopHybridRealtimeSync();
 
-    // Active chat delta sync: runs every 2.8s when WebSocket is blocked by TSPU, or every 10s as backup
+    // Active chat delta sync: runs every 1.6s when WebSocket is blocked by TSPU, or every 6s as backup
     hybridMsgTimer = setInterval(() => {
         if (document.hidden || !state.currentUser?.id || !state.activeChatId) return;
         import('./network').then(({ networkState }) => {
-            if (!networkState.realtimeConnected || Date.now() % 3 === 0) {
+            if (!networkState.realtimeConnected || Date.now() % 4 === 0) {
                 if ((window as any).logic?.pollActiveChatDelta) {
                     (window as any).logic.pollActiveChatDelta();
                 }
             }
         });
-    }, 2800);
+    }, 1600);
 
-    // Chat list sync: runs every 9s when WebSocket is blocked by TSPU
+    // Chat list sync: runs every 4.8s when WebSocket is blocked by TSPU
     hybridChatsTimer = setInterval(() => {
         if (document.hidden || !state.currentUser?.id) return;
         import('./network').then(({ networkState }) => {
@@ -337,7 +340,7 @@ function startHybridRealtimeSync() {
                 }
             }
         });
-    }, 9000);
+    }, 4800);
 }
 
 function stopHybridRealtimeSync() {

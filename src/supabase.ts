@@ -1,9 +1,14 @@
 import { createClient } from '@supabase/supabase-js';
-import { initNetworkManager, smartSupabaseFetch, DIRECT_SUPABASE_URL, networkState } from './network';
+import { initNetworkManager, smartSupabaseFetch, PRIMARY_WORKER_URL, isDeadGatewayUrl, networkState } from './network';
 
-// Используем переменные окружения, если они установлены, иначе резервный прямой узел
-const rawSupabaseUrl = process.env.SUPABASE_URL || (import.meta as any).env?.VITE_SUPABASE_URL || DIRECT_SUPABASE_URL;
-const SUPABASE_URL = rawSupabaseUrl.replace(/\/rest\/v[0-9]+\/?$/, '').replace(/\/$/, '');
+// Всегда используем рабочий не-Cloudflare AWS Edge шлюз по умолчанию, даже если в старых секретах остался supabase.co / onrender.com / qzz.io
+const rawSupabaseUrl = process.env.SUPABASE_URL || (import.meta as any).env?.VITE_SUPABASE_URL || PRIMARY_WORKER_URL;
+const cleanedEnvUrl = rawSupabaseUrl.replace(/\/rest\/v[0-9]+\/?$/, '').replace(/\/$/, '');
+const isLegacyBlockedOrDead =
+    isDeadGatewayUrl(cleanedEnvUrl) ||
+    cleanedEnvUrl.includes('supabase.co') ||
+    cleanedEnvUrl.includes('vibegram.qzz.io');
+const SUPABASE_URL = !isLegacyBlockedOrDead ? cleanedEnvUrl : PRIMARY_WORKER_URL;
 const SUPABASE_KEY = process.env.SUPABASE_ANON_KEY || (import.meta as any).env?.VITE_SUPABASE_ANON_KEY || '';
 
 if (!SUPABASE_URL || !SUPABASE_KEY) {
@@ -44,7 +49,7 @@ async function safeAuthLock<R>(name: string, _acquireTimeout: number, fn: () => 
     }
 }
 
-export const supabase = createClient(SUPABASE_URL || DIRECT_SUPABASE_URL, SUPABASE_KEY, {
+export const supabase = createClient(SUPABASE_URL || PRIMARY_WORKER_URL, SUPABASE_KEY, {
     auth: {
         flowType: 'implicit',
         storageKey: 'sb-vibegram-auth-token',

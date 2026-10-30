@@ -66,7 +66,9 @@ export async function loadChats(retriesLeft = 2) {
       .select(
         `id, created_at, type, title, avatar_url, description, is_public, is_verified, chat_members(user_id, role, profiles(id, username, display_name, last_seen, is_online, avatar_url, bio, settings, is_premium, premium_until)), messages(content, message_type, media, created_at, is_read, sender_id)`,
       )
-      .in("id", chatIds);
+      .in("id", chatIds)
+      .order("created_at", { referencedTable: "messages", ascending: false })
+      .limit(15, { referencedTable: "messages" });
     if (chatsError) throw chatsError;
     if (!chats) return;
 
@@ -187,7 +189,7 @@ export async function loadChats(retriesLeft = 2) {
       if (cached && cached.length > 0) {
         renderChatsDataToDOM(cached, true);
       } else {
-        list.innerHTML = `<div class="text-center text-gray-500 dark:text-gray-400 mt-16 p-6"><div class="text-sm font-medium mb-2">Ожидание ответа от сети...</div><div class="text-xs opacity-80 mb-4">ТСПУ замедляет соединение. Выберите другой шлюз в настройках сети.</div><button onclick="window.openSettings('full')" class="px-4 py-2 bg-blue-500 text-white rounded-xl text-xs font-semibold shadow-sm hover:bg-blue-600 transition-colors">Настройки обхода РКН</button></div>`;
+        list.innerHTML = `<div class="text-center text-gray-400 mt-16 p-6"><div class="w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-3"></div><div class="text-xs">Загрузка чатов...</div></div>`;
       }
     }
   } finally {

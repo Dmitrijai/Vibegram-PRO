@@ -35,11 +35,13 @@ export async function markMessagesAsRead(chatId: string) {
         }
     }
 
-    // Fetch unread messages to track who read them
+    // Fetch recent unread messages to track who read them (capped at 50 to keep payload under 16KB DPI limit)
     const { data: unreadMsgs } = await supabase.from('messages')
         .select('id, reactions')
         .eq('chat_id', chatId)
-        .neq('sender_id', state.currentUser.id);
+        .neq('sender_id', state.currentUser.id)
+        .order('created_at', { ascending: false })
+        .limit(50);
 
     if (unreadMsgs && unreadMsgs.length > 0) {
         const msgsToUpdate = unreadMsgs.filter(m => {

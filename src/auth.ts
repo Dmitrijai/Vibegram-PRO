@@ -9,14 +9,31 @@ let hasFinalizedAppSetup = false;
 export function hydrateFromCacheOnBoot(): boolean {
     if ((window as any).originalAdminUser || hasFinalizedAppSetup) return false;
     try {
-        // Verify auth token exists in localStorage
-        const hasAuthToken =
-            !!localStorage.getItem('sb-vibegram-auth-token') ||
-            !!localStorage.getItem('sb-dxoyyflsqrzgzjfihgcx-auth-token');
-        if (!hasAuthToken) return false;
+        const rawAuthToken =
+            localStorage.getItem('sb-vibegram-auth-token') ||
+            localStorage.getItem('sb-dxoyyflsqrzgzjfihgcx-auth-token');
+        if (!rawAuthToken) return false;
 
-        const cached = getCachedBootstrap();
-        if (!cached || !cached.user || !cached.profile) return false;
+        let cached = getCachedBootstrap();
+        if (!cached || !cached.user || !cached.profile) {
+            // Fallback: extract user directly from stored Supabase auth token
+            const parsedToken = JSON.parse(rawAuthToken);
+            const tokenUser = parsedToken?.user || parsedToken?.currentSession?.user;
+            if (!tokenUser?.id) return false;
+            const nickname =
+                tokenUser.user_metadata?.full_name ||
+                tokenUser.user_metadata?.name ||
+                tokenUser.user_metadata?.nickname ||
+                (tokenUser.email ? tokenUser.email.split('@')[0] : 'User');
+            const fallbackProfile = {
+                id: tokenUser.id,
+                display_name: nickname,
+                username: 'user_' + tokenUser.id.substring(0, 8),
+                avatar_url: tokenUser.user_metadata?.avatar_url || tokenUser.user_metadata?.picture || null,
+                settings: {}
+            };
+            cached = { user: tokenUser, profile: fallbackProfile, savedAt: Date.now() };
+        }
 
         state.currentUser = cached.user;
         state.currentProfile = cached.profile;
@@ -94,11 +111,6 @@ export async function checkUser(authEvent?: string) {
                 document.getElementById('auth-screen')?.classList.remove('hidden');
                 document.getElementById('app-screen')?.classList.add('hidden');
                 return;
-            }
-            if (!state.currentUser && !hasFinalizedAppSetup) {
-                if (error.message === 'Failed to fetch') {
-                    import('./utils').then(m => m.showError('Переключение на резервный шлюз обхода блокировок...'));
-                }
             }
             return;
         }
@@ -196,10 +208,6 @@ export async function checkUser(authEvent?: string) {
         if (loader) {
             loader.classList.add('opacity-0', 'pointer-events-none');
             setTimeout(() => loader.remove(), 300);
-        }
-        // Only show error toast if we haven't already hydrated the UI from cache
-        if (!hasFinalizedAppSetup && !state.currentProfile) {
-            import('./utils').then(m => m.showError('Медленный ответ сети (ТСПУ). Переключаем шлюз...'));
         }
     }
 }

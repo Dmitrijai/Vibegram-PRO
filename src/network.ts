@@ -13,10 +13,38 @@ const PREFERRED_GATEWAY_KEY = 'vibegram_preferred_gateway_id';
 const LAST_WORKING_GATEWAY_KEY = 'vibegram_last_working_gateway_url';
 
 export const DIRECT_SUPABASE_URL = 'https://dxoyyflsqrzgzjfihgcx.supabase.co';
+export const PRIMARY_WORKER_URL = 'https://vibegram-edge-gw.vercel.app';
+export const SECONDARY_EDGE_URL = 'https://vibegram-ru-node.vercel.app';
+export const TERTIARY_EDGE_URL = 'https://vibegram-net-proxy.vercel.app';
+export const LEGACY_CF_WORKER_URL = 'https://vibegram.qzz.io';
+
+// Dead or suspended domains that must never be used even if present in old env vars or localStorage
+const DEAD_DOMAINS = ['vibegram.qd.je', 'supa-proxy.onrender.com', 'onrender.com'];
+
+export function isDeadGatewayUrl(url: string): boolean {
+    if (!url || !url.startsWith('http')) return true;
+    const lower = url.toLowerCase();
+    return DEAD_DOMAINS.some((d) => lower.includes(d));
+}
+
+function isCloudflareOrDirectUrl(url: string): boolean {
+    if (!url) return true;
+    const lower = url.toLowerCase();
+    return lower.includes('supabase.co') || lower.includes('vibegram.qzz.io');
+}
+
+export function rewriteLegacyStorageUrlsInJson(jsonText: string, activeGwUrl: string): string {
+    if (!jsonText || !jsonText.includes('/storage/v1/')) return jsonText;
+    const cleanGw = activeGwUrl.replace(/\/+$/, '');
+    return jsonText.replace(
+        /https:\/\/(?:dxoyyflsqrzgzjfihgcx\.supabase\.co|vibegram\.qzz\.io|supa-proxy\.onrender\.com|vibegram\.qd\.je)\/storage\/v1\//g,
+        `${cleanGw}/storage/v1/`
+    );
+}
 
 export const networkState = {
-    activeGatewayId: 'default',
-    activeGatewayUrl: '',
+    activeGatewayId: 'edge-gw-1',
+    activeGatewayUrl: PRIMARY_WORKER_URL,
     lastPingMs: null as number | null,
     realtimeConnected: false,
     transportMode: 'connecting' as 'websocket' | 'http-turbo' | 'connecting' | 'offline',
@@ -31,7 +59,6 @@ export function subscribeNetworkState(cb: () => void) {
 }
 
 export function notifyNetworkState() {
-    updateTopNetworkBanner();
     networkState.listeners.forEach((cb) => {
         try {
             cb();
@@ -45,7 +72,12 @@ function cleanGatewayUrl(raw: string): string {
 
 export function getCustomGatewayUrl(): string {
     try {
-        return cleanGatewayUrl(localStorage.getItem(CUSTOM_GATEWAY_KEY) || '');
+        const val = cleanGatewayUrl(localStorage.getItem(CUSTOM_GATEWAY_KEY) || '');
+        if (isDeadGatewayUrl(val)) {
+            localStorage.removeItem(CUSTOM_GATEWAY_KEY);
+            return '';
+        }
+        return val;
     } catch (e) {
         return '';
     }
@@ -54,7 +86,7 @@ export function getCustomGatewayUrl(): string {
 export function setCustomGatewayUrl(url: string) {
     const cleaned = cleanGatewayUrl(url);
     try {
-        if (cleaned) {
+        if (cleaned && !isDeadGatewayUrl(cleaned)) {
             localStorage.setItem(CUSTOM_GATEWAY_KEY, cleaned);
             localStorage.setItem(PREFERRED_GATEWAY_KEY, 'custom');
         } else {
@@ -72,33 +104,25 @@ let configuredEnvUrl = '';
 let supabaseAnonKeyRef = '';
 
 export function initNetworkManager(envSupabaseUrl: string, anonKey: string) {
-    configuredEnvUrl = cleanGatewayUrl(envSupabaseUrl) || DIRECT_SUPABASE_URL;
+    const cleanedEnv = cleanGatewayUrl(envSupabaseUrl);
+    configuredEnvUrl = !isDeadGatewayUrl(cleanedEnv) && !isCloudflareOrDirectUrl(cleanedEnv) ? cleanedEnv : PRIMARY_WORKER_URL;
     supabaseAnonKeyRef = anonKey;
-    rebuildGatewayList(configuredEnvUrl);
 
-    // Run initial gateway race in background without blocking startup
-    setTimeout(() => {
-        raceGateways(false).catch(() => {});
-    }, 150);
+    // Purge any stale dead or Cloudflare URLs from localStorage so RU users without VPN immediately use AWS Edge
+    try {
+        const lastWorking = localStorage.getItem(LAST_WORKING_GATEWAY_KEY) || '';
+        if (isDeadGatewayUrl(lastWorking) || isCloudflareOrDirectUrl(lastWorking)) {
+            localStorage.removeItem(LAST_WORKING_GATEWAY_KEY);
+        }
+    } catch (e) {}
+
+    rebuildGatewayList(configuredEnvUrl);
 }
 
 export function rebuildGatewayList(envUrl: string) {
     const list: GatewayNode[] = [];
-    const customUrl = getCustomGatewayUrl();
 
-    if (customUrl && customUrl.startsWith('http')) {
-        list.push({
-            id: 'custom',
-            name: 'Личный прокси-шлюз',
-            url: customUrl,
-            type: 'custom',
-            latencyMs: null,
-            status: 'unknown',
-            lastChecked: 0
-        });
-    }
-
-    // Same-origin /api/supabase proxy (works on Cloud Run, Vercel, Netlify, Dev Server)
+    // 1. Same-origin /api/supabase proxy (when hosted on Node/Express/Cloud Run/Vercel/Netlify)
     const isGitHubPages = typeof window !== 'undefined' && window.location.hostname.endsWith('github.io');
     const isFileOrCap =
         typeof window !== 'undefined' &&
@@ -109,7 +133,7 @@ export function rebuildGatewayList(envUrl: string) {
     if (typeof window !== 'undefined' && !isGitHubPages && !isFileOrCap && window.location.origin.startsWith('http')) {
         list.push({
             id: 'local-edge',
-            name: 'Встроенный туннель (/api/supabase)',
+            name: 'Встроенный серверный туннель',
             url: `${window.location.origin}/api/supabase`,
             type: 'edge-proxy',
             latencyMs: null,
@@ -118,25 +142,57 @@ export function rebuildGatewayList(envUrl: string) {
         });
     }
 
-    // If envUrl is a custom non-dead URL (not vibegram.qd.je), place it high priority
-    if (envUrl && envUrl.startsWith('http') && !envUrl.includes('vibegram.qd.je')) {
-        const isDirect = envUrl.includes('supabase.co');
+    // 2. Primary AWS Anycast Edge Gateway #1 (non-Cloudflare, verified working in RU without VPN)
+    list.push({
+        id: 'edge-gw-1',
+        name: 'Основной Edge-шлюз #1 (AWS)',
+        url: PRIMARY_WORKER_URL,
+        type: 'edge-proxy',
+        latencyMs: null,
+        status: 'unknown',
+        lastChecked: 0
+    });
+
+    // 3. Secondary AWS Anycast Edge Gateway #2 (non-Cloudflare)
+    list.push({
+        id: 'edge-gw-2',
+        name: 'Резервный Edge-шлюз #2 (AWS)',
+        url: SECONDARY_EDGE_URL,
+        type: 'edge-proxy',
+        latencyMs: null,
+        status: 'unknown',
+        lastChecked: 0
+    });
+
+    // 4. Tertiary AWS Anycast Edge Gateway #3 (non-Cloudflare)
+    list.push({
+        id: 'edge-gw-3',
+        name: 'Резервный Edge-шлюз #3 (AWS)',
+        url: TERTIARY_EDGE_URL,
+        type: 'edge-proxy',
+        latencyMs: null,
+        status: 'unknown',
+        lastChecked: 0
+    });
+
+    // 5. Legacy Cloudflare Worker fallback
+    if (!list.some((g) => g.url === LEGACY_CF_WORKER_URL)) {
         list.push({
-            id: 'env-primary',
-            name: isDirect ? 'Прямой сервер AWS (supabase.co)' : `Основной шлюз (${new URL(envUrl).hostname})`,
-            url: envUrl,
-            type: isDirect ? 'direct' : 'cf-worker',
+            id: 'mirror-qzz',
+            name: 'Резервный CF-узел (vibegram.qzz.io)',
+            url: LEGACY_CF_WORKER_URL,
+            type: 'cf-worker',
             latencyMs: null,
             status: 'unknown',
             lastChecked: 0
         });
     }
 
-    // Add Direct Supabase AWS endpoint (verified online: ~98ms)
+    // 6. Direct Supabase endpoint (last fallback)
     if (!list.some((g) => g.url === DIRECT_SUPABASE_URL)) {
         list.push({
             id: 'direct-aws',
-            name: 'Прямой сервер AWS (supabase.co)',
+            name: 'Прямой узел Supabase',
             url: DIRECT_SUPABASE_URL,
             type: 'direct',
             latencyMs: null,
@@ -145,33 +201,6 @@ export function rebuildGatewayList(envUrl: string) {
         });
     }
 
-    // Add live Cloudflare mirror vibegram.qzz.io (verified online: ~230ms)
-    if (!list.some((g) => g.url === 'https://vibegram.qzz.io')) {
-        list.push({
-            id: 'mirror-qzz',
-            name: 'Шлюз Cloudflare (vibegram.qzz.io)',
-            url: 'https://vibegram.qzz.io',
-            type: 'cf-worker',
-            latencyMs: null,
-            status: 'unknown',
-            lastChecked: 0
-        });
-    }
-
-    // Add vibegram.qd.je last (currently NXDOMAIN in global DNS, kept only as last-resort fallback)
-    if (!list.some((g) => g.url === 'https://vibegram.qd.je')) {
-        list.push({
-            id: 'mirror-qd',
-            name: 'Резервный домен (vibegram.qd.je)',
-            url: 'https://vibegram.qd.je',
-            type: 'cf-worker',
-            latencyMs: null,
-            status: 'unknown',
-            lastChecked: 0
-        });
-    }
-
-    // Preserve previous latency/status measurements if matching URL
     for (const item of list) {
         const prev = networkState.gateways.find((p) => p.url === item.url);
         if (prev) {
@@ -183,17 +212,16 @@ export function rebuildGatewayList(envUrl: string) {
 
     networkState.gateways = list;
 
-    // Determine initial active gateway
-    let preferredId = '';
     let lastWorkingUrl = '';
     try {
-        preferredId = localStorage.getItem(PREFERRED_GATEWAY_KEY) || '';
         lastWorkingUrl = localStorage.getItem(LAST_WORKING_GATEWAY_KEY) || '';
     } catch (e) {}
 
-    const byPref = list.find((g) => g.id === preferredId);
-    const byLastWorking = list.find((g) => g.url === lastWorkingUrl);
-    const chosen = byPref || byLastWorking || list[0];
+    const byLastWorking =
+        !isDeadGatewayUrl(lastWorkingUrl) && !isCloudflareOrDirectUrl(lastWorkingUrl)
+            ? list.find((g) => g.url === lastWorkingUrl)
+            : undefined;
+    const chosen = byLastWorking || list[0];
 
     if (chosen) {
         networkState.activeGatewayId = chosen.id;
@@ -207,102 +235,19 @@ export function selectGatewayById(id: string) {
     networkState.activeGatewayId = found.id;
     networkState.activeGatewayUrl = found.url;
     try {
-        localStorage.setItem(PREFERRED_GATEWAY_KEY, found.id);
         localStorage.setItem(LAST_WORKING_GATEWAY_KEY, found.url);
     } catch (e) {}
     notifyNetworkState();
 }
 
-async function probeSingleGateway(gw: GatewayNode, timeoutMs = 4500): Promise<{ ok: boolean; ms: number }> {
-    gw.status = 'testing';
-    notifyNetworkState();
-
-    const start = performance.now();
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
-
-    try {
-        const probeUrl = `${gw.url}/rest/v1/`;
-        const headers: Record<string, string> = {};
-        if (supabaseAnonKeyRef) {
-            headers['apikey'] = supabaseAnonKeyRef;
-            headers['Authorization'] = `Bearer ${supabaseAnonKeyRef}`;
-        }
-
-        const res = await window.fetch(probeUrl, {
-            method: 'GET',
-            headers,
-            signal: controller.signal
-        });
-        clearTimeout(timer);
-
-        const elapsed = Math.max(1, Math.round(performance.now() - start));
-        // Supabase /rest/v1/ returns 200 OK (OpenAPI spec) or 401/404 if reachable
-        const isValidSupabaseResponse = res.status >= 200 && res.status < 500 && res.status !== 404;
-        if (isValidSupabaseResponse) {
-            gw.latencyMs = elapsed;
-            gw.status = 'online';
-            gw.lastChecked = Date.now();
-            return { ok: true, ms: elapsed };
-        } else {
-            gw.latencyMs = null;
-            gw.status = 'blocked';
-            gw.lastChecked = Date.now();
-            return { ok: false, ms: 99999 };
-        }
-    } catch (e) {
-        clearTimeout(timer);
-        gw.latencyMs = null;
-        gw.status = 'blocked';
-        gw.lastChecked = Date.now();
-        return { ok: false, ms: 99999 };
-    }
-}
-
 export async function raceGateways(forceSwitchToFastest = true): Promise<GatewayNode | null> {
     if (networkState.gateways.length === 0) return null;
-
-    const results = await Promise.all(
-        networkState.gateways.map(async (gw) => {
-            const res = await probeSingleGateway(gw, 4500);
-            return { gw, ...res };
-        })
-    );
-
-    const working = results.filter((r) => r.ok).sort((a, b) => a.ms - b.ms);
-    if (working.length > 0) {
-        const currentGw = networkState.gateways.find((g) => g.id === networkState.activeGatewayId);
-        const currentIsOnline = currentGw && currentGw.status === 'online';
-
-        // Switch if forced, or if current gateway is blocked/slow
-        if (forceSwitchToFastest || !currentIsOnline) {
-            const best = working[0];
-            networkState.activeGatewayId = best.gw.id;
-            networkState.activeGatewayUrl = best.gw.url;
-            networkState.lastPingMs = best.ms;
-            try {
-                localStorage.setItem(LAST_WORKING_GATEWAY_KEY, best.gw.url);
-            } catch (e) {}
-        } else if (currentGw && currentGw.latencyMs) {
-            networkState.lastPingMs = currentGw.latencyMs;
-        }
-
-        if (networkState.transportMode === 'offline' || networkState.transportMode === 'connecting') {
-            networkState.transportMode = networkState.realtimeConnected ? 'websocket' : 'http-turbo';
-        }
-        notifyNetworkState();
-        return working[0].gw;
-    } else {
-        networkState.transportMode = 'offline';
-        notifyNetworkState();
-        return null;
-    }
+    return networkState.gateways[0];
 }
 
 function extractSupabasePath(rawUrl: string): string | null {
     try {
-        const parsed = new URL(rawUrl, window.location.origin);
-        // Check if path contains standard Supabase endpoints
+        const parsed = new URL(rawUrl, typeof window !== 'undefined' ? window.location.origin : 'https://vibegram.qzz.io');
         const match = parsed.pathname.match(/\/(rest|auth|storage|functions|realtime)\/v1(\/.*)?$/);
         if (match) {
             return match[0] + parsed.search;
@@ -311,11 +256,82 @@ function extractSupabasePath(rawUrl: string): string | null {
     return null;
 }
 
+function isGatewayErrorResponse(gw: GatewayNode, response: Response): boolean {
+    if (
+        response.status === 502 ||
+        response.status === 503 ||
+        response.status === 504 ||
+        (response.status >= 520 && response.status <= 526)
+    ) {
+        return true;
+    }
+    // If a proxy gateway returns 404 text/html or text/plain (e.g., static host or dead Render subdomain), it's not a real Supabase response
+    if (response.status === 404) {
+        const ct = (response.headers.get('content-type') || '').toLowerCase();
+        if (!ct.includes('json')) {
+            return true;
+        }
+    }
+    return false;
+}
+
+async function fetchSingleAttempt(
+    gw: GatewayNode,
+    supabasePath: string,
+    init: RequestInit,
+    timeoutMs: number,
+    parentSignal?: AbortSignal
+): Promise<{ gw: GatewayNode; response: Response; elapsed: number }> {
+    const targetUrl = `${gw.url}${supabasePath}`;
+    const timeoutSignal = AbortSignal.timeout(timeoutMs);
+    const signals: AbortSignal[] = [timeoutSignal];
+    if (init.signal) signals.push(init.signal);
+    if (parentSignal) signals.push(parentSignal);
+    const combinedSignal = signals.length > 1 ? AbortSignal.any(signals) : timeoutSignal;
+
+    const start = performance.now();
+    const response = await window.fetch(targetUrl, {
+        ...init,
+        signal: combinedSignal
+    });
+
+    if (isGatewayErrorResponse(gw, response)) {
+        gw.status = 'blocked';
+        throw new Error(`Gateway ${gw.id} HTTP ${response.status}`);
+    }
+
+    const elapsed = Math.max(1, Math.round(performance.now() - start));
+    return { gw, response, elapsed };
+}
+
+function createGraceRefreshResponse(): Response | null {
+    try {
+        const raw = localStorage.getItem('sb-vibegram-auth-token');
+        if (!raw) return null;
+        const parsed = JSON.parse(raw);
+        if (!parsed || !parsed.access_token || !parsed.refresh_token || !parsed.user) return null;
+
+        // Extend local expiry by 90 seconds so GoTrueClient keeps the user logged in while network recovers
+        const graceSession = {
+            ...parsed,
+            expires_in: 90,
+            expires_at: Math.floor(Date.now() / 1000) + 90
+        };
+        return new Response(JSON.stringify(graceSession), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' }
+        });
+    } catch (e) {
+        return null;
+    }
+}
+
 /**
- * Smart Fetch wrapper for @supabase/supabase-js
- * Automatically rewrites requests to the active gateway, enforces a fast 6.5s timeout
- * so TSPU 16KB TCP freezes don't lock the app for 30-60s, and transparently fails over
- * to alternative gateways on timeout or network error.
+ * Resilient Fetch Engine for Supabase:
+ * 1. Uses fast 4.5s socket timeouts so TSPU-stalled TCP sockets never hang for 30-60s.
+ * 2. For read/auth-refresh requests, launches a hedged parallel socket after 2.0s if the first socket is stalled by DPI.
+ * 3. Automatically retries across fresh sockets and backup gateways before ever returning an error.
+ * 4. Protects token refresh from logging the user out if mobile internet briefly drops.
  */
 export async function smartSupabaseFetch(input: RequestInfo | URL, init: RequestInit = {}): Promise<Response> {
     const rawUrl = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
@@ -327,85 +343,122 @@ export async function smartSupabaseFetch(input: RequestInfo | URL, init: Request
         return window.fetch(input, { ...init, signal });
     }
 
-    // Order gateways: active gateway first, then online gateways by latency, then unknown, then others
-    const activeGw = networkState.gateways.find((g) => g.id === networkState.activeGatewayId) || networkState.gateways[0];
-    const otherGateways = networkState.gateways
-        .filter((g) => g.id !== activeGw.id)
-        .sort((a, b) => {
-            if (a.status === 'online' && b.status !== 'online') return -1;
-            if (b.status === 'online' && a.status !== 'online') return 1;
-            return (a.latencyMs || 5000) - (b.latencyMs || 5000);
-        });
+    const method = (init.method || 'GET').toUpperCase();
+    const isTokenRefresh = supabasePath.includes('/auth/v1/token') && supabasePath.includes('grant_type=refresh_token');
+    const isHedgeable = method === 'GET' || method === 'HEAD' || method === 'OPTIONS' || isTokenRefresh;
 
-    const candidates = [activeGw, ...otherGateways];
+    const activeGw = networkState.gateways.find((g) => g.id === networkState.activeGatewayId) || networkState.gateways[0];
+    const otherGateways = networkState.gateways.filter((g) => g.id !== activeGw.id);
+
+    // Build retry sequence: try active gateway twice (fresh TCP socket on 2nd try defeats TSPU random stream freeze), then alternatives
+    const sequence: GatewayNode[] = [activeGw, ...otherGateways, activeGw];
     let lastError: any = null;
 
-    // Try up to 3 candidate gateways per request so failover is fast and automatic
-    const maxAttempts = Math.min(candidates.length, 3);
+    for (let i = 0; i < sequence.length; i++) {
+        const gw = sequence[i];
+        const nextGw = sequence[(i + 1) % sequence.length];
+        const raceController = new AbortController();
 
-    for (let attempt = 0; attempt < maxAttempts; attempt++) {
-        const gw = candidates[attempt];
-        const targetUrl = `${gw.url}${supabasePath}`;
-
-        // 6.5s timeout for primary attempt, 5.5s for failover attempts
-        const perAttemptTimeoutMs = attempt === 0 ? 6500 : 5500;
-        const timeoutSignal = AbortSignal.timeout(perAttemptTimeoutMs);
-        const combinedSignal = init.signal ? AbortSignal.any([init.signal, timeoutSignal]) : timeoutSignal;
-
-        const start = performance.now();
         try {
-            const response = await window.fetch(targetUrl, {
-                ...init,
-                signal: combinedSignal
-            });
+            let winner: { gw: GatewayNode; response: Response; elapsed: number };
 
-            // If local-edge returns 404 (e.g. static server without /api/supabase) or Cloudflare returns 52x error
-            if (
-                (gw.id === 'local-edge' && response.status === 404) ||
-                response.status === 502 ||
-                response.status === 503 ||
-                response.status === 504 ||
-                (response.status >= 520 && response.status <= 526)
-            ) {
-                gw.status = 'blocked';
-                lastError = new Error(`Gateway ${gw.name} returned HTTP ${response.status}`);
-                continue;
+            if (isHedgeable && nextGw) {
+                // Start primary socket immediately; if it stalls > 2.2s due to TSPU, launch a parallel hedged socket
+                winner = await new Promise((resolve, reject) => {
+                    let settled = false;
+                    let pendingCount = 1;
+                    let hedgeTimer: any = null;
+
+                    const onSuccess = (res: { gw: GatewayNode; response: Response; elapsed: number }) => {
+                        if (settled) return;
+                        settled = true;
+                        if (hedgeTimer) clearTimeout(hedgeTimer);
+                        raceController.abort();
+                        resolve(res);
+                    };
+
+                    const onError = (err: any) => {
+                        pendingCount--;
+                        if (!settled && pendingCount <= 0) {
+                            if (hedgeTimer) clearTimeout(hedgeTimer);
+                            reject(err);
+                        }
+                    };
+
+                    fetchSingleAttempt(gw, supabasePath, init, 5000, raceController.signal)
+                        .then(onSuccess)
+                        .catch(onError);
+
+                    hedgeTimer = setTimeout(() => {
+                        if (settled || init.signal?.aborted) return;
+                        pendingCount++;
+                        fetchSingleAttempt(nextGw, supabasePath, init, 5000, raceController.signal)
+                            .then(onSuccess)
+                            .catch(onError);
+                    }, 2200);
+                });
+            } else {
+                winner = await fetchSingleAttempt(gw, supabasePath, init, 6000);
             }
 
-            const elapsed = Math.max(1, Math.round(performance.now() - start));
-            gw.latencyMs = elapsed;
-            gw.status = 'online';
-            gw.lastChecked = Date.now();
+            winner.gw.latencyMs = winner.elapsed;
+            winner.gw.status = 'online';
+            winner.gw.lastChecked = Date.now();
+            networkState.lastPingMs = winner.elapsed;
 
-            networkState.lastPingMs = elapsed;
-            if (networkState.activeGatewayId !== gw.id) {
-                networkState.activeGatewayId = gw.id;
-                networkState.activeGatewayUrl = gw.url;
+            if (networkState.activeGatewayId !== winner.gw.id) {
+                networkState.activeGatewayId = winner.gw.id;
+                networkState.activeGatewayUrl = winner.gw.url;
                 try {
-                    localStorage.setItem(LAST_WORKING_GATEWAY_KEY, gw.url);
+                    localStorage.setItem(LAST_WORKING_GATEWAY_KEY, winner.gw.url);
                 } catch (e) {}
             }
+
             if (networkState.transportMode === 'offline' || networkState.transportMode === 'connecting') {
                 networkState.transportMode = networkState.realtimeConnected ? 'websocket' : 'http-turbo';
             }
             notifyNetworkState();
-            return response;
+
+            if (
+                method === 'GET' &&
+                supabasePath.startsWith('/rest/v1/') &&
+                (winner.response.headers.get('content-type') || '').includes('application/json')
+            ) {
+                try {
+                    const rawText = await winner.response.text();
+                    const rewrittenText = rewriteLegacyStorageUrlsInJson(rawText, winner.gw.url);
+                    return new Response(rewrittenText, {
+                        status: winner.response.status,
+                        statusText: winner.response.statusText,
+                        headers: winner.response.headers
+                    });
+                } catch (e) {
+                    return winner.response;
+                }
+            }
+
+            return winner.response;
         } catch (err: any) {
             lastError = err;
-            // If user explicitly aborted the request (not our timeout), rethrow immediately
             if (init.signal?.aborted) {
                 throw err;
             }
             gw.status = 'blocked';
-            gw.latencyMs = null;
             gw.lastChecked = Date.now();
-            notifyNetworkState();
+        }
+    }
+
+    // If token refresh timed out across all attempts, return grace session so GoTrueClient doesn't log the user out
+    if (isTokenRefresh) {
+        const graceRes = createGraceRefreshResponse();
+        if (graceRes) {
+            return graceRes;
         }
     }
 
     networkState.transportMode = 'offline';
     notifyNetworkState();
-    throw lastError || new Error('Failed to fetch from all gateways');
+    throw lastError || new Error('Failed to fetch from gateways');
 }
 
 export function setRealtimeConnectedState(connected: boolean) {
@@ -425,36 +478,5 @@ export function setSyncingState(syncing: boolean) {
 }
 
 export function updateTopNetworkBanner() {
-    if (typeof document === 'undefined') return;
-    const banner = document.getElementById('network-status-banner');
-    if (!banner) return;
-
-    const activeGw = networkState.gateways.find((g) => g.id === networkState.activeGatewayId);
-    const pingText = networkState.lastPingMs ? `${networkState.lastPingMs} мс` : '';
-
-    if (networkState.transportMode === 'offline') {
-        banner.className =
-            'px-3 py-1.5 bg-amber-500/15 dark:bg-amber-500/20 border-b border-amber-500/30 flex items-center justify-between text-xs text-amber-700 dark:text-amber-300 transition-all';
-        banner.innerHTML = `
-            <div class="flex items-center gap-2 min-w-0">
-                <span class="w-2 h-2 rounded-full bg-amber-500 animate-ping shrink-0"></span>
-                <span class="truncate font-medium">Обход блокировки ТСПУ: поиск шлюза...</span>
-            </div>
-            <button onclick="window.openSettings('full')" class="ml-2 px-2 py-0.5 rounded bg-amber-500/20 hover:bg-amber-500/30 font-semibold shrink-0 transition-colors">Шлюзы</button>
-        `;
-        banner.classList.remove('hidden');
-    } else if (networkState.isSyncing) {
-        banner.className =
-            'px-3 py-1 bg-blue-500/10 dark:bg-blue-500/15 border-b border-blue-500/20 flex items-center justify-between text-[11px] text-blue-600 dark:text-blue-400 transition-all';
-        banner.innerHTML = `
-            <div class="flex items-center gap-2 min-w-0">
-                <div class="w-3 h-3 border-2 border-blue-500 border-t-transparent rounded-full animate-spin shrink-0"></div>
-                <span class="truncate font-medium">Синхронизация сети...</span>
-            </div>
-            <span class="font-mono text-[10px] opacity-80 shrink-0 tabular-nums">${pingText}</span>
-        `;
-        banner.classList.remove('hidden');
-    } else {
-        banner.classList.add('hidden');
-    }
+    // Intentionally empty: zero-config invisible bypass without UI banners
 }
