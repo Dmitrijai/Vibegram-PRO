@@ -1,7 +1,7 @@
 import { state, supabase } from './supabase';
 import { isSelectionMode } from './selection';
 import { cancelReply, loadMessages } from './messages';
-import { scrollToBottom } from './utils';
+import { scrollToBottom, escapeHtml } from './utils';
 
 export function toggleReactionMenu(e: Event, msgId: string) {
     if (state.isTechSupportChat) return;

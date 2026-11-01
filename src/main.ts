@@ -215,10 +215,14 @@ window.addEventListener('popstate', (e) => {
 
 const urlParams = new URLSearchParams(window.location.search);
 
-// Cache original hash on startup to handle PWA cold start with deep links
+// Cache original hash/search on startup to handle PWA cold start with deep links
+if (window.location.search) {
+    sessionStorage.setItem('initial_search', window.location.search);
+} else {
+    sessionStorage.removeItem('initial_search');
+}
 if (!sessionStorage.getItem('initial_hash_handled')) {
     sessionStorage.setItem('initial_hash', window.location.hash);
-    sessionStorage.setItem('initial_search', window.location.search);
 }
 
 // Initialize app
@@ -231,6 +235,7 @@ let isHandlingIdToken = false;
 let subscriptionsSetup = false;
 let hybridMsgTimer: any = null;
 let hybridChatsTimer: any = null;
+let lastAuthLogKey = '';
 
 if (idToken) {
     isHandlingIdToken = true;
@@ -289,11 +294,21 @@ supabase.auth.getSession().then(({ data: { session }, error }) => {
 });
 
 supabase.auth.onAuthStateChange((event, session) => {
-    console.log("Auth State Changed:", event, "Session exists?", !!session);
-    if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION' || event === 'TOKEN_REFRESHED') {
+    const authLogKey = `${event}:${session?.user?.id || 'none'}`;
+    if (authLogKey !== lastAuthLogKey) {
+        lastAuthLogKey = authLogKey;
+        console.log("Auth State Changed:", event, "Session exists?", !!session);
+    }
+
+    if (event === 'TOKEN_REFRESHED') {
+        if (session?.user) state.currentUser = session.user;
+        return;
+    }
+
+    if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION') {
         if (session?.user || state.currentUser) {
             if (session?.user) state.currentUser = session.user;
-            logic.checkUser(event);
+            logic.checkUser(event, session?.user);
             setupRealtime();
         } else if (event === 'INITIAL_SESSION' && !isHandlingIdToken && !state.currentUser) {
             document.getElementById('auth-screen')!.classList.remove('hidden');

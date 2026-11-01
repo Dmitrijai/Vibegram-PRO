@@ -32,7 +32,7 @@ export function hydrateFromCacheOnBoot(): boolean {
                 avatar_url: tokenUser.user_metadata?.avatar_url || tokenUser.user_metadata?.picture || null,
                 settings: {}
             };
-            cached = { user: tokenUser, profile: fallbackProfile, savedAt: Date.now() };
+            cached = { user: tokenUser, profile: fallbackProfile, updatedAt: Date.now() };
         }
 
         state.currentUser = cached.user;
@@ -86,13 +86,39 @@ export async function loginWithGoogle() {
     }
 }
 
-export async function checkUser(authEvent?: string) {
+let isCheckingUser = false;
+let lastCheckUserTime = 0;
+let lastCheckedUserId = '';
+
+export async function checkUser(authEvent?: string, sessionUser?: any) {
     if ((window as any).originalAdminUser) return;
+    if (isCheckingUser) return;
+
+    const candidateUser = sessionUser || state.currentUser;
+    const now = Date.now();
+    if (
+        authEvent &&
+        hasFinalizedAppSetup &&
+        candidateUser?.id &&
+        candidateUser.id === lastCheckedUserId &&
+        now - lastCheckUserTime < 25000 &&
+        !state.pendingLockType
+    ) {
+        return;
+    }
+
+    isCheckingUser = true;
     try {
         if ("Notification" in window && Notification.permission === "default") {
             Notification.requestPermission();
         }
-        const { data: { user }, error } = await supabase.auth.getUser();
+        let user = sessionUser || state.currentUser || null;
+        let error: any = null;
+        if (!user) {
+            const res = await supabase.auth.getUser();
+            user = res.data?.user || null;
+            error = res.error;
+        }
         if (error) {
             console.error('Auth error:', error.message || error);
             if (error.message?.includes('claim in JWT') || error.message?.includes('session') || (error as any).status === 403) {
@@ -115,6 +141,8 @@ export async function checkUser(authEvent?: string) {
             return;
         }
         if (user) {
+            lastCheckedUserId = user.id;
+            lastCheckUserTime = Date.now();
             const SUPABASE_URL = supabase['supabaseUrl'] || 'default';
             const deviceRegKey = 'vibegram_device_registered_' + SUPABASE_URL;
             const registeredUserIdKey = 'vibegram_registered_user_id_' + SUPABASE_URL;
@@ -144,7 +172,7 @@ export async function checkUser(authEvent?: string) {
             }
 
             state.currentUser = user;
-            let { data } = await supabase.from('profiles').select('*').eq('id', user.id).single();
+            let { data } = await supabase.from('profiles').select('*').eq('id', user.id).maybeSingle();
             
             // Fallback if trigger failed to create profile
             if (!data) {
@@ -155,9 +183,10 @@ export async function checkUser(authEvent?: string) {
                 }
                 const avatarUrl = user.user_metadata?.avatar_url || user.user_metadata?.picture || null;
                 await supabase.from('profiles').insert({ id: user.id, display_name: nickname, username, avatar_url: avatarUrl });
-                const { data: newData } = await supabase.from('profiles').select('*').eq('id', user.id).single();
+                const { data: newData } = await supabase.from('profiles').select('*').eq('id', user.id).maybeSingle();
                 data = newData;
             }
+            if (!data) return;
             
             state.currentProfile = data;
             saveCachedBootstrap(user, data);
@@ -209,6 +238,8 @@ export async function checkUser(authEvent?: string) {
             loader.classList.add('opacity-0', 'pointer-events-none');
             setTimeout(() => loader.remove(), 300);
         }
+    } finally {
+        isCheckingUser = false;
     }
 }
 
@@ -484,6 +515,7 @@ function finalizeAppSetup(isFromCache = false) {
                 const initialSearch = sessionStorage.getItem('initial_search') || window.location.search;
                 const urlParams = new URLSearchParams(initialSearch);
                 const queryMiniapp = urlParams.get('miniapp');
+                sessionStorage.removeItem('initial_search');
                 if (queryMiniapp) {
                     import('./miniapps').then(m => m.runStandaloneMiniApp(queryMiniapp));
                 }
@@ -504,30 +536,32 @@ export function startVibHeartbeat() {
     if (vibHeartbeatTimer) clearInterval(vibHeartbeatTimer);
     
     lastHeartbeatTime = Date.now();
-    // Check initially (don't increment time, just initialize)
-    processVibHeartbeat(0);
-    
-    // Check every 15 seconds
+    // Check every 60 seconds instead of 15s to avoid unnecessary background DB traffic
     vibHeartbeatTimer = setInterval(() => {
+        if (document.hidden) {
+            lastHeartbeatTime = Date.now();
+            return;
+        }
         const now = Date.now();
         let elapsedSecs = Math.floor((now - lastHeartbeatTime) / 1000);
         lastHeartbeatTime = now;
         
-        // Cap elapsed time to 20 seconds in case of sleep/suspend to prevent fake farming
-        if (elapsedSecs > 20) elapsedSecs = 15;
+        if (elapsedSecs > 75) elapsedSecs = 60;
         if (elapsedSecs < 0) elapsedSecs = 0;
         
         processVibHeartbeat(elapsedSecs);
-    }, 15000);
+    }, 60000);
 }
 
 async function processVibHeartbeat(elapsedSeconds: number) {
     if (!state.currentUser || (window as any).originalAdminUser) return;
     try {
-        const { data: profile, error: dbErr } = await supabase.from('profiles').select('settings').eq('id', state.currentUser.id).single();
-        if (dbErr || !profile) return;
-        
-        let settings = profile.settings || {};
+        let settings = state.currentProfile?.settings;
+        if (!settings) {
+            const { data: profile, error: dbErr } = await supabase.from('profiles').select('settings').eq('id', state.currentUser.id).maybeSingle();
+            if (dbErr || !profile) return;
+            settings = profile.settings || {};
+        }
         let weekly = settings.vib_weekly || {};
         
         const now = new Date();

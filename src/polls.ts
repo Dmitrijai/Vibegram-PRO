@@ -1,5 +1,5 @@
 import { supabase, state } from './supabase';
-import { customToast } from './utils';
+import { customToast, escapeHtml } from './utils';
 
 let editingPollId: string | null = null;
 let currentPollId: string | null = null;

@@ -12,11 +12,34 @@ const CUSTOM_GATEWAY_KEY = 'vibegram_custom_gateway';
 const PREFERRED_GATEWAY_KEY = 'vibegram_preferred_gateway_id';
 const LAST_WORKING_GATEWAY_KEY = 'vibegram_last_working_gateway_url';
 
+// Dedicated Database & Auth Edge Gateways (isolated HTTP/2 pool for fast JSON queries)
 export const PRIMARY_WORKER_URL = 'https://vibegram-edge-gw.vercel.app';
 export const SECONDARY_EDGE_URL = 'https://vibegram-ru-node.vercel.app';
 export const TERTIARY_EDGE_URL = 'https://vibegram-net-proxy.vercel.app';
 
+// Dedicated Media CDN Edge Gateways (isolated HTTP/2 pool so large video/audio streams never block DB queries)
+export const MEDIA_CDN_PRIMARY_URL = 'https://vibegram-media-cdn.vercel.app';
+export const MEDIA_CDN_SECONDARY_URL = 'https://vibegram-media-ru.vercel.app';
+
+// Dedicated AI & Server-Side Transcription Edge Gateway
+export const AI_GATEWAY_URL = 'https://vibegram-ai-gw.vercel.app';
+
 export const EDGE_GATEWAY_URLS = [
+    PRIMARY_WORKER_URL,
+    SECONDARY_EDGE_URL,
+    TERTIARY_EDGE_URL
+];
+
+export const MEDIA_GATEWAY_URLS = [
+    MEDIA_CDN_PRIMARY_URL,
+    MEDIA_CDN_SECONDARY_URL,
+    PRIMARY_WORKER_URL,
+    SECONDARY_EDGE_URL,
+    TERTIARY_EDGE_URL
+];
+
+export const AI_GATEWAY_URLS = [
+    AI_GATEWAY_URL,
     PRIMARY_WORKER_URL,
     SECONDARY_EDGE_URL,
     TERTIARY_EDGE_URL
@@ -40,6 +63,7 @@ export function isDeadGatewayUrl(url: string): boolean {
 export const networkState = {
     activeGatewayId: 'edge-gw-1',
     activeGatewayUrl: PRIMARY_WORKER_URL,
+    activeMediaGatewayUrl: MEDIA_CDN_PRIMARY_URL,
     lastPingMs: null as number | null,
     realtimeConnected: false,
     transportMode: 'http-turbo' as 'websocket' | 'http-turbo' | 'connecting' | 'offline',
@@ -52,16 +76,52 @@ export function getActiveGatewayBaseUrl(): string {
     return (networkState.activeGatewayUrl || PRIMARY_WORKER_URL).replace(/\/+$/, '');
 }
 
+export function getActiveMediaGatewayBaseUrl(): string {
+    return (networkState.activeMediaGatewayUrl || MEDIA_CDN_PRIMARY_URL).replace(/\/+$/, '');
+}
+
 /**
- * Optimizes Cloudinary image paths with f_auto,q_auto,w_1280,c_limit while keeping video paths
- * exact so HTTP/2 206 Partial Content byte-range streaming starts in <100ms on first hit.
+ * Optimizes Cloudinary image, video, and voice paths on the fly:
+ * - Images: f_auto,q_auto:good,w_1280,c_limit (~40 KB WebP/AVIF)
+ * - Voice messages (_voice or audio extensions): f_mp3,br_64k (.mp3, ~35 KB)
+ * - Videos & Video Circles (.mov, .mp4, .webm): f_mp4,vc_h264,q_auto:eco,w_480,c_limit (.mp4)
+ *   This shrinks 59 MB raw QuickTime .mov files down to ~2 MB H.264 MP4 so they stream
+ *   instantly without triggering TSPU 16KB/4.5MB connection resets!
  */
 function optimizeCloudinaryPath(pathAfterDomain: string, addAutoQuality = true): string {
     if (!addAutoQuality) return pathAfterDomain;
+
+    // 1. Optimize images
     const imageMatch = pathAfterDomain.match(/^(\/[^/]+\/image\/upload\/)(v\d+\/.*)$/);
     if (imageMatch) {
-        return `${imageMatch[1]}f_auto,q_auto,w_1280,c_limit/${imageMatch[2]}`;
+        return `${imageMatch[1]}f_auto,q_auto:good,w_1280,c_limit/${imageMatch[2]}`;
     }
+
+    // 2. Optimize videos and voice notes stored under /video/upload/
+    const videoMatch = pathAfterDomain.match(/^(\/[^/]+\/video\/upload\/)(?:[^/]+\/)?(v\d+\/.+?)(\.[a-zA-Z0-9]+)?(\?.*)?$/);
+    if (videoMatch) {
+        const prefix = videoMatch[1];
+        const publicIdWithVersion = videoMatch[2];
+        const ext = (videoMatch[3] || '').toLowerCase();
+        const query = videoMatch[4] || '';
+        const lowerId = publicIdWithVersion.toLowerCase();
+
+        const isAudioOnly =
+            lowerId.includes('_voice') ||
+            lowerId.includes('voice_') ||
+            ext === '.mp3' ||
+            ext === '.ogg' ||
+            ext === '.wav' ||
+            ext === '.m4a' ||
+            ext === '.aac';
+
+        if (isAudioOnly) {
+            return `${prefix}f_mp3,br_64k/${publicIdWithVersion}.mp3${query}`;
+        }
+
+        return `${prefix}f_mp4,vc_h264,q_auto:eco,w_480,c_limit/${publicIdWithVersion}.mp4${query}`;
+    }
+
     return pathAfterDomain;
 }
 
@@ -81,7 +141,7 @@ export function getVideoPosterUrl(rawVideoUrl: string | null | undefined): strin
 
 /**
  * Generates a lightweight 48kbps MP3 audio stream URL from any Cloudinary video/audio URL.
- * Reduces a 14 MB video circle to ~80 KB of audio so AI transcription downloads in <0.3s!
+ * Reduces a 14 MB video circle or 59 MB video to ~80 KB of audio so AI transcription downloads in <0.2s!
  */
 export function getOptimizedAudioForTranscriptionUrl(rawMediaUrl: string): string {
     if (!rawMediaUrl || typeof rawMediaUrl !== 'string') return rawMediaUrl;
@@ -96,87 +156,90 @@ export function getOptimizedAudioForTranscriptionUrl(rawMediaUrl: string): strin
 /**
  * Rewrites any blocked media or AI URL (res.cloudinary.com, supabase.co/storage,
  * generativelanguage.googleapis.com, router.huggingface.co, image.pollinations.ai)
- * to route through the active AWS Edge Gateway.
+ * to route through the dedicated Media CDN or AI Edge Gateways.
  */
 export function rewriteMediaUrl(rawUrl: string | null | undefined, targetGwUrl?: string, addAutoQuality = true): string {
     if (!rawUrl || typeof rawUrl !== 'string') return rawUrl || '';
     const trimmed = rawUrl.trim();
     if (!trimmed.startsWith('http')) return trimmed;
 
-    const cleanGw = (targetGwUrl || getActiveGatewayBaseUrl()).replace(/\/+$/, '');
+    const mediaGw = (targetGwUrl || getActiveMediaGatewayBaseUrl()).replace(/\/+$/, '');
+    const aiGw = (targetGwUrl || AI_GATEWAY_URL).replace(/\/+$/, '');
+    const dbGw = (targetGwUrl || getActiveGatewayBaseUrl()).replace(/\/+$/, '');
 
-    // 1. Direct res.cloudinary.com URLs
+    // 1. Direct res.cloudinary.com URLs -> Dedicated Media CDN Gateway
     if (trimmed.startsWith('https://res.cloudinary.com/')) {
         const rest = optimizeCloudinaryPath(trimmed.substring('https://res.cloudinary.com'.length), addAutoQuality);
-        return `${cleanGw}/cloudinary${rest}`;
+        return `${mediaGw}/cloudinary${rest}`;
     }
 
-    // 2. Already-proxied /cloudinary/ URLs when switching gateways
+    // 2. Already-proxied /cloudinary/ URLs when switching gateways or optimizing
     const existingCloudinaryIdx = trimmed.indexOf('/cloudinary/');
     if (existingCloudinaryIdx !== -1) {
         let rest = trimmed.substring(existingCloudinaryIdx + '/cloudinary'.length);
-        if (!addAutoQuality) {
-            rest = rest
-                .replace('/video/upload/q_auto/v', '/video/upload/v')
-                .replace('/image/upload/f_auto,q_auto,w_1280,c_limit/v', '/image/upload/v')
-                .replace('/image/upload/f_auto,q_auto/v', '/image/upload/v');
+        // Strip previous transformations before re-applying or removing
+        rest = rest
+            .replace(/\/video\/upload\/[^/]+\/v(\d+)\//, '/video/upload/v$1/')
+            .replace(/\/image\/upload\/[^/]+\/v(\d+)\//, '/image/upload/v$1/');
+        if (addAutoQuality) {
+            rest = optimizeCloudinaryPath(rest, true);
         }
-        return `${cleanGw}/cloudinary${rest}`;
+        return `${mediaGw}/cloudinary${rest}`;
     }
 
-    // 3. Direct api.cloudinary.com upload/destroy URLs
+    // 3. Direct api.cloudinary.com upload/destroy URLs -> Dedicated Media CDN Gateway
     if (trimmed.startsWith('https://api.cloudinary.com/')) {
         const rest = trimmed.substring('https://api.cloudinary.com'.length);
-        return `${cleanGw}/cloudinary-api${rest}`;
+        return `${mediaGw}/cloudinary-api${rest}`;
     }
     const existingCloudApiIdx = trimmed.indexOf('/cloudinary-api/');
     if (existingCloudApiIdx !== -1) {
         const rest = trimmed.substring(existingCloudApiIdx + '/cloudinary-api'.length);
-        return `${cleanGw}/cloudinary-api${rest}`;
+        return `${mediaGw}/cloudinary-api${rest}`;
     }
 
-    // 4. Google Gemini API URLs (bypasses RU IP geo-block 400 FAILED_PRECONDITION)
+    // 4. Google Gemini API URLs -> Dedicated AI Gateway
     if (trimmed.startsWith('https://generativelanguage.googleapis.com/')) {
         const rest = trimmed.substring('https://generativelanguage.googleapis.com'.length);
-        return `${cleanGw}/gemini${rest}`;
+        return `${aiGw}/gemini${rest}`;
     }
     const existingGeminiIdx = trimmed.indexOf('/gemini/');
     if (existingGeminiIdx !== -1) {
         const rest = trimmed.substring(existingGeminiIdx + '/gemini'.length);
-        return `${cleanGw}/gemini${rest}`;
+        return `${aiGw}/gemini${rest}`;
     }
 
-    // 5. HuggingFace Router / Inference URLs
+    // 5. HuggingFace Router / Inference URLs -> Dedicated AI Gateway
     if (trimmed.startsWith('https://router.huggingface.co/')) {
         const rest = trimmed.substring('https://router.huggingface.co'.length);
-        return `${cleanGw}/hf${rest}`;
+        return `${aiGw}/hf${rest}`;
     }
     if (trimmed.startsWith('https://api-inference.huggingface.co/')) {
         const rest = trimmed.substring('https://api-inference.huggingface.co'.length);
-        return `${cleanGw}/hf${rest}`;
+        return `${aiGw}/hf${rest}`;
     }
     const existingHfIdx = trimmed.indexOf('/hf/');
     if (existingHfIdx !== -1) {
         const rest = trimmed.substring(existingHfIdx + '/hf'.length);
-        return `${cleanGw}/hf${rest}`;
+        return `${aiGw}/hf${rest}`;
     }
 
-    // 6. Pollinations AI Image Generation URLs
+    // 6. Pollinations AI Image Generation URLs -> Dedicated AI Gateway
     if (trimmed.startsWith('https://image.pollinations.ai/')) {
         const rest = trimmed.substring('https://image.pollinations.ai'.length);
-        return `${cleanGw}/pollinations${rest}`;
+        return `${aiGw}/pollinations${rest}`;
     }
     const existingPollinationsIdx = trimmed.indexOf('/pollinations/');
     if (existingPollinationsIdx !== -1) {
         const rest = trimmed.substring(existingPollinationsIdx + '/pollinations'.length);
-        return `${cleanGw}/pollinations${rest}`;
+        return `${aiGw}/pollinations${rest}`;
     }
 
     // 7. Legacy or direct Supabase storage URLs
     const storageIdx = trimmed.indexOf('/storage/v1/');
     if (storageIdx !== -1) {
         const rest = trimmed.substring(storageIdx);
-        return `${cleanGw}${rest}`;
+        return `${dbGw}${rest}`;
     }
 
     return trimmed;
@@ -185,21 +248,22 @@ export function rewriteMediaUrl(rawUrl: string | null | undefined, targetGwUrl?:
 /**
  * Rewrites all blocked storage and Cloudinary URLs inside raw JSON text
  * before JSON.parse() runs, so both network responses and localStorage caches
- * immediately point to our working AWS Edge Gateway.
+ * immediately point to our working Media CDN & DB Edge Gateways.
  */
 export function rewriteLegacyStorageUrlsInJson(jsonText: string, activeGwUrl?: string): string {
     if (!jsonText) return jsonText;
     const hasStorage = jsonText.includes('/storage/v1/');
-    const hasCloudinary = jsonText.includes('res.cloudinary.com/');
+    const hasCloudinary = jsonText.includes('res.cloudinary.com/') || jsonText.includes('/cloudinary/');
     if (!hasStorage && !hasCloudinary) return jsonText;
 
-    const cleanGw = (activeGwUrl || getActiveGatewayBaseUrl()).replace(/\/+$/, '');
+    const cleanDbGw = (activeGwUrl || getActiveGatewayBaseUrl()).replace(/\/+$/, '');
+    const cleanMediaGw = getActiveMediaGatewayBaseUrl();
     let result = jsonText;
 
     if (hasStorage) {
         result = result.replace(
             /https:\/\/[a-zA-Z0-9.-]+\/storage\/v1\//g,
-            `${cleanGw}/storage/v1/`
+            `${cleanDbGw}/storage/v1/`
         );
     }
 
@@ -208,7 +272,17 @@ export function rewriteLegacyStorageUrlsInJson(jsonText: string, activeGwUrl?: s
             /https:\/\/res\.cloudinary\.com\/([^"'\s\\]+)/g,
             (_match, pathPart) => {
                 const optimized = optimizeCloudinaryPath('/' + pathPart, true);
-                return `${cleanGw}/cloudinary${optimized}`;
+                return `${cleanMediaGw}/cloudinary${optimized}`;
+            }
+        );
+        result = result.replace(
+            /https:\/\/[a-zA-Z0-9.-]+\/cloudinary\/([^"'\s\\]+)/g,
+            (_match, pathPart) => {
+                const cleanPath = ('/' + pathPart)
+                    .replace(/\/video\/upload\/[^/]+\/v(\d+)\//, '/video/upload/v$1/')
+                    .replace(/\/image\/upload\/[^/]+\/v(\d+)\//, '/image/upload/v$1/');
+                const optimized = optimizeCloudinaryPath(cleanPath, true);
+                return `${cleanMediaGw}/cloudinary${optimized}`;
             }
         );
     }
@@ -240,7 +314,6 @@ export class EdgeVirtualWebSocket {
 
     constructor(url: string, _protocols?: string | string[]) {
         this.url = url;
-        // Stay in idle virtual state so RealtimeClient does not log errors or spin in reconnect loops
     }
 
     send(_data: string | ArrayBufferLike | Blob | ArrayBufferView): void {}
@@ -271,6 +344,7 @@ export function installMediaProxyInterceptor() {
             rawUrl &&
             (rawUrl.startsWith('https://res.cloudinary.com/') ||
                 rawUrl.startsWith('https://api.cloudinary.com/') ||
+                rawUrl.includes('/cloudinary/') ||
                 rawUrl.includes('/cloudinary-api/') ||
                 rawUrl.startsWith('https://generativelanguage.googleapis.com/') ||
                 rawUrl.includes('/gemini/') ||
@@ -280,9 +354,16 @@ export function installMediaProxyInterceptor() {
                 rawUrl.startsWith('https://image.pollinations.ai/') ||
                 rawUrl.includes('/pollinations/'))
         ) {
-            const gateways = networkState.gateways.length > 0
-                ? networkState.gateways.map((g) => g.url)
-                : EDGE_GATEWAY_URLS;
+            const isAiRequest =
+                rawUrl.startsWith('https://generativelanguage.googleapis.com/') ||
+                rawUrl.includes('/gemini/') ||
+                rawUrl.startsWith('https://router.huggingface.co/') ||
+                rawUrl.startsWith('https://api-inference.huggingface.co/') ||
+                rawUrl.includes('/hf/') ||
+                rawUrl.startsWith('https://image.pollinations.ai/') ||
+                rawUrl.includes('/pollinations/');
+
+            const gateways = isAiRequest ? AI_GATEWAY_URLS : MEDIA_GATEWAY_URLS;
 
             let lastErr: any = null;
             for (const gwUrl of gateways) {
@@ -301,12 +382,16 @@ export function installMediaProxyInterceptor() {
         return nativeFetch(input, init);
     };
 
+    const needsMediaRewrite = (val: string) =>
+        typeof val === 'string' &&
+        (val.includes('res.cloudinary.com/') ||
+            (val.includes('/cloudinary/') && (val.endsWith('.mov') || val.includes('.mov?'))));
+
     // 2. Intercept Element.prototype.setAttribute for src / data-src / style
     const origSetAttribute = Element.prototype.setAttribute;
     Element.prototype.setAttribute = function (name: string, value: string) {
         if (
-            typeof value === 'string' &&
-            value.includes('res.cloudinary.com/') &&
+            needsMediaRewrite(value) &&
             (name === 'src' || name === 'data-src' || name === 'href' || name === 'poster')
         ) {
             value = rewriteMediaUrl(value);
@@ -326,7 +411,7 @@ export function installMediaProxyInterceptor() {
                     return desc.get!.call(this);
                 },
                 set(val: string) {
-                    if (typeof val === 'string' && val.includes('res.cloudinary.com/')) {
+                    if (needsMediaRewrite(val)) {
                         val = rewriteMediaUrl(val);
                     }
                     desc.set!.call(this, val);
@@ -341,11 +426,11 @@ export function installMediaProxyInterceptor() {
     const sanitizeNode = (node: Element) => {
         if (node.tagName === 'IMG' || node.tagName === 'VIDEO' || node.tagName === 'AUDIO' || node.tagName === 'SOURCE') {
             const src = node.getAttribute('src');
-            if (src && src.includes('res.cloudinary.com/')) {
+            if (src && needsMediaRewrite(src)) {
                 origSetAttribute.call(node, 'src', rewriteMediaUrl(src));
             }
             const dataSrc = node.getAttribute('data-src');
-            if (dataSrc && dataSrc.includes('res.cloudinary.com/')) {
+            if (dataSrc && needsMediaRewrite(dataSrc)) {
                 origSetAttribute.call(node, 'data-src', rewriteMediaUrl(dataSrc));
             }
         }
@@ -629,8 +714,8 @@ function createGraceRefreshResponse(): Response | null {
 
         const graceSession = {
             ...parsed,
-            expires_in: 90,
-            expires_at: Math.floor(Date.now() / 1000) + 90
+            expires_in: 3600,
+            expires_at: Math.floor(Date.now() / 1000) + 3600
         };
         return new Response(JSON.stringify(graceSession), {
             status: 200,
@@ -643,10 +728,9 @@ function createGraceRefreshResponse(): Response | null {
 
 /**
  * Resilient Fetch Engine for Supabase:
- * - Routes exclusively through verified AWS Anycast Edge Gateways (never blocked Cloudflare/direct domains).
- * - Launches a hedged parallel socket on the secondary Edge Gateway after 1.8s if the primary socket stalls.
- * - Uses dedicated AbortControllers per socket so aborting a losing hedge socket NEVER aborts the winning Response stream.
- * - Automatically rewrites all Cloudinary & Supabase Storage URLs in JSON responses to the active Edge Gateway.
+ * - Routes Database/Auth queries through isolated AWS Anycast Edge Gateways (separate from Media CDN & AI pools).
+ * - Launches a hedged backup socket on the secondary Edge Gateway after 3.5s if the primary socket stalls.
+ * - Uses 12s per-attempt timeout so queued browser sockets never self-abort prematurely.
  */
 export async function smartSupabaseFetch(input: RequestInfo | URL, init: RequestInit = {}): Promise<Response> {
     const rawUrl = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
@@ -658,7 +742,7 @@ export async function smartSupabaseFetch(input: RequestInfo | URL, init: Request
 
     const method = (init.method || 'GET').toUpperCase();
     const isTokenRefresh = supabasePath.includes('/auth/v1/token') && supabasePath.includes('grant_type=refresh_token');
-    const isHedgeable = method === 'GET' || method === 'HEAD' || method === 'OPTIONS' || isTokenRefresh;
+    const isHedgeable = method === 'GET' || method === 'HEAD' || method === 'OPTIONS';
 
     const activeGw = networkState.gateways.find((g) => g.id === networkState.activeGatewayId) || networkState.gateways[0];
     const otherGateways = networkState.gateways.filter((g) => g.id !== activeGw.id);
@@ -707,7 +791,7 @@ export async function smartSupabaseFetch(input: RequestInfo | URL, init: Request
                         }
                     };
 
-                    fetchSingleAttempt(gw, supabasePath, init, 5000, ctrl1)
+                    fetchSingleAttempt(gw, supabasePath, init, 12000, ctrl1)
                         .then((res) => onSuccess(res, 1))
                         .catch(onError);
 
@@ -715,13 +799,13 @@ export async function smartSupabaseFetch(input: RequestInfo | URL, init: Request
                         if (settled || init.signal?.aborted) return;
                         hedgeStarted = true;
                         pendingCount++;
-                        fetchSingleAttempt(nextGw, supabasePath, init, 5000, ctrl2)
+                        fetchSingleAttempt(nextGw, supabasePath, init, 12000, ctrl2)
                             .then((res) => onSuccess(res, 2))
                             .catch(onError);
-                    }, 1800);
+                    }, 3500);
                 });
             } else {
-                winner = await fetchSingleAttempt(gw, supabasePath, init, 6000);
+                winner = await fetchSingleAttempt(gw, supabasePath, init, 12000);
             }
 
             winner.gw.latencyMs = winner.elapsed;

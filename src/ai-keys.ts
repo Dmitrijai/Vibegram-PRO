@@ -1,12 +1,11 @@
 import { customToast } from './utils';
 import { GoogleGenAI } from '@google/genai';
-import { getActiveGatewayBaseUrl, EDGE_GATEWAY_URLS } from './network';
+import { AI_GATEWAY_URLS } from './network';
 
 const obfuscatedKey = (process.env.GEMINI_API_KEY_OBFUSCATED as string) || "";
 let rawKeys = "";
 try {
     const reversed = obfuscatedKey.split('').reverse().join('');
-    // atob is available in browser for base64 decoding
     rawKeys = atob(reversed);
 } catch (e) {
     console.error("Failed to decode API keys:", e);
@@ -38,6 +37,21 @@ const keyStatus = new Map<string, number>();
 const hfKeyStatus = new Map<string, number>();
 const EXHAUSTED_COOLDOWN = 10 * 60 * 1000; // 10 minutes
 
+export function getAvailableGeminiKeys(): string[] {
+    if (API_KEYS.length === 0) return [];
+    const now = Date.now();
+    const active: string[] = [];
+    for (let i = 0; i < API_KEYS.length; i++) {
+        const idx = (currentKeyIndex + i) % API_KEYS.length;
+        const k = API_KEYS[idx];
+        if (now - (keyStatus.get(k) || 0) >= EXHAUSTED_COOLDOWN) {
+            active.push(k);
+        }
+    }
+    currentKeyIndex = (currentKeyIndex + 1) % API_KEYS.length;
+    return active.length > 0 ? active : [...API_KEYS];
+}
+
 function isQuotaError(error: any) {
     if (!error) return false;
     const msg = error.message?.toLowerCase() || '';
@@ -55,7 +69,8 @@ function isTransientOrLocationError(error: any) {
     const status = error.status || error.code;
     return status === 500 || status === 502 || status === 503 || status === 504 ||
            msg.includes('503') || msg.includes('500') || msg.includes('502') || msg.includes('504') ||
-           msg.includes('overloaded') || msg.includes('user location is not supported');
+           msg.includes('overloaded') || msg.includes('user location is not supported') ||
+           msg.includes('timed_out') || msg.includes('connection_reset') || msg.includes('networkerror');
 }
 
 export async function executeHfWithFallback<T>(action: (apiKey: string) => Promise<T>): Promise<T> {
@@ -86,7 +101,7 @@ export async function executeHfWithFallback<T>(action: (apiKey: string) => Promi
             
             if (isTransientOrLocationError(error) && transientRetries < 3) {
                  transientRetries++;
-                 await new Promise(r => setTimeout(r, 1200));
+                 await new Promise(r => setTimeout(r, 800));
                  continue;
             }
             
@@ -141,9 +156,7 @@ export async function executeAiWithFallback<T>(action: (ai: GoogleGenAI) => Prom
             continue;
         }
 
-        const gatewayBase = transientRetries === 0
-            ? getActiveGatewayBaseUrl()
-            : EDGE_GATEWAY_URLS[currentGatewayIndex % EDGE_GATEWAY_URLS.length];
+        const gatewayBase = AI_GATEWAY_URLS[currentGatewayIndex % AI_GATEWAY_URLS.length];
 
         const ai = new GoogleGenAI({
             apiKey,
@@ -157,16 +170,17 @@ export async function executeAiWithFallback<T>(action: (ai: GoogleGenAI) => Prom
         } catch (error: any) {
             lastError = error;
             
-            if (isTransientOrLocationError(error) && transientRetries < 3) {
+            if (isTransientOrLocationError(error) && transientRetries < 4) {
                  transientRetries++;
-                 currentGatewayIndex = (currentGatewayIndex + 1) % EDGE_GATEWAY_URLS.length;
-                 await new Promise(r => setTimeout(r, 800));
+                 currentGatewayIndex = (currentGatewayIndex + 1) % AI_GATEWAY_URLS.length;
+                 await new Promise(r => setTimeout(r, 500));
                  continue;
             }
             
             if (isQuotaError(error)) {
                 keyStatus.set(apiKey, Date.now());
                 currentKeyIndex = (currentKeyIndex + 1) % API_KEYS.length;
+                currentGatewayIndex = (currentGatewayIndex + 1) % AI_GATEWAY_URLS.length;
                 attempts++;
                 
                 let hasUnexhaustedKeys = false;

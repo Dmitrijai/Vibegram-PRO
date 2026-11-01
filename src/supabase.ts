@@ -132,11 +132,5 @@ export function broadcastUpdate(chatId: string, type: string = 'message') {
             event: 'update_trigger',
             payload: { chatId, type, senderId: state.currentUser?.id }
         }).catch(() => {});
-    } else if (state.globalChannel && typeof state.globalChannel.httpSend === 'function') {
-        state.globalChannel.httpSend('update_trigger', {
-            chatId,
-            type,
-            senderId: state.currentUser?.id
-        }).catch(() => {});
     }
 }

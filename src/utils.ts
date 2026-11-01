@@ -631,8 +631,8 @@ export async function softDeleteCloudinaryFile(fileUrl: string): Promise<boolean
             formData.append('timestamp', timestamp);
             formData.append('signature', signature);
             
-            const { getActiveGatewayBaseUrl } = await import('./network');
-            const res = await fetch(`${getActiveGatewayBaseUrl()}/cloudinary-api/v1_1/${cloudName}/${resourceType}/destroy`, {
+            const { getActiveMediaGatewayBaseUrl } = await import('./network');
+            const res = await fetch(`${getActiveMediaGatewayBaseUrl()}/cloudinary-api/v1_1/${cloudName}/${resourceType}/destroy`, {
                 method: 'POST',
                 body: formData
             });
@@ -678,8 +678,8 @@ export async function uploadToCloudinary(file: File | Blob, isAvatar = false, ab
             formData.append('timestamp', timestamp);
             formData.append('signature', signature);
             
-            const { getActiveGatewayBaseUrl, rewriteMediaUrl } = await import('./network');
-            const res = await fetch(`${getActiveGatewayBaseUrl()}/cloudinary-api/v1_1/${cloudName}/auto/upload`, {
+            const { getActiveMediaGatewayBaseUrl, rewriteMediaUrl } = await import('./network');
+            const res = await fetch(`${getActiveMediaGatewayBaseUrl()}/cloudinary-api/v1_1/${cloudName}/auto/upload`, {
                 method: 'POST',
                 body: formData,
                 signal: abortSignal
@@ -739,11 +739,12 @@ export async function uploadToCloudinary(file: File | Blob, isAvatar = false, ab
 
 (window as any).handleMediaError = function(el: HTMLElement, url: string) {
     let retries = parseInt(el.getAttribute('data-retries') || '0');
-    if (retries < 3) {
+    if (retries < 4) {
         el.setAttribute('data-retries', (retries + 1).toString());
-        import('./network').then(({ EDGE_GATEWAY_URLS, rewriteMediaUrl }) => {
-            const targetGw = EDGE_GATEWAY_URLS[(retries + 1) % EDGE_GATEWAY_URLS.length];
-            const useAutoQuality = retries < 2;
+        import('./network').then(({ MEDIA_GATEWAY_URLS, rewriteMediaUrl }) => {
+            const targetGw = MEDIA_GATEWAY_URLS[(retries + 1) % MEDIA_GATEWAY_URLS.length];
+            const isVideo = el.tagName === 'VIDEO' || url.includes('/video/upload/');
+            const useAutoQuality = isVideo ? true : retries < 2;
             const fallbackUrl = rewriteMediaUrl(url, targetGw, useAutoQuality);
             setTimeout(() => {
                 if (el.tagName === 'IMG') {
