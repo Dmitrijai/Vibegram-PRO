@@ -18,7 +18,7 @@ function deobfuscate(val: string | undefined): string {
 }
 
 // Default obfuscated public anon token fallback ONLY if CI secret is empty
-const FALLBACK_ANON_OBF = '==AUHxGXhAuL4cbhQZ06wXLhXrSTC9qmXu8bxYHx_Dnkuh.06N4923902:cxe,6828177771:tai,"nona":elor,"xcghifjzgqzqslfyoxd":fer,"esabapus":ssi{=9JCVXQiOiJ1c2MiOiJIUzI1NiIsInR5cCI6IkpXVCJ9';
+const FALLBACK_ANON_OBF = '==AUHxGXhAuL4cbhQZ06wLXhXrSTC9qmXu8bxYHx_Dnkuh.06N4923902:cxe,6828177771:tai,"nona":elor,"xcghifjzgqzqslfyoxd":fer,"esabapus":ssi{=9JCVXQiOiJ1c2MiOiJIUzI1NiIsInR5cCI6IkpXVCJ9';
 
 const rawSupabaseUrl =
     deobfuscate(process.env.SUPABASE_URL_OBFUSCATED) ||
@@ -26,8 +26,17 @@ const rawSupabaseUrl =
     (import.meta as any).env?.VITE_SUPABASE_URL ||
     PRIMARY_WORKER_URL;
 
+const rawBackupUrl =
+    deobfuscate((process.env as any).SUPABASE_BACKUP_URL_OBFUSCATED) ||
+    (process.env as any).SUPABASE_BACKUP_URL ||
+    (import.meta as any).env?.VITE_SUPABASE_BACKUP_URL ||
+    '';
+
 const cleanedEnvUrl = rawSupabaseUrl.replace(/\/rest\/v[0-9]+\/?$/, '').replace(/\/$/, '');
-const SUPABASE_URL = !isDeadGatewayUrl(cleanedEnvUrl) ? cleanedEnvUrl : PRIMARY_WORKER_URL;
+const SUPABASE_URL =
+    !isDeadGatewayUrl(cleanedEnvUrl) && !cleanedEnvUrl.includes('.supabase.co')
+        ? cleanedEnvUrl
+        : PRIMARY_WORKER_URL;
 
 const SUPABASE_KEY =
     deobfuscate(process.env.SUPABASE_ANON_KEY_OBFUSCATED) ||
@@ -56,7 +65,7 @@ try {
     }
 } catch (e) {}
 
-initNetworkManager(SUPABASE_URL, SUPABASE_KEY);
+initNetworkManager(SUPABASE_URL, SUPABASE_KEY, rawBackupUrl);
 
 // Lock-free queue per auth key to prevent navigator.locks 5000ms steal AbortError on slow mobile DPI connections
 const authLocks = new Map<string, Promise<any>>();

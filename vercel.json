@@ -1,13 +1,9 @@
 {
+  "version": 2,
   "rewrites": [
-    { "source": "/rest/v1/(.*)", "destination": "/api/proxy?target=supabase&path=/rest/v1/$1" },
-    { "source": "/auth/v1/(.*)", "destination": "/api/proxy?target=supabase&path=/auth/v1/$1" },
-    { "source": "/storage/v1/(.*)", "destination": "/api/proxy?target=supabase&path=/storage/v1/$1" },
-    { "source": "/functions/v1/(.*)", "destination": "/api/proxy?target=supabase&path=/functions/v1/$1" },
-    { "source": "/cloudinary/(.*)", "destination": "https://res.cloudinary.com/$1" },
-    { "source": "/cloudinary-api/(.*)", "destination": "https://api.cloudinary.com/$1" },
-    { "source": "/gemini/(.*)", "destination": "https://generativelanguage.googleapis.com/$1" },
-    { "source": "/hf/(.*)", "destination": "https://router.huggingface.co/$1" },
-    { "source": "/pollinations/(.*)", "destination": "https://image.pollinations.ai/$1" }
+    {
+      "source": "/(.*)",
+      "destination": "/api/proxy"
+    }
   ]
 }

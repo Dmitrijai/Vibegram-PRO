@@ -16,7 +16,7 @@ const LAST_WORKING_GATEWAY_KEY = 'vibegram_last_working_gateway_url';
 export const DEFAULT_SUPABASE_REF = 'dxoyyflsqrzgzjfihgcx';
 export const DIRECT_SUPABASE_URL = `https://${DEFAULT_SUPABASE_REF}.supabase.co`;
 
-// Dedicated Google Cloud Run Europe-West2 Anti-Block Gateways (HTTP/2 + WebSocket + Media Range Streaming)
+// Dedicated Google Cloud Run Europe-West2 Anti-Block Gateways (only valid when running same-origin inside Cloud Run)
 export const CLOUD_GATEWAY_PRIMARY_URL = 'https://ais-pre-6cxwdfewxdnz4m3mfqzasb-521433209996.europe-west2.run.app';
 export const CLOUD_GATEWAY_SECONDARY_URL = 'https://ais-dev-6cxwdfewxdnz4m3mfqzasb-521433209996.europe-west2.run.app';
 
@@ -30,23 +30,25 @@ function getSameOriginGatewayUrl(): string | null {
 
 const sameOriginUrl = getSameOriginGatewayUrl();
 
-// Dedicated Database & Auth Edge Gateways
-export const PRIMARY_WORKER_URL = sameOriginUrl || CLOUD_GATEWAY_PRIMARY_URL;
-export const SECONDARY_EDGE_URL = CLOUD_GATEWAY_PRIMARY_URL;
-export const TERTIARY_EDGE_URL = DIRECT_SUPABASE_URL;
+// Dedicated Database & Auth Edge Gateways (verified 200 OK with CORS * and zero redirects from github.io)
+export const PRIMARY_WORKER_URL = sameOriginUrl || 'https://vibegram-edge-gw.vercel.app';
+export const SECONDARY_EDGE_URL = 'https://vibegram-ru-node.vercel.app';
+export const TERTIARY_EDGE_URL = 'https://vibegram-net-proxy.vercel.app';
 
-// Dedicated Media CDN Edge Gateways (verified working for /cloudinary/* and /cloudinary-api/*)
+// Dedicated Media CDN Edge Gateways (verified 200 OK / 206 Range with CORS * from github.io)
 export const MEDIA_CDN_PRIMARY_URL = sameOriginUrl || 'https://vibegram-media-cdn.vercel.app';
 export const MEDIA_CDN_SECONDARY_URL = 'https://vibegram-media-ru.vercel.app';
 
-// Dedicated AI & Server-Side Transcription Edge Gateway
+// Dedicated AI & Server-Side Transcription Edge Gateway (verified 200 OK with CORS * from github.io)
 export const AI_GATEWAY_URL = sameOriginUrl || 'https://vibegram-ai-gw.vercel.app';
 
 export const EDGE_GATEWAY_URLS = Array.from(
     new Set([
         ...(sameOriginUrl ? [sameOriginUrl] : []),
-        CLOUD_GATEWAY_PRIMARY_URL,
-        CLOUD_GATEWAY_SECONDARY_URL,
+        'https://vibegram-edge-gw.vercel.app',
+        'https://vibegram-ru-node.vercel.app',
+        'https://vibegram-net-proxy.vercel.app',
+        'https://vibegram-media-cdn.vercel.app',
         DIRECT_SUPABASE_URL
     ])
 );
@@ -55,9 +57,9 @@ export const MEDIA_GATEWAY_URLS = Array.from(
     new Set([
         ...(sameOriginUrl ? [sameOriginUrl] : []),
         'https://vibegram-media-cdn.vercel.app',
-        CLOUD_GATEWAY_PRIMARY_URL,
         'https://vibegram-media-ru.vercel.app',
-        CLOUD_GATEWAY_SECONDARY_URL
+        'https://vibegram-edge-gw.vercel.app',
+        'https://vibegram-ru-node.vercel.app'
     ])
 );
 
@@ -65,25 +67,29 @@ export const AI_GATEWAY_URLS = Array.from(
     new Set([
         ...(sameOriginUrl ? [sameOriginUrl] : []),
         'https://vibegram-ai-gw.vercel.app',
-        CLOUD_GATEWAY_PRIMARY_URL,
-        'https://vibegram-media-cdn.vercel.app'
+        'https://vibegram-media-cdn.vercel.app',
+        'https://vibegram-edge-gw.vercel.app'
     ])
 );
 
-// Dead or misconfigured DB proxy domains that must never be used for Supabase REST/Auth
+// Dead or blocked legacy domains that must never be used for Supabase REST/Auth
 const DEAD_OR_BLOCKED_DOMAINS = [
     'vibegram.qd.je',
     'supa-proxy.onrender.com',
     'onrender.com',
-    'vibegram.qzz.io',
-    'vibegram-edge-gw.vercel.app',
-    'vibegram-ru-node.vercel.app',
-    'vibegram-net-proxy.vercel.app'
+    'vibegram.qzz.io'
 ];
 
 export function isDeadGatewayUrl(url: string): boolean {
     if (!url || !url.startsWith('http')) return true;
     const lower = url.toLowerCase();
+    // Prevent cross-origin requests to AI Studio Cloud Run preview URLs (ais-pre / ais-dev),
+    // which return HTTP 302 to /__cookie_check.html when called cross-origin from github.io
+    if (lower.includes('ais-pre-') || lower.includes('ais-dev-')) {
+        if (!sameOriginUrl || !lower.startsWith(sameOriginUrl.toLowerCase())) {
+            return true;
+        }
+    }
     return DEAD_OR_BLOCKED_DOMAINS.some((d) => lower.includes(d));
 }
 
@@ -101,7 +107,7 @@ export function extractSupabaseUrlFromAnonKey(anonKey: string): string {
 }
 
 export const networkState = {
-    activeGatewayId: sameOriginUrl ? 'same-origin' : 'cloud-gw-1',
+    activeGatewayId: sameOriginUrl ? 'same-origin' : 'edge-gw-1',
     activeGatewayUrl: PRIMARY_WORKER_URL,
     activeMediaGatewayUrl: MEDIA_CDN_PRIMARY_URL,
     lastPingMs: null as number | null,
@@ -354,6 +360,19 @@ export class EdgeVirtualWebSocket {
 
     constructor(url: string, protocols?: string | string[]) {
         this.url = this.rewriteRealtimeWsUrl(url);
+        const activeGwUrl = getActiveGatewayBaseUrl();
+        const activeNode = networkState.gateways.find((g) => g.url === activeGwUrl);
+        const isServerlessHttpOnly =
+            activeGwUrl.includes('.vercel.app') ||
+            activeGwUrl.includes('.netlify.app') ||
+            (activeNode && activeNode.status === 'blocked');
+
+        if (isServerlessHttpOnly) {
+            this.readyState = EdgeVirtualWebSocket.CLOSED;
+            setRealtimeConnectedState(false);
+            return;
+        }
+
         try {
             const NativeWS = typeof window !== 'undefined' ? window.WebSocket : undefined;
             if (!NativeWS) {
@@ -658,13 +677,31 @@ export function setCustomGatewayUrl(url: string) {
 }
 
 let configuredEnvUrl = '';
+let configuredBackupUrl = '';
 let supabaseAnonKeyRef = '';
 
-export function initNetworkManager(envSupabaseUrl: string, anonKey: string) {
+export function initNetworkManager(envSupabaseUrl: string, anonKey: string, backupSupabaseUrl = '') {
     installMediaProxyInterceptor();
+
+    // Allow instant one-click gateway binding via ?gw=https://... URL parameter
+    if (typeof window !== 'undefined' && window.location?.search) {
+        try {
+            const params = new URLSearchParams(window.location.search);
+            const gwParam = cleanGatewayUrl(params.get('gw') || params.get('gateway') || '');
+            if (gwParam && !isDeadGatewayUrl(gwParam)) {
+                localStorage.setItem(CUSTOM_GATEWAY_KEY, gwParam);
+                localStorage.setItem(PREFERRED_GATEWAY_KEY, 'custom');
+                localStorage.setItem(LAST_WORKING_GATEWAY_KEY, gwParam);
+            }
+        } catch (e) {}
+    }
 
     const cleanedEnv = cleanGatewayUrl(envSupabaseUrl);
     configuredEnvUrl = !isDeadGatewayUrl(cleanedEnv) ? cleanedEnv : PRIMARY_WORKER_URL;
+
+    const cleanedBackup = cleanGatewayUrl(backupSupabaseUrl);
+    configuredBackupUrl = !isDeadGatewayUrl(cleanedBackup) ? cleanedBackup : '';
+
     supabaseAnonKeyRef = anonKey;
 
     try {
@@ -680,8 +717,9 @@ export function initNetworkManager(envSupabaseUrl: string, anonKey: string) {
 export function rebuildGatewayList(envUrl: string) {
     const list: GatewayNode[] = [];
     const customUrl = getCustomGatewayUrl();
+    const directUrl = extractSupabaseUrlFromAnonKey(supabaseAnonKeyRef);
 
-    // 1. User's Custom Gateway (if set in Settings)
+    // 1. User's Custom Gateway (if set in Settings or via ?gw=...)
     if (customUrl) {
         list.push({
             id: 'custom',
@@ -691,11 +729,11 @@ export function rebuildGatewayList(envUrl: string) {
             latencyMs: null,
             status: 'unknown',
             lastChecked: 0,
-            supportsWebSocket: true
+            supportsWebSocket: !customUrl.includes('.vercel.app')
         });
     }
 
-    // 2. Local / Same-Origin Server Gateway (when hosted on Cloud Run / Node server)
+    // 2. Local / Same-Origin Server Gateway (when hosted on Cloud Run / Node server / Docker Space)
     if (sameOriginUrl) {
         list.push({
             id: 'same-origin',
@@ -705,60 +743,92 @@ export function rebuildGatewayList(envUrl: string) {
             latencyMs: null,
             status: 'unknown',
             lastChecked: 0,
-            supportsWebSocket: true
+            supportsWebSocket: !sameOriginUrl.includes('.vercel.app')
         });
     }
 
-    // 3. Primary Google Cloud Europe-West2 Anti-Block Gateway #1
-    if (!list.some((g) => g.url === CLOUD_GATEWAY_PRIMARY_URL)) {
+    // 3. Primary Edge Gateway #1 (vibegram-edge-gw.vercel.app)
+    if (!list.some((g) => g.url === 'https://vibegram-edge-gw.vercel.app')) {
         list.push({
-            id: 'cloud-gw-1',
-            name: 'Основной облачный шлюз #1 (EU-West)',
-            url: CLOUD_GATEWAY_PRIMARY_URL,
+            id: 'edge-gw-1',
+            name: 'Основной Edge-шлюз #1 (EU/RU)',
+            url: 'https://vibegram-edge-gw.vercel.app',
             type: 'edge-proxy',
             latencyMs: null,
             status: 'unknown',
             lastChecked: 0,
-            supportsWebSocket: true
+            supportsWebSocket: false
         });
     }
 
-    // 4. Secondary Google Cloud Europe-West2 Anti-Block Gateway #2
-    if (!list.some((g) => g.url === CLOUD_GATEWAY_SECONDARY_URL)) {
+    // 4. Secondary Edge Gateway #2 (vibegram-ru-node.vercel.app)
+    if (!list.some((g) => g.url === 'https://vibegram-ru-node.vercel.app')) {
         list.push({
-            id: 'cloud-gw-2',
-            name: 'Резервный облачный шлюз #2 (EU-West)',
-            url: CLOUD_GATEWAY_SECONDARY_URL,
+            id: 'edge-gw-2',
+            name: 'Резервный Edge-шлюз #2 (RU-Node)',
+            url: 'https://vibegram-ru-node.vercel.app',
             type: 'edge-proxy',
             latencyMs: null,
             status: 'unknown',
             lastChecked: 0,
-            supportsWebSocket: true
+            supportsWebSocket: false
         });
     }
 
-    // 5. Direct Supabase Endpoint (Fallback when direct route is open)
-    const directUrl = extractSupabaseUrlFromAnonKey(supabaseAnonKeyRef);
+    // 5. Tertiary Edge Gateway #3 (vibegram-net-proxy.vercel.app)
+    if (!list.some((g) => g.url === 'https://vibegram-net-proxy.vercel.app')) {
+        list.push({
+            id: 'edge-gw-3',
+            name: 'Резервный Edge-шлюз #3 (Net-Proxy)',
+            url: 'https://vibegram-net-proxy.vercel.app',
+            type: 'edge-proxy',
+            latencyMs: null,
+            status: 'unknown',
+            lastChecked: 0,
+            supportsWebSocket: false
+        });
+    }
+
+    // 6. Dedicated Edge Gateway from SUPABASE_URL env/secret (if distinct)
+    if (envUrl && !isDeadGatewayUrl(envUrl) && envUrl !== directUrl && !list.some((g) => g.url === envUrl)) {
+        list.unshift({
+            id: 'env-edge',
+            name: 'Выделенный Edge-шлюз (Secret)',
+            url: envUrl,
+            type: 'edge-proxy',
+            latencyMs: null,
+            status: 'unknown',
+            lastChecked: 0,
+            supportsWebSocket: !envUrl.includes('.vercel.app')
+        });
+    }
+
+    // 7. Backup Edge Gateway from SUPABASE_BACKUP_URL env/secret
+    if (
+        configuredBackupUrl &&
+        !isDeadGatewayUrl(configuredBackupUrl) &&
+        configuredBackupUrl !== directUrl &&
+        !list.some((g) => g.url === configuredBackupUrl)
+    ) {
+        list.push({
+            id: 'env-backup-edge',
+            name: 'Резервный Edge-шлюз (Backup)',
+            url: configuredBackupUrl,
+            type: 'edge-proxy',
+            latencyMs: null,
+            status: 'unknown',
+            lastChecked: 0,
+            supportsWebSocket: !configuredBackupUrl.includes('.vercel.app')
+        });
+    }
+
+    // 8. Direct Supabase Endpoint (Fallback when direct route is open)
     if (!list.some((g) => g.url === directUrl)) {
         list.push({
             id: 'direct-supabase',
             name: 'Прямое соединение Supabase',
             url: directUrl,
             type: 'direct',
-            latencyMs: null,
-            status: 'unknown',
-            lastChecked: 0,
-            supportsWebSocket: true
-        });
-    }
-
-    // 6. Custom non-blocked gateway if provided via env
-    if (envUrl && !isDeadGatewayUrl(envUrl) && !list.some((g) => g.url === envUrl)) {
-        list.unshift({
-            id: 'env-edge',
-            name: 'Выделенный Edge-шлюз',
-            url: envUrl,
-            type: 'edge-proxy',
             latencyMs: null,
             status: 'unknown',
             lastChecked: 0,
@@ -782,9 +852,10 @@ export function rebuildGatewayList(envUrl: string) {
         lastWorkingUrl = localStorage.getItem(LAST_WORKING_GATEWAY_KEY) || '';
     } catch (e) {}
 
-    const byLastWorking = !isDeadGatewayUrl(lastWorkingUrl)
-        ? list.find((g) => g.url === lastWorkingUrl)
-        : undefined;
+    const byLastWorking =
+        lastWorkingUrl && lastWorkingUrl !== directUrl && !isDeadGatewayUrl(lastWorkingUrl)
+            ? list.find((g) => g.url === lastWorkingUrl)
+            : undefined;
     const chosen = (customUrl ? list.find((g) => g.id === 'custom') : undefined) || byLastWorking || list[0];
 
     if (chosen) {

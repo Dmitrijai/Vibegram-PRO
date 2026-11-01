@@ -19,6 +19,7 @@ export default defineConfig(({mode}) => {
   const obfuscatedHfKey = obfuscateValue(rawHfKey);
   
   const supabaseUrl = process.env.SUPABASE_URL || env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || env.VITE_SUPABASE_URL || '';
+  const supabaseBackupUrl = process.env.SUPABASE_BACKUP_URL || env.SUPABASE_BACKUP_URL || process.env.VITE_SUPABASE_BACKUP_URL || env.VITE_SUPABASE_BACKUP_URL || '';
   const supabaseAnonKey = process.env.SUPABASE_ANON_KEY || env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || env.VITE_SUPABASE_ANON_KEY || '';
   
   const cloudinaryCloudName = process.env.CLOUDINARY_CLOUD_NAME || env.CLOUDINARY_CLOUD_NAME || '';
@@ -32,8 +33,10 @@ export default defineConfig(({mode}) => {
       'process.env.GEMINI_API_KEY_OBFUSCATED': JSON.stringify(obfuscatedAiKey),
       'process.env.HF_API_KEY_OBFUSCATED': JSON.stringify(obfuscatedHfKey),
       'process.env.SUPABASE_URL_OBFUSCATED': JSON.stringify(obfuscateValue(supabaseUrl)),
+      'process.env.SUPABASE_BACKUP_URL_OBFUSCATED': JSON.stringify(obfuscateValue(supabaseBackupUrl)),
       'process.env.SUPABASE_ANON_KEY_OBFUSCATED': JSON.stringify(obfuscateValue(supabaseAnonKey)),
       'process.env.SUPABASE_URL': JSON.stringify(supabaseUrl),
+      'process.env.SUPABASE_BACKUP_URL': JSON.stringify(supabaseBackupUrl),
       'process.env.SUPABASE_ANON_KEY': JSON.stringify(supabaseAnonKey),
       'process.env.CLOUDINARY_CLOUD_NAME': JSON.stringify(cloudinaryCloudName),
       'process.env.CLOUDINARY_API_KEY': JSON.stringify(cloudinaryApiKey),
