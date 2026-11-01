@@ -1,6 +1,6 @@
 {
   "name": "Vibegram Pro",
-  "description": "",
+  "description": "Быстрый мессенджер с поддержкой чатов, каналов, голосовых и видеосообщений, Shorts и мини-приложений без ограничений.",
   "requestFramePermissions": [
     "camera",
     "microphone"

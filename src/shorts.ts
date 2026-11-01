@@ -1,4 +1,5 @@
 import { supabase, state } from "./supabase";
+import { rewriteMediaUrl, getVideoPosterUrl } from "./network";
 
 let shortsList: any[] = [];
 let currentShortIdForComments: string | null = null;
@@ -281,10 +282,12 @@ export function performFullShortsSearch(query: string) {
             .map((s) => {
               const authorName =
                 s.profiles?.display_name || s.profiles?.username || "";
+              const posterUrl = getVideoPosterUrl(s.video_url);
+              const safeVideoUrl = rewriteMediaUrl(s.video_url);
               return `
                         <div class="flex gap-3 p-3 hover:bg-[#222222] cursor-pointer transition select-none" onclick="window.navigateToShortFromSearch('${s.id}')">
                             <div class="w-24 h-32 bg-gray-800 rounded-lg shrink-0 overflow-hidden relative">
-                                <video src="${s.video_url}#t=0.1" class="w-full h-full object-cover"></video>
+                                ${posterUrl ? `<img src="${posterUrl}" loading="lazy" class="w-full h-full object-cover">` : `<video src="${safeVideoUrl}#t=0.1" preload="metadata" class="w-full h-full object-cover"></video>`}
                             </div>
                             <div class="flex-1 min-w-0">
                                 <div class="font-bold text-sm text-white line-clamp-2 leading-tight">${s.title || "Без названия"}</div>
@@ -430,10 +433,13 @@ async function _doViewUserShorts(targetId: string) {
   if (userShorts && userShorts.length > 0) {
     grid.innerHTML = userShorts
       .map(
-        (s) => `
+        (s) => {
+          const posterUrl = getVideoPosterUrl(s.video_url);
+          const safeVideoUrl = rewriteMediaUrl(s.video_url);
+          return `
             <div id="analytics-short-${s.id}" class="aspect-[9/16] relative group bg-gray-800 overflow-hidden rounded-lg transition-all duration-200 select-none">
-                <div class="absolute inset-0 cursor-pointer" onclick="window.openShorts('${s.id}', '${targetId}')"></div>
-                <video src="${s.video_url}" class="w-full h-full object-cover pointer-events-none" preload="metadata"></video>
+                <div class="absolute inset-0 cursor-pointer z-10" onclick="window.openShorts('${s.id}', '${targetId}')"></div>
+                ${posterUrl ? `<img src="${posterUrl}" loading="lazy" class="w-full h-full object-cover pointer-events-none">` : `<video src="${safeVideoUrl}" class="w-full h-full object-cover pointer-events-none" preload="metadata"></video>`}
                 <div class="absolute inset-0 bg-black/20 flex flex-col justify-end p-2 opacity-100 pointer-events-none">
                     <div class="flex items-center gap-1 text-white text-[10px] font-bold drop-shadow-md pb-1">
                         <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 24 24"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>
@@ -456,7 +462,8 @@ async function _doViewUserShorts(targetId: string) {
                     : ""
                 }
             </div>
-        `,
+        `;
+        },
       )
       .join("");
   } else {
@@ -591,17 +598,53 @@ async function fetchShortsBatch(
   authorFilterId?: string,
 ) {
   try {
-    const { data: viewedRecords } = await supabase
-      .from("short_views")
-      .select("short_id")
-      .eq("user_id", state.currentUser!.id);
-    const viewedSet = new Set(viewedRecords?.map((v) => v.short_id) || []);
+    let query = supabase
+      .from("shorts")
+      .select(
+        `*, profiles:author_id(display_name, username, avatar_url, is_premium, premium_until)`,
+      );
 
-    const { data: myLikedShorts } = await supabase
-      .from("short_likes")
-      .select("shorts(title, description)")
-      .eq("user_id", state.currentUser!.id)
-      .limit(50);
+    if (authorFilterId) {
+      if (authorFilterId === "subscriptions") {
+        const subs = state.currentProfile?.settings?.subscriptions || [];
+        if (subs.length > 0) {
+          query = query
+            .in("author_id", subs)
+            .order("created_at", { ascending: false })
+            .limit(60);
+        } else {
+          return [];
+        }
+      } else {
+        query = query
+          .eq("author_id", authorFilterId)
+          .order("created_at", { ascending: false })
+          .limit(60);
+      }
+    } else {
+      query = query.order("created_at", { ascending: false }).limit(60);
+    }
+
+    const [
+      { data: viewedRecords },
+      { data: myLikedShorts },
+      { data: shorts, error }
+    ] = await Promise.all([
+      supabase
+        .from("short_views")
+        .select("short_id")
+        .eq("user_id", state.currentUser!.id),
+      supabase
+        .from("short_likes")
+        .select("shorts(title, description)")
+        .eq("user_id", state.currentUser!.id)
+        .limit(30),
+      query
+    ]);
+
+    if (error) throw error;
+
+    const viewedSet = new Set(viewedRecords?.map((v) => v.short_id) || []);
     let preferredWords = new Set<string>();
     if (myLikedShorts) {
       myLikedShorts.forEach((item) => {
@@ -617,38 +660,6 @@ async function fetchShortsBatch(
         }
       });
     }
-
-    let query = supabase
-      .from("shorts")
-      .select(
-        `*, profiles:author_id(display_name, username, avatar_url, is_premium, premium_until)`,
-      );
-
-    if (authorFilterId) {
-      if (authorFilterId === "subscriptions") {
-        const subs = state.currentProfile?.settings?.subscriptions || [];
-        if (subs.length > 0) {
-          query = query
-            .in("author_id", subs)
-            .order("created_at", { ascending: false })
-            .limit(200);
-        } else {
-          // Empty list if no subs
-          return [];
-        }
-      } else {
-        query = query
-          .eq("author_id", authorFilterId)
-          .order("created_at", { ascending: false })
-          .limit(200);
-      }
-    } else {
-      query = query.order("created_at", { ascending: false }).limit(200);
-    }
-
-    const { data: shorts, error } = await query;
-
-    if (error) throw error;
 
     let allShorts = shorts || [];
 
@@ -714,7 +725,7 @@ async function fetchShortsBatch(
 
     let newBatch = [...allShorts].map((s) => ({
       ...s,
-      video_url: s.video_url,
+      video_url: rewriteMediaUrl(s.video_url),
     }));
 
     if (initialShortId && !loadedShortIds.has(initialShortId)) {
@@ -864,10 +875,11 @@ function appendShortsFromQueue(count: number) {
           avatarStr = `<div class="w-full h-full relative"><div class="w-full h-full bg-gradient-to-br from-blue-500 to-indigo-600 rounded-full flex items-center justify-center font-bold text-white shadow-sm select-none overflow-hidden">${name[0].toUpperCase()}</div>${premiumBadgeHtml}</div>`;
         }
 
-        const isPreloaded = i < 3;
+        const isPreloaded = i < 2;
+        const posterUrl = getVideoPosterUrl(short.video_url);
         const shortHTML = `
             <div class="short-video-wrapper w-full h-full snap-start relative bg-black flex items-center justify-center overflow-hidden" data-index="${index}" data-id="${short.id}">
-                <video ${isPreloaded ? `src="${short.video_url}" preload="auto"` : `data-src="${short.video_url}" preload="metadata"`} loop playsinline class="max-w-full max-h-full object-contain cursor-pointer" onclick="window.togglePlayShort(this)"></video>
+                <video ${isPreloaded ? `src="${short.video_url}"` : ""} data-src="${short.video_url}" ${posterUrl ? `poster="${posterUrl}"` : ""} preload="${index === 0 ? "auto" : "metadata"}" loop playsinline onerror="window.handleMediaError(this, '${short.video_url}')" class="max-w-full max-h-full object-contain cursor-pointer" onclick="window.togglePlayShort(this)"></video>
                 
                 <div class="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/20 pointer-events-none"></div>
                 

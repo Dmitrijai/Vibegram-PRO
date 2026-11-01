@@ -70,11 +70,6 @@ export async function requestPushPermissionAndToken() {
                 console.log('FCM Web Token:', currentToken);
                 await updateTokenInSupabase(currentToken);
                 customToast('Push-уведомления успешно включены!');
-                
-                // Show raw token in alert for debugging on iOS
-                setTimeout(() => {
-                    alert("Push Token: " + currentToken.substring(0, 20) + "...\n(Скопируйте, если нужно для дебага)");
-                }, 1000);
             } else {
                 console.log('No registration token available. Request permission to generate one.');
                 customToast('Не удалось получить токен. Проверьте настройки браузера.');

@@ -1,7 +1,14 @@
 import { supabase, state } from './supabase';
-import { closeModal } from './utils';
+import { closeModal, customToast, escapeHtml } from './utils';
 import { loadChats } from './chat';
 import { logout } from './auth';
+import {
+    networkState,
+    raceGateways,
+    selectGatewayById,
+    getCustomGatewayUrl,
+    setCustomGatewayUrl
+} from './network';
 
 let bonusTimerInterval: any = null;
 
@@ -51,6 +58,7 @@ export function openSettings(modeOrSkip: 'full' | 'profile' | boolean = 'full', 
             </div>
 
         <div class="space-y-3 mb-6 mt-4">
+
             <details class="group bg-gray-50 dark:bg-gray-800 rounded-xl overflow-hidden border border-gray-100 dark:border-gray-700 open:shadow-sm transition-all ${mode === 'profile' ? 'hidden' : ''}">
                 <summary class="flex justify-between items-center p-4 cursor-pointer select-none font-medium text-gray-800 dark:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-700/50 transition-colors">
                     <div class="flex items-center gap-3">
@@ -315,6 +323,56 @@ export function openSettings(modeOrSkip: 'full' | 'profile' | boolean = 'full', 
                     </div>
                 </div>
             </details>
+
+            <details class="group bg-gray-50 dark:bg-gray-800 rounded-xl overflow-hidden border border-gray-100 dark:border-gray-700 open:shadow-sm transition-all ${mode === 'profile' ? 'hidden' : ''}">
+                <summary class="flex justify-between items-center p-4 cursor-pointer select-none font-medium text-gray-800 dark:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-700/50 transition-colors">
+                    <div class="flex items-center gap-3">
+                        <div class="w-8 h-8 rounded-full bg-cyan-100 dark:bg-cyan-900/50 flex items-center justify-center text-cyan-600 dark:text-cyan-400">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+                        </div>
+                        <span>Сеть и ускорение (Анти-блок)</span>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <span id="settings-net-ping-badge" class="text-xs font-mono tabular-nums px-2 py-0.5 rounded-md bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 font-semibold">${networkState.lastPingMs ? `${networkState.lastPingMs} мс` : 'Активно'}</span>
+                        <svg class="w-5 h-5 text-gray-400 group-open:rotate-180 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+                    </div>
+                </summary>
+                <div class="border-t border-gray-100 dark:border-gray-700 bg-white dark:bg-gray-800/80 p-4 space-y-3">
+                    <div class="flex items-center justify-between text-xs text-gray-500 dark:text-gray-400">
+                        <span>Режим транспорта: <strong class="text-gray-800 dark:text-gray-200">${networkState.realtimeConnected ? 'WebSocket + HTTP/2' : 'HTTP/2 Turbo Delta'}</strong></span>
+                        <button onclick="window.runNetworkSpeedTest(this)" class="text-blue-500 hover:text-blue-600 font-semibold flex items-center gap-1 transition-colors">
+                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+                            Проверить шлюзы
+                        </button>
+                    </div>
+                    <div id="settings-gateways-list" class="space-y-2">
+                        ${networkState.gateways.map((gw) => {
+                            const isActive = gw.id === networkState.activeGatewayId;
+                            const statusDot = gw.status === 'online' ? 'bg-emerald-500' : gw.status === 'blocked' ? 'bg-red-500' : 'bg-blue-400';
+                            const pingText = gw.latencyMs !== null ? `${gw.latencyMs} мс` : gw.status === 'blocked' ? 'недоступен' : 'готов';
+                            return `
+                                <button onclick="window.selectNetworkGateway('${gw.id}')" class="w-full text-left p-2.5 rounded-xl border ${isActive ? 'border-blue-500 bg-blue-50/50 dark:bg-blue-900/20' : 'border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/40'} transition flex items-center justify-between gap-2">
+                                    <div class="flex items-center gap-2.5 min-w-0">
+                                        <span class="w-2.5 h-2.5 rounded-full ${statusDot} shrink-0"></span>
+                                        <div class="truncate">
+                                            <div class="text-xs font-semibold text-gray-800 dark:text-gray-100 truncate">${escapeHtml(gw.name)}</div>
+                                            <div class="text-[10px] text-gray-400 font-mono truncate">${escapeHtml(gw.url)}</div>
+                                        </div>
+                                    </div>
+                                    <span class="text-xs font-mono tabular-nums shrink-0 ${gw.status === 'blocked' ? 'text-red-500' : 'text-gray-600 dark:text-gray-300'}">${pingText}</span>
+                                </button>
+                            `;
+                        }).join('')}
+                    </div>
+                    <div class="pt-2 border-t border-gray-100 dark:border-gray-700">
+                        <label class="block text-[11px] font-medium text-gray-500 dark:text-gray-400 mb-1">Свой зеркальный шлюз (HF Space / Vercel / Worker)</label>
+                        <div class="flex gap-2">
+                            <input type="url" id="custom-gateway-input" value="${escapeHtml(getCustomGatewayUrl())}" placeholder="https://your-mirror.hf.space" class="flex-1 bg-gray-100 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-1.5 text-xs font-mono text-gray-800 dark:text-gray-100 outline-none focus:border-blue-500">
+                            <button onclick="window.saveCustomNetworkGateway()" class="px-3 py-1.5 bg-blue-500 hover:bg-blue-600 text-white text-xs font-semibold rounded-lg transition-colors shrink-0">Сохранить</button>
+                        </div>
+                    </div>
+                </div>
+            </details>
         </div>
         
         <details class="group bg-gray-50 dark:bg-gray-800 rounded-xl overflow-hidden border border-gray-100 dark:border-gray-700 open:shadow-sm transition-all mb-4 ${mode === 'profile' ? 'hidden' : ''}">
@@ -399,6 +457,29 @@ export function openSettings(modeOrSkip: 'full' | 'profile' | boolean = 'full', 
             import('./admin').then(m => m.promptCreatorAccess());
         }
     });
+
+    (window as any).runNetworkSpeedTest = async (btn?: HTMLElement) => {
+        if (btn) {
+            btn.innerHTML = `<span class="animate-spin inline-block mr-1">↻</span> Проверка...`;
+        }
+        await raceGateways(true);
+        customToast(networkState.lastPingMs ? `Выбран быстрый шлюз (${networkState.lastPingMs} мс)` : 'Проверка шлюзов завершена');
+        openSettings(mode as any, true);
+    };
+
+    (window as any).selectNetworkGateway = (id: string) => {
+        selectGatewayById(id);
+        customToast('Шлюз переключен');
+        openSettings(mode as any, true);
+    };
+
+    (window as any).saveCustomNetworkGateway = () => {
+        const input = document.getElementById('custom-gateway-input') as HTMLInputElement | null;
+        const val = input ? input.value.trim() : '';
+        setCustomGatewayUrl(val);
+        customToast(val ? 'Пользовательский шлюз сохранен' : 'Пользовательский шлюз сброшен');
+        openSettings(mode as any, true);
+    };
 
     (window as any).contactTechSupport = async () => {
         if (state.isAdminStatus || (window as any).originalAdminUser) return;
@@ -1077,8 +1158,8 @@ let isSendVibProcessing = false;
                         История создания и Разработка
                     </h3>
                     <div class="text-sm leading-relaxed ml-9 space-y-3">
-                        <p>Vibegram был создан и спроектирован с применением передовых технологий искусственного интеллекта на базе платформы <strong>Google AI Studio</strong>. Ядром архитектурного и функционального проектирования выступили агентные алгоритмы <strong>Google DeepMind</strong> (в частности, модель Gemini Pro и агент Antigravity), которые обеспечили полный цикл разработки платформы: от написания серверной логики интеграции с облачной инфраструктурой (Supabase) и до создания адаптивного клиентского интерфейса (React).</p>
-                        <p>Процесс разработки представлял собой синергию человеческого замысла и машинного исполнения, в ходе которой ИИ выстроил архитектуру реального времени (WebRTC, WebSocket), систему шифрования и авторизации, а также внедрил модули социальных экосистем (Shorts, Mini-Apps, генеративный ИИ).</p>
+                        <p>Vibegram спроектирован как независимая высокоскоростная коммуникационная платформа с распределенной облачной архитектурой и адаптивным клиентским интерфейсом.</p>
+                        <p>Архитектура платформы включает синхронизацию в реальном времени (WebRTC, WebSocket, HTTP/2 Turbo), систему защиты учетных записей и встроенные модули социальных экосистем (Shorts, Mini-Apps, голосовая транскрипция).</p>
                     </div>
                 </section>
 

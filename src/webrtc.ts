@@ -91,6 +91,10 @@ export async function initWebRTC() {
             if (document.getElementById('incoming-call-name')) {
                 document.getElementById('incoming-call-name')!.innerText = data.callerName;
             }
+            const subtitleEl = modal.querySelector('p');
+            if (subtitleEl) {
+                subtitleEl.textContent = data.isVideo !== false ? 'Входящий видеозвонок...' : 'Входящий аудиозвонок...';
+            }
             if (document.getElementById('incoming-call-avatar')) {
                 const incAvatar = document.getElementById('incoming-call-avatar')!;
                 if (data.callerAvatar) {
@@ -198,21 +202,24 @@ export async function initWebRTC() {
 }
 
 export async function startAudioCall() {
-    if (state.currentProfile?.settings?.is_tech_support) return alert('Технической поддержке недоступны звонки.');
-    if (state.isTechSupportChat) return alert('Технической поддержке нельзя звонить.');
-    if (!state.activeChatOtherUser) return alert('Аудиозвонки доступны только в личных чатах');
+    const toast = (window as any).customToast || alert;
+    if (state.currentProfile?.settings?.is_tech_support) return toast('Технической поддержке недоступны звонки.');
+    if (state.isTechSupportChat) return toast('Технической поддержке нельзя звонить.');
+    if (!state.activeChatOtherUser) return toast('Аудиозвонки доступны только в личных чатах');
     await startCall(false);
 }
 
 export async function startVideoCall() {
-    if (state.currentProfile?.settings?.is_tech_support) return alert('Технической поддержке недоступны звонки.');
-    if (state.isTechSupportChat) return alert('Технической поддержке нельзя звонить.');
-    if (!state.activeChatOtherUser) return alert('Видеозвонки доступны только в личных чатах');
+    const toast = (window as any).customToast || alert;
+    if (state.currentProfile?.settings?.is_tech_support) return toast('Технической поддержке недоступны звонки.');
+    if (state.isTechSupportChat) return toast('Технической поддержке нельзя звонить.');
+    if (!state.activeChatOtherUser) return toast('Видеозвонки доступны только в личных чатах');
     await startCall(true);
 }
 
 async function startCall(isVideo: boolean) {
-    if (state.isAdminStatus) return alert('Звонки недоступны в режиме инкогнито');
+    const toast = (window as any).customToast || alert;
+    if (state.isAdminStatus) return toast('Звонки недоступны в режиме инкогнито');
     await initWebRTC();
     
     const targetUser = state.activeChatOtherUser;
@@ -335,7 +342,8 @@ async function startCall(isVideo: boolean) {
         
     } catch (err) {
         console.error('Error starting call:', err);
-        alert('Не удалось получить доступ к микрофону' + (isVideo ? ' или камере' : ''));
+        const toast = (window as any).customToast || alert;
+        toast('Не удалось получить доступ к микрофону' + (isVideo ? ' или камере' : ''));
         endVideoCall(false);
     }
 }
@@ -481,7 +489,8 @@ export async function endVideoCall(broadcast = true) {
             
             // Push a call ended message to the active chat
             if (state.activeChatId) {
-                const isMissed = document.getElementById('call-status')?.innerText === 'Вызов...' || document.getElementById('call-status')?.innerText === 'Отклонен';
+                const statusText = document.getElementById('call-status')?.innerText || '';
+                const isMissed = statusText === 'Вызов...' || statusText.includes('отклонил') || statusText === 'Отклонен';
                 const content = isMissed ? 'Пропущенный звонок' : 'Звонок завершен';
                 
                 try {

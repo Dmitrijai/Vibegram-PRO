@@ -2,7 +2,8 @@ import { GoogleGenAI, HarmCategory, HarmBlockThreshold } from "@google/genai";
 import { state } from './supabase';
 import { renderMediaModal } from './messages-media';
 import { executeAiWithFallback, executeHfWithFallback } from './ai-keys';
-import { customAlert } from './utils';
+import { customAlert, customToast, escapeHtml } from './utils';
+import { getActiveGatewayBaseUrl } from './network';
 
 export async function generateAiImage() {
     const input = document.getElementById('message-input') as HTMLTextAreaElement;
@@ -11,7 +12,10 @@ export async function generateAiImage() {
     let text = input.value;
     if (!text.startsWith('@ai ')) return;
     const prompt = text.replace('@ai ', '').trim();
-    if (!prompt) return alert('Введите запрос для генерации');
+    if (!prompt) {
+        customToast('Введите запрос для генерации');
+        return;
+    }
 
     const abortController = new AbortController();
 
@@ -31,7 +35,7 @@ export async function generateAiImage() {
             <svg class="w-8 h-8 absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-purple-500 animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
         </div>
         <div class="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-purple-400 to-pink-500 animate-pulse">Создаем магию...</div>
-        <div class="text-sm text-gray-300 mt-2">Рисуем: ${prompt}</div>
+        <div class="text-sm text-gray-300 mt-2 max-w-md text-center px-4 truncate">Рисуем: ${escapeHtml(prompt)}</div>
         <button id="cancel-ai-btn" class="mt-8 px-6 py-2 bg-red-500/80 hover:bg-red-500 text-white rounded-full font-medium transition-all transform hover:scale-105 flex items-center gap-2 backdrop-blur-md border border-red-400/30 shadow-lg shadow-red-500/20">
             <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
@@ -46,7 +50,7 @@ export async function generateAiImage() {
     });
 
     try {
-        const pollUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?nologo=true&seed=${Math.floor(Math.random() * 1000000)}`;
+        const pollUrl = `${getActiveGatewayBaseUrl()}/pollinations/prompt/${encodeURIComponent(prompt)}?nologo=true&seed=${Math.floor(Math.random() * 1000000)}`;
         const response = await fetch(pollUrl, { signal: abortController.signal });
         if (!response.ok) {
             throw new Error(`Ошибка генерации: ${response.status}`);

@@ -1,0 +1,43 @@
+[[redirects]]
+  from = "/api/supabase/*"
+  to = "https://vibegram-edge-gw.vercel.app/:splat"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/rest/v1/*"
+  to = "https://vibegram-edge-gw.vercel.app/rest/v1/:splat"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/auth/v1/*"
+  to = "https://vibegram-edge-gw.vercel.app/auth/v1/:splat"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/storage/v1/*"
+  to = "https://vibegram-edge-gw.vercel.app/storage/v1/:splat"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/functions/v1/*"
+  to = "https://vibegram-edge-gw.vercel.app/functions/v1/:splat"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/cloudinary/*"
+  to = "https://vibegram-edge-gw.vercel.app/cloudinary/:splat"
+  status = 200
+  force = true
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    Access-Control-Allow-Origin = "*"
+    Access-Control-Allow-Methods = "GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD"
+    Access-Control-Allow-Headers = "Authorization, apikey, Content-Type, Prefer, Range, x-client-info, Content-Profile, Accept-Profile, accept-profile, content-profile"
+    Access-Control-Expose-Headers = "Content-Range, Range-Unit, Accept-Ranges, Content-Length"

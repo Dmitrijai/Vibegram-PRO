@@ -1,7 +1,49 @@
-import { supabase } from './supabase';
-import { customToast } from './utils';
+import { supabase, state } from './supabase';
+import { customToast, escapeHtml } from './utils';
 import { GoogleGenAI } from '@google/genai';
-import { executeAiWithFallback } from './ai-keys';
+import { executeAiWithFallback, getAvailableGeminiKeys } from './ai-keys';
+import { getOptimizedAudioForTranscriptionUrl, rewriteMediaUrl, AI_GATEWAY_URLS } from './network';
+import { currentMessages } from './messages-core';
+import { saveCachedMessages } from './cache';
+
+const transcriptionCache = new Map<string, string>();
+
+async function requestServerSideTranscription(
+    fastAudioUrl: string,
+    rawUrl: string,
+    msgType?: string
+): Promise<string | null> {
+    const apiKeys = getAvailableGeminiKeys();
+    if (apiKeys.length === 0) return null;
+
+    for (const gwUrl of AI_GATEWAY_URLS) {
+        try {
+            const ctrl = new AbortController();
+            const timer = setTimeout(() => ctrl.abort(), 14000);
+            const res = await fetch(`${gwUrl}/api/transcribe`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    audioUrl: fastAudioUrl,
+                    rawUrl,
+                    apiKeys: apiKeys.slice(0, 3),
+                    msgType
+                }),
+                signal: ctrl.signal
+            });
+            clearTimeout(timer);
+            if (res.ok) {
+                const data = await res.json();
+                if (data && typeof data.text === 'string') {
+                    return data.text.trim() || 'Нет речи';
+                }
+            }
+        } catch (_e) {
+            // Try next gateway in AI_GATEWAY_URLS
+        }
+    }
+    return null;
+}
 
 export async function transcribeMedia(url: string, messageId: string, msgType?: string) {
     try {
@@ -11,82 +53,101 @@ export async function transcribeMedia(url: string, messageId: string, msgType?: 
             btn.classList.add('pointer-events-none');
         }
 
-        // Fetch the media file
-        const response = await fetch(url);
-        const blob = await response.blob();
-        
-        // Convert blob to base64
-        const base64data = await new Promise<string>((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onloadend = () => {
-                const base64 = (reader.result as string).split(',')[1];
-                resolve(base64);
-            };
-            reader.onerror = reject;
-            reader.readAsDataURL(blob);
-        });
-        
-        // Determine mime type
-        let mimeType = blob.type || (url.includes('.mp4') ? 'video/mp4' : 'audio/webm');
-        
-        // Strip codec info that Gemini rejects (e.g. "audio/webm; codecs=opus" -> "audio/webm")
-        if (mimeType.includes(';')) {
-            mimeType = mimeType.split(';')[0];
-        }
-        
-        // Force audio/webm to prevent Gemini from parsing video frames which fails on pure MediaRecorder webM files
-        if (msgType === 'voice' || msgType === 'video_circle' || mimeType.includes('video')) {
-            mimeType = 'audio/webm';
-        }
+        let transcription = transcriptionCache.get(messageId) || '';
 
-        // Call Gemini
-        const result = await executeAiWithFallback(async (ai: GoogleGenAI) => {
-            return await ai.models.generateContent({
-                model: 'gemini-2.5-flash',
-                contents: [
-                    {
-                        role: 'user',
-                        parts: [
-                            { text: 'Transcribe this audio/video. Return only the transcription text in the language spoken. If there is no speech, return an empty string.' },
-                            { inlineData: { data: base64data, mimeType } }
+        if (!transcription) {
+            const fastAudioUrl = getOptimizedAudioForTranscriptionUrl(url);
+
+            // 1. Primary path: Server-side cloud-to-cloud transcription on our Edge Gateway (~150 bytes payload, immune to TSPU resets)
+            const serverResult = await requestServerSideTranscription(fastAudioUrl, url, msgType);
+            if (serverResult) {
+                transcription = serverResult;
+            } else {
+                // 2. Fallback path: Client-side download of tiny 48kbps MP3 stream + Gemini Edge proxy
+                let response = await fetch(fastAudioUrl);
+                if (!response.ok && fastAudioUrl !== url) {
+                    response = await fetch(rewriteMediaUrl(url, undefined, false));
+                }
+                if (!response.ok) {
+                    throw new Error(`Fetch error: ${response.status}`);
+                }
+
+                const blob = await response.blob();
+
+                const base64data = await new Promise<string>((resolve, reject) => {
+                    const reader = new FileReader();
+                    reader.onloadend = () => {
+                        const base64 = (reader.result as string).split(',')[1];
+                        resolve(base64);
+                    };
+                    reader.onerror = reject;
+                    reader.readAsDataURL(blob);
+                });
+
+                let mimeType = blob.type || (fastAudioUrl.endsWith('.mp3') ? 'audio/mp3' : url.includes('.mp4') ? 'video/mp4' : 'audio/webm');
+                if (mimeType.includes(';')) {
+                    mimeType = mimeType.split(';')[0];
+                }
+                if (mimeType === 'audio/mpeg' || fastAudioUrl.endsWith('.mp3')) {
+                    mimeType = 'audio/mp3';
+                } else if (msgType === 'voice' || msgType === 'video_circle' || mimeType.includes('video')) {
+                    mimeType = 'audio/webm';
+                }
+
+                const result = await executeAiWithFallback(async (ai: GoogleGenAI) => {
+                    return await ai.models.generateContent({
+                        model: 'gemini-2.5-flash',
+                        contents: [
+                            {
+                                role: 'user',
+                                parts: [
+                                    { text: 'Transcribe this audio accurately. Return ONLY the spoken text in its original language without quotes or extra commentary. If there is no speech, return an empty string.' },
+                                    { inlineData: { data: base64data, mimeType } }
+                                ]
+                            }
                         ]
-                    }
-                ]
-            });
-        });
+                    });
+                });
 
-        const transcription = result.text?.trim() || 'Нет речи';
+                transcription = result.text?.trim() || 'Нет речи';
+            }
 
-        // Save transcription to message
-        const { data: msg, error: fetchError } = await supabase
+            transcriptionCache.set(messageId, transcription);
+        }
+
+        // Update UI immediately
+        const textContainer = document.getElementById(`transcription-text-${messageId}`);
+        if (textContainer) {
+            textContainer.innerHTML = `<div class="mt-1 text-sm text-gray-700 dark:text-gray-200 bg-black/5 dark:bg-white/5 p-2 rounded-lg animate-fadeIn ${msgType === 'video_circle' ? 'max-w-[200px]' : ''}">${escapeHtml(transcription)}</div>`;
+        }
+        if (btn) btn.remove();
+
+        // Update local cached messages
+        const localMsg = currentMessages.find((m) => m.id === messageId);
+        if (localMsg && Array.isArray(localMsg.media) && localMsg.media.length > 0) {
+            localMsg.media[0].transcription = transcription;
+            if (state.activeChatId) {
+                saveCachedMessages(state.activeChatId, currentMessages);
+            }
+        }
+
+        // Persist transcription to Supabase in background
+        const { data: msg } = await supabase
             .from('messages')
             .select('media')
             .eq('id', messageId)
-            .single();
+            .maybeSingle();
 
-        if (fetchError || !msg) throw fetchError;
-
-        const media = msg.media || [];
-        if (media.length > 0) {
-            media[0].transcription = transcription;
-            
-            const { error: updateError } = await supabase
+        if (msg && Array.isArray(msg.media) && msg.media.length > 0) {
+            msg.media[0].transcription = transcription;
+            await supabase
                 .from('messages')
-                .update({ media })
+                .update({ media: msg.media })
                 .eq('id', messageId);
-                
-            if (updateError) throw updateError;
-            
-            const textContainer = document.getElementById(`transcription-text-${messageId}`);
-            if (textContainer) {
-                textContainer.innerHTML = `<div class="mt-1 text-sm text-gray-700 dark:text-gray-200 bg-black/5 dark:bg-white/5 p-2 rounded-lg animate-fadeIn ${msgType === 'video_circle' ? 'max-w-[200px]' : ''}">${transcription}</div>`;
-            }
-            if (btn) btn.remove();
         }
-
     } catch (err: any) {
         console.error('Transcription error:', err);
-        
+
         if (!err.message?.includes('All API keys exhausted')) {
             let errorMessage = `Ошибка расшифровки: ${err.message?.substring(0, 50)}`;
             const errText = err.message?.toLowerCase() || '';
@@ -95,13 +156,13 @@ export async function transcribeMedia(url: string, messageId: string, msgType?: 
             } else if (errText.includes('safety') || errText.includes('blocked') || errText.includes('filter')) {
                 errorMessage = '🛡️ Расшифровка заблокирована фильтром безопасности.';
             } else if (errText.includes('fetch')) {
-                errorMessage = 'Не удалось загрузить файл для расшифровки';
+                errorMessage = 'Не удалось загрузить аудио для расшифровки';
             } else if (errText.includes('503') || errText.includes('overloaded')) {
-                errorMessage = '🐌 Сервер нейросети перегружен. Попробуйте через пару минут.';
+                errorMessage = '🐌 Сервер нейросети перегружен. Попробуйте через пару секунд.';
             }
             customToast(errorMessage);
         }
-        
+
         const btn = document.getElementById(`transcribe-btn-${messageId}`);
         if (btn) {
             btn.innerHTML = `<span class="text-[10px] font-bold">Aa</span>`;
