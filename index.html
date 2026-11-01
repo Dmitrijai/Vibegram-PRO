@@ -1,7 +1,8 @@
 <!DOCTYPE html>
 <html lang="ru">
 <head>
-    <script async defer src="https://cdn.jsdelivr.net/npm/eruda" onload="if(window.eruda) window.eruda.init();" onerror="var s=document.createElement('script');s.src='https://unpkg.com/eruda';s.async=true;s.onload=function(){if(window.eruda)window.eruda.init();};document.head.appendChild(s);"></script>
+    <script src="https://cdn.jsdelivr.net/npm/eruda"></script>
+    <script>eruda.init();</script>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>Vibegram</title>
@@ -56,7 +57,7 @@
                 </svg>
                 Продолжить с Google
             </button>
-            <p id="auth-error" class="text-red-500 mt-3 text-sm font-medium min-h-[1rem] transition-all"></p>
+            <p id="auth-error" class="text-red-500 mt-4 text-sm font-medium min-h-[1rem] transition-all"></p>
         </div>
     </div>
 
@@ -116,7 +117,6 @@
                 <div id="search-results" class="hidden mt-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-xl absolute w-[calc(100%-24px)] z-50 max-h-64 overflow-y-auto"></div>
             </div>
 
-            <div id="network-status-banner" class="hidden shrink-0"></div>
             <div id="chats-list" class="flex-1 overflow-y-auto bg-white dark:bg-gray-900"></div>
         </div>
 

@@ -330,22 +330,14 @@ async function loadMiniApps(tab: string) {
 
   try {
     let isDirectLinkSearch = false;
-    const catalogColumns = `
-            id,
-            creator_id,
-            title,
-            description,
-            icon_url,
-            html_url,
-            visibility,
-            views_count,
-            likes_count,
-            created_at,
-            creator:creator_id(username, display_name, avatar_url)
-        `;
     let query = supabase
       .from("mini_apps")
-      .select(catalogColumns);
+      .select(
+        `
+            *,
+            creator:creator_id(username, display_name, avatar_url)
+        `,
+      );
 
     if (tab === "public" && !currentAuthorFilter && !currentSearchQuery) {
       query = query
@@ -376,7 +368,12 @@ async function loadMiniApps(tab: string) {
       ) {
         query = supabase
           .from("mini_apps")
-          .select(catalogColumns)
+          .select(
+            `
+                    *,
+                    creator:creator_id(username, display_name, avatar_url)
+                `,
+          )
           .eq("id", extractedId);
         isDirectLinkSearch = true;
       } else {
@@ -502,7 +499,7 @@ async function loadMiniApps(tab: string) {
                         <div class="flex items-center gap-4 mt-3 text-xs text-gray-400 dark:text-gray-500">
                             <div class="flex items-center gap-1 min-w-0" title="Автор">
                                 <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path></svg>
-                                <span class="truncate hover:text-blue-500 cursor-pointer transition-colors" onclick="window.showAuthorMiniApps('${app.creator_id}', '${(((Array.isArray(app.creator) ? app.creator[0] : app.creator)?.display_name || (Array.isArray(app.creator) ? app.creator[0] : app.creator)?.username || "")).replace(/'/g, "\\'")}')">${(Array.isArray(app.creator) ? app.creator[0] : app.creator)?.display_name || (Array.isArray(app.creator) ? app.creator[0] : app.creator)?.username || "Unknown"}</span>
+                                <span class="truncate hover:text-blue-500 cursor-pointer transition-colors" onclick="window.showAuthorMiniApps('${app.creator_id}', '${(app.creator?.display_name || app.creator?.username || "").replace(/'/g, "\\'")}')">${app.creator?.display_name || app.creator?.username || "Unknown"}</span>
                             </div>
                             <div class="flex items-center gap-1 flex-shrink-0" title="Запусков">
                                 <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
@@ -911,13 +908,9 @@ export async function runMiniApp(id: string) {
       .from("mini_apps")
       .select("*")
       .eq("id", id)
-      .maybeSingle();
+      .single();
     if (error) throw error;
-    if (!data) {
-      customToast("Приложение не найдено или было удалено");
-      closeMiniApp();
-      return;
-    }
+    if (!data) throw new Error("Приложение не найдено");
     
     miniAppContentData = data;
 
@@ -1081,12 +1074,8 @@ export async function runStandaloneMiniApp(id: string) {
       .from("mini_apps")
       .select("*")
       .eq("id", id)
-      .maybeSingle();
-    if (error || !data) {
-      customToast("Мини-приложение не найдено или было удалено");
-      closeMiniApp();
-      return;
-    }
+      .single();
+    if (error || !data) throw error || new Error("App Not Found");
 
     if (data.html_content && data.html_content.trim().startsWith("<")) {
       iframe.removeAttribute("src");
@@ -1122,8 +1111,7 @@ export async function runStandaloneMiniApp(id: string) {
           .then();
     });
   } catch (e: any) {
-    customToast(`Ошибка загрузки приложения: ${e.message}`);
-    closeMiniApp();
+    document.body.innerHTML = `<div class="h-full w-full flex items-center justify-center text-red-500 font-bold bg-white dark:bg-gray-900">Ошибка загрузки приложения: ${e.message}</div>`;
   }
 }
 
@@ -1182,7 +1170,7 @@ export async function deleteMiniApp(id: string) {
       .from("mini_apps")
       .select("*")
       .eq("id", id)
-      .maybeSingle();
+      .single();
     const { error } = await supabase.from("mini_apps").delete().eq("id", id);
     if (error) throw error;
 

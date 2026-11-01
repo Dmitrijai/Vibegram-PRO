@@ -1,89 +1,51 @@
 import { createClient } from '@supabase/supabase-js';
-import {
-    initNetworkManager,
-    smartSupabaseFetch,
-    PRIMARY_WORKER_URL,
-    isDeadGatewayUrl,
-    networkState,
-    EdgeVirtualWebSocket
-} from './network';
 
-function deobfuscate(val: string | undefined): string {
-    if (!val) return '';
-    try {
-        return atob(val.split('').reverse().join(''));
-    } catch (e) {
-        return '';
-    }
+function cleanUrl(u: string) {
+    return u.replace(/\/rest\/v[0-9]+\/?$/, '').replace(/\/$/, '');
 }
 
-// Default obfuscated public anon token fallback ONLY if CI secret is empty
-const FALLBACK_ANON_OBF = '==AUHxGXhAuL4cbhQZ06wXLhXrSTC9qmXu8bxYHx_Dnkuh.06N4923902:cxe,6828177771:tai,"nona":elor,"xcghifjzgqzqslfyoxd":fer,"esabapus":ssi{=9JCVXQiOiJ1c2MiOiJIUzI1NiIsInR5cCI6IkpXVCJ9';
+const PRIMARY_URL = cleanUrl(process.env.SUPABASE_URL || (import.meta as any).env?.VITE_SUPABASE_URL || '');
+const BACKUP_URL = cleanUrl(process.env.SUPABASE_BACKUP_URL || (import.meta as any).env?.VITE_SUPABASE_BACKUP_URL || '');
+const SUPABASE_KEY = process.env.SUPABASE_ANON_KEY || (import.meta as any).env?.VITE_SUPABASE_ANON_KEY || '';
 
-const rawSupabaseUrl =
-    deobfuscate(process.env.SUPABASE_URL_OBFUSCATED) ||
-    process.env.SUPABASE_URL ||
-    (import.meta as any).env?.VITE_SUPABASE_URL ||
-    PRIMARY_WORKER_URL;
+function getActiveSupabaseUrl(): string {
+    const useBackup = localStorage.getItem('vg_active_proxy') === 'backup';
+    if (useBackup && BACKUP_URL) return BACKUP_URL;
+    return PRIMARY_URL;
+}
 
-const cleanedEnvUrl = rawSupabaseUrl.replace(/\/rest\/v[0-9]+\/?$/, '').replace(/\/$/, '');
-const SUPABASE_URL = !isDeadGatewayUrl(cleanedEnvUrl) ? cleanedEnvUrl : PRIMARY_WORKER_URL;
+// Вызывается, когда основной (или запасной) прокси перестал отвечать.
+// Один раз за сессию переключает домен и перезагружает страницу.
+export function tryBackupProxy(): boolean {
+    if (!BACKUP_URL) return false; // запасной домен ещё не настроен
+    if (sessionStorage.getItem('vg_proxy_switch_attempted')) return false; // уже пробовали в этой сессии
+    sessionStorage.setItem('vg_proxy_switch_attempted', '1');
+    const current = localStorage.getItem('vg_active_proxy');
+    localStorage.setItem('vg_active_proxy', current === 'backup' ? 'primary' : 'backup');
+    location.reload();
+    return true;
+}
 
-const SUPABASE_KEY =
-    deobfuscate(process.env.SUPABASE_ANON_KEY_OBFUSCATED) ||
-    process.env.SUPABASE_ANON_KEY ||
-    (import.meta as any).env?.VITE_SUPABASE_ANON_KEY ||
-    '';
+const SUPABASE_URL = getActiveSupabaseUrl();
 
 if (!SUPABASE_URL || !SUPABASE_KEY) {
-    console.error('Ключи Supabase не настроены. Добавьте SUPABASE_URL и SUPABASE_ANON_KEY в GitHub Secrets.');
+    console.error('Ключи Supabase не настроены. Добавьте SUPABASE_URL и SUPABASE_ANON_KEY в AI Studio Secrets.');
 }
 
-// Migrate legacy auth token key if present so switching gateways never logs out existing users
-try {
-    const unifiedKey = 'sb-vibegram-auth-token';
-    if (!localStorage.getItem(unifiedKey)) {
-        for (let i = 0; i < localStorage.length; i++) {
-            const k = localStorage.key(i);
-            if (k && k.startsWith('sb-') && k.endsWith('-auth-token') && k !== unifiedKey) {
-                const val = localStorage.getItem(k);
-                if (val) {
-                    localStorage.setItem(unifiedKey, val);
-                    break;
-                }
-            }
-        }
-    }
-} catch (e) {}
-
-initNetworkManager(SUPABASE_URL, SUPABASE_KEY);
-
-// Lock-free queue per auth key to prevent navigator.locks 5000ms steal AbortError on slow mobile DPI connections
-const authLocks = new Map<string, Promise<any>>();
-async function safeAuthLock<R>(name: string, _acquireTimeout: number, fn: () => Promise<R>): Promise<R> {
-    const prev = authLocks.get(name) || Promise.resolve();
-    const next = prev.catch(() => {}).then(() => fn());
-    authLocks.set(name, next);
-    try {
-        return await next;
-    } finally {
-        if (authLocks.get(name) === next) {
-            authLocks.delete(name);
-        }
-    }
+function fetchWithTimeout(url: RequestInfo | URL, options: RequestInit = {}) {
+    const timeoutSignal = AbortSignal.timeout(10000);
+    const signal = options.signal
+        ? AbortSignal.any([options.signal, timeoutSignal])
+        : timeoutSignal;
+    return fetch(url, { ...options, signal });
 }
 
-export const supabase = createClient(SUPABASE_URL || PRIMARY_WORKER_URL, SUPABASE_KEY, {
+export const supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
     auth: {
-        flowType: 'implicit',
-        storageKey: 'sb-vibegram-auth-token',
-        lock: safeAuthLock
-    },
-    realtime: {
-        transport: EdgeVirtualWebSocket as any
+        flowType: 'implicit'
     },
     global: {
-        fetch: smartSupabaseFetch
+        fetch: fetchWithTimeout
     }
 });
 
@@ -126,11 +88,11 @@ export const state = {
 };
 
 export function broadcastUpdate(chatId: string, type: string = 'message') {
-    if (state.globalChannel && networkState.realtimeConnected) {
+    if (state.globalChannel) {
         state.globalChannel.send({
             type: 'broadcast',
             event: 'update_trigger',
             payload: { chatId, type, senderId: state.currentUser?.id }
-        }).catch(() => {});
+        }).catch(console.error);
     }
 }

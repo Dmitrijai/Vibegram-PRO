@@ -1,66 +1,7 @@
 import { supabase, state } from './supabase';
 import { getFakeEmail, showError, customConfirm } from './utils';
-import { loadChats, renderCachedChatsImmediately } from './chat';
+import { loadChats } from './chat';
 import { initWebRTC } from './webrtc';
-import { getCachedBootstrap, saveCachedBootstrap, clearAllVibegramCache } from './cache';
-
-let hasFinalizedAppSetup = false;
-
-export function hydrateFromCacheOnBoot(): boolean {
-    if ((window as any).originalAdminUser || hasFinalizedAppSetup) return false;
-    try {
-        const rawAuthToken =
-            localStorage.getItem('sb-vibegram-auth-token') ||
-            localStorage.getItem('sb-dxoyyflsqrzgzjfihgcx-auth-token');
-        if (!rawAuthToken) return false;
-
-        let cached = getCachedBootstrap();
-        if (!cached || !cached.user || !cached.profile) {
-            // Fallback: extract user directly from stored Supabase auth token
-            const parsedToken = JSON.parse(rawAuthToken);
-            const tokenUser = parsedToken?.user || parsedToken?.currentSession?.user;
-            if (!tokenUser?.id) return false;
-            const nickname =
-                tokenUser.user_metadata?.full_name ||
-                tokenUser.user_metadata?.name ||
-                tokenUser.user_metadata?.nickname ||
-                (tokenUser.email ? tokenUser.email.split('@')[0] : 'User');
-            const fallbackProfile = {
-                id: tokenUser.id,
-                display_name: nickname,
-                username: 'user_' + tokenUser.id.substring(0, 8),
-                avatar_url: tokenUser.user_metadata?.avatar_url || tokenUser.user_metadata?.picture || null,
-                settings: {}
-            };
-            cached = { user: tokenUser, profile: fallbackProfile, updatedAt: Date.now() };
-        }
-
-        state.currentUser = cached.user;
-        state.currentProfile = cached.profile;
-
-        const data = cached.profile;
-        const user = cached.user;
-        const twoStepPasscode = data.settings?.twoStepPasscode;
-        const appLock = localStorage.getItem('vibegram_app_lock_' + user.id);
-
-        if (twoStepPasscode && !localStorage.getItem('vibegram_2fa_trusted_' + user.id)) {
-            state.pendingLockType = '2fa';
-            state.pendingLockValue = twoStepPasscode;
-            showLockScreen('Двухэтапный пароль', 'Введите пароль вашего аккаунта');
-            return true;
-        } else if (appLock && !sessionStorage.getItem('vibegram_applock_passed')) {
-            state.pendingLockType = 'applock';
-            state.pendingLockValue = appLock;
-            showLockScreen('Блокировка', 'Введите локальный PIN-код');
-            return true;
-        }
-
-        finalizeAppSetup(true);
-        return true;
-    } catch (e) {
-        return false;
-    }
-}
 
 export async function loginWithGoogle() {
     const btn = event?.currentTarget as HTMLButtonElement | undefined;
@@ -86,47 +27,19 @@ export async function loginWithGoogle() {
     }
 }
 
-let isCheckingUser = false;
-let lastCheckUserTime = 0;
-let lastCheckedUserId = '';
-
-export async function checkUser(authEvent?: string, sessionUser?: any) {
+export async function checkUser(authEvent?: string) {
     if ((window as any).originalAdminUser) return;
-    if (isCheckingUser) return;
-
-    const candidateUser = sessionUser || state.currentUser;
-    const now = Date.now();
-    if (
-        authEvent &&
-        hasFinalizedAppSetup &&
-        candidateUser?.id &&
-        candidateUser.id === lastCheckedUserId &&
-        now - lastCheckUserTime < 25000 &&
-        !state.pendingLockType
-    ) {
-        return;
-    }
-
-    isCheckingUser = true;
     try {
         if ("Notification" in window && Notification.permission === "default") {
             Notification.requestPermission();
         }
-        let user = sessionUser || state.currentUser || null;
-        let error: any = null;
-        if (!user) {
-            const res = await supabase.auth.getUser();
-            user = res.data?.user || null;
-            error = res.error;
-        }
+        const { data: { user }, error } = await supabase.auth.getUser();
         if (error) {
             console.error('Auth error:', error.message || error);
             if (error.message?.includes('claim in JWT') || error.message?.includes('session') || (error as any).status === 403) {
                 // Clear stale invalid session tokens so user can log in cleanly
                 await supabase.auth.signOut().catch(() => {});
                 localStorage.removeItem('sb-dxoyyflsqrzgzjfihgcx-auth-token');
-                localStorage.removeItem('sb-vibegram-auth-token');
-                clearAllVibegramCache();
                 state.currentUser = null;
                 state.currentProfile = null;
                 const loader = document.getElementById('initial-loader');
@@ -138,11 +51,12 @@ export async function checkUser(authEvent?: string, sessionUser?: any) {
                 document.getElementById('app-screen')?.classList.add('hidden');
                 return;
             }
+            if (error.message === 'Failed to fetch') {
+                import('./utils').then(m => m.showError('Не удалось подключиться к серверу (Failed to fetch). Возможно, база данных Supabase остановлена.'));
+            }
             return;
         }
         if (user) {
-            lastCheckedUserId = user.id;
-            lastCheckUserTime = Date.now();
             const SUPABASE_URL = supabase['supabaseUrl'] || 'default';
             const deviceRegKey = 'vibegram_device_registered_' + SUPABASE_URL;
             const registeredUserIdKey = 'vibegram_registered_user_id_' + SUPABASE_URL;
@@ -172,7 +86,7 @@ export async function checkUser(authEvent?: string, sessionUser?: any) {
             }
 
             state.currentUser = user;
-            let { data } = await supabase.from('profiles').select('*').eq('id', user.id).maybeSingle();
+            let { data } = await supabase.from('profiles').select('*').eq('id', user.id).single();
             
             // Fallback if trigger failed to create profile
             if (!data) {
@@ -183,13 +97,11 @@ export async function checkUser(authEvent?: string, sessionUser?: any) {
                 }
                 const avatarUrl = user.user_metadata?.avatar_url || user.user_metadata?.picture || null;
                 await supabase.from('profiles').insert({ id: user.id, display_name: nickname, username, avatar_url: avatarUrl });
-                const { data: newData } = await supabase.from('profiles').select('*').eq('id', user.id).maybeSingle();
+                const { data: newData } = await supabase.from('profiles').select('*').eq('id', user.id).single();
                 data = newData;
             }
-            if (!data) return;
             
             state.currentProfile = data;
-            saveCachedBootstrap(user, data);
             
             if (data.settings?.force_pin_reset) {
                 localStorage.removeItem('vibegram_app_lock_' + user.id);
@@ -197,7 +109,6 @@ export async function checkUser(authEvent?: string, sessionUser?: any) {
                 delete newSettings.force_pin_reset;
                 await supabase.from('profiles').update({ settings: newSettings }).eq('id', user.id);
                 data.settings = newSettings;
-                saveCachedBootstrap(user, data);
             }
 
             // Clear URL to prevent OAuth token leak or reload loops
@@ -229,17 +140,20 @@ export async function checkUser(authEvent?: string, sessionUser?: any) {
             }
             
             // If passed or not set, continue to app setup
-            finalizeAppSetup(false);
+            finalizeAppSetup();
         }
     } catch (err: any) {
-        console.warn('Network delay in checkUser:', err);
+        console.error('Failed to check user:', err);
         const loader = document.getElementById('initial-loader');
         if (loader) {
             loader.classList.add('opacity-0', 'pointer-events-none');
             setTimeout(() => loader.remove(), 300);
         }
-    } finally {
-        isCheckingUser = false;
+        if (err?.message === 'Failed to fetch' || err?.message?.includes('Failed to fetch')) {
+            import('./utils').then(m => m.showError('Не удалось подключиться к серверу (Failed to fetch). Возможно, проект Supabase приостановлен.'));
+        } else {
+            import('./utils').then(m => m.showError('Ошибка сети. Проверьте подключение или статус Supabase.'));
+        }
     }
 }
 
@@ -402,9 +316,7 @@ export async function verifyRecoveryCode() {
     }
 }
 
-function finalizeAppSetup(isFromCache = false) {
-            const alreadySetup = hasFinalizedAppSetup;
-            hasFinalizedAppSetup = true;
+function finalizeAppSetup() {
             const initialSearchCheck = sessionStorage.getItem('initial_search') || window.location.search;
             const isStandalone = new URLSearchParams(initialSearchCheck).get('miniapp');
             
@@ -469,34 +381,25 @@ function finalizeAppSetup(isFromCache = false) {
                     chatContainer.classList.add('chat-bg');
                 }
             }
-
-            if (isFromCache) {
-                renderCachedChatsImmediately();
-                return;
-            }
             
-            if (!alreadySetup) {
+            setOnlineStatus(document.hasFocus() && !document.hidden);
+            window.addEventListener('focus', () => setOnlineStatus(true));
+            window.addEventListener('blur', () => setOnlineStatus(false));
+            document.addEventListener('visibilitychange', () => {
                 setOnlineStatus(document.hasFocus() && !document.hidden);
-                window.addEventListener('focus', () => setOnlineStatus(true));
-                window.addEventListener('blur', () => setOnlineStatus(false));
-                document.addEventListener('visibilitychange', () => {
-                    setOnlineStatus(document.hasFocus() && !document.hidden);
-                });
-                window.addEventListener('beforeunload', () => setOnlineStatus(false));
+            });
+            window.addEventListener('beforeunload', () => setOnlineStatus(false));
 
-                if ("Notification" in window) {
-                    if (Notification.permission !== "granted" && Notification.permission !== "denied") {
-                        Notification.requestPermission();
-                    }
+            if ("Notification" in window) {
+                if (Notification.permission !== "granted" && Notification.permission !== "denied") {
+                    Notification.requestPermission();
                 }
             }
 
             loadChats();
-            if (!alreadySetup) {
-                initWebRTC(); // Initialize WebRTC listener for incoming calls
-                handleInviteLink();
-                startVibHeartbeat();
-            }
+            initWebRTC(); // Initialize WebRTC listener for incoming calls
+            handleInviteLink();
+            startVibHeartbeat();
             
             const savedIncognito = localStorage.getItem('incognito_chat_args');
             if (savedIncognito) {
@@ -515,7 +418,6 @@ function finalizeAppSetup(isFromCache = false) {
                 const initialSearch = sessionStorage.getItem('initial_search') || window.location.search;
                 const urlParams = new URLSearchParams(initialSearch);
                 const queryMiniapp = urlParams.get('miniapp');
-                sessionStorage.removeItem('initial_search');
                 if (queryMiniapp) {
                     import('./miniapps').then(m => m.runStandaloneMiniApp(queryMiniapp));
                 }
@@ -536,32 +438,30 @@ export function startVibHeartbeat() {
     if (vibHeartbeatTimer) clearInterval(vibHeartbeatTimer);
     
     lastHeartbeatTime = Date.now();
-    // Check every 60 seconds instead of 15s to avoid unnecessary background DB traffic
+    // Check initially (don't increment time, just initialize)
+    processVibHeartbeat(0);
+    
+    // Check every 15 seconds
     vibHeartbeatTimer = setInterval(() => {
-        if (document.hidden) {
-            lastHeartbeatTime = Date.now();
-            return;
-        }
         const now = Date.now();
         let elapsedSecs = Math.floor((now - lastHeartbeatTime) / 1000);
         lastHeartbeatTime = now;
         
-        if (elapsedSecs > 75) elapsedSecs = 60;
+        // Cap elapsed time to 20 seconds in case of sleep/suspend to prevent fake farming
+        if (elapsedSecs > 20) elapsedSecs = 15;
         if (elapsedSecs < 0) elapsedSecs = 0;
         
         processVibHeartbeat(elapsedSecs);
-    }, 60000);
+    }, 15000);
 }
 
 async function processVibHeartbeat(elapsedSeconds: number) {
     if (!state.currentUser || (window as any).originalAdminUser) return;
     try {
-        let settings = state.currentProfile?.settings;
-        if (!settings) {
-            const { data: profile, error: dbErr } = await supabase.from('profiles').select('settings').eq('id', state.currentUser.id).maybeSingle();
-            if (dbErr || !profile) return;
-            settings = profile.settings || {};
-        }
+        const { data: profile, error: dbErr } = await supabase.from('profiles').select('settings').eq('id', state.currentUser.id).single();
+        if (dbErr || !profile) return;
+        
+        let settings = profile.settings || {};
         let weekly = settings.vib_weekly || {};
         
         const now = new Date();
@@ -718,15 +618,13 @@ export async function setOnlineStatus(isOnline: boolean) {
 
 export async function forceLogout() {
     // Used from lock screen without confirmation
-    await setOnlineStatus(false).catch(() => {});
+    await setOnlineStatus(false);
     if (state.currentUser) {
         localStorage.removeItem('vibegram_2fa_trusted_' + state.currentUser.id);
     }
-    clearAllVibegramCache();
-    localStorage.removeItem('sb-vibegram-auth-token');
     sessionStorage.removeItem('vibegram_2fa_passed');
     sessionStorage.removeItem('vibegram_applock_passed');
-    await supabase.auth.signOut().catch(() => {}); 
+    await supabase.auth.signOut(); 
     window.location.reload(); 
 }
 

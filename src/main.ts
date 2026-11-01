@@ -215,14 +215,10 @@ window.addEventListener('popstate', (e) => {
 
 const urlParams = new URLSearchParams(window.location.search);
 
-// Cache original hash/search on startup to handle PWA cold start with deep links
-if (window.location.search) {
-    sessionStorage.setItem('initial_search', window.location.search);
-} else {
-    sessionStorage.removeItem('initial_search');
-}
+// Cache original hash on startup to handle PWA cold start with deep links
 if (!sessionStorage.getItem('initial_hash_handled')) {
     sessionStorage.setItem('initial_hash', window.location.hash);
+    sessionStorage.setItem('initial_search', window.location.search);
 }
 
 // Initialize app
@@ -232,10 +228,6 @@ const hashError = hashParams.get('error_description') || hashParams.get('error')
 const idToken = hashParams.get('id_token') || queryParams.get('id_token');
 
 let isHandlingIdToken = false;
-let subscriptionsSetup = false;
-let hybridMsgTimer: any = null;
-let hybridChatsTimer: any = null;
-let lastAuthLogKey = '';
 
 if (idToken) {
     isHandlingIdToken = true;
@@ -268,49 +260,28 @@ if (idToken) {
     window.history.replaceState({}, document.title, window.location.pathname);
 }
 
-if (!idToken && !hashError) {
-    // Hydrate UI in 0ms from local snapshot if user was previously logged in
-    if (logic.hydrateFromCacheOnBoot()) {
-        setupRealtime();
-        logic.loadChats();
-    }
-}
-
 supabase.auth.getSession().then(({ data: { session }, error }) => {
     if (error) {
-        console.warn('Session check warning:', error.message);
+        import('./utils').then(m => m.showError('Session error: ' + error.message));
     }
-    if (!session && !isHandlingIdToken && !state.currentUser) {
+    if (!session && !isHandlingIdToken) {
         const loader = document.getElementById('initial-loader');
         if (loader) {
             loader.classList.add('opacity-0', 'pointer-events-none');
             setTimeout(() => loader.remove(), 300);
         }
         document.getElementById('auth-screen')!.classList.remove('hidden');
-    } else if ((session?.user || state.currentUser) && !subscriptionsSetup) {
-        if (session?.user) state.currentUser = session.user;
-        setupRealtime();
     }
 });
 
 supabase.auth.onAuthStateChange((event, session) => {
-    const authLogKey = `${event}:${session?.user?.id || 'none'}`;
-    if (authLogKey !== lastAuthLogKey) {
-        lastAuthLogKey = authLogKey;
-        console.log("Auth State Changed:", event, "Session exists?", !!session);
-    }
-
-    if (event === 'TOKEN_REFRESHED') {
-        if (session?.user) state.currentUser = session.user;
-        return;
-    }
-
+    console.log("Auth State Changed:", event, "Session exists?", !!session);
     if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION') {
-        if (session?.user || state.currentUser) {
-            if (session?.user) state.currentUser = session.user;
-            logic.checkUser(event, session?.user);
+        if (session?.user) {
+            state.currentUser = session.user;
+            logic.checkUser(event);
             setupRealtime();
-        } else if (event === 'INITIAL_SESSION' && !isHandlingIdToken && !state.currentUser) {
+        } else if (event === 'INITIAL_SESSION' && !isHandlingIdToken) {
             document.getElementById('auth-screen')!.classList.remove('hidden');
             const loader = document.getElementById('initial-loader');
             if (loader) {
@@ -319,72 +290,25 @@ supabase.auth.onAuthStateChange((event, session) => {
             }
         }
     } else if (event === 'SIGNED_OUT') {
-        state.currentUser = null;
-        state.currentProfile = null;
         document.getElementById('auth-screen')!.classList.remove('hidden');
         document.getElementById('app-screen')!.classList.add('hidden');
         subscriptionsSetup = false;
-        stopHybridRealtimeSync();
     }
 });
 
-// Setup Realtime subscriptions + Hybrid HTTP Delta Polling fallback
-
-function startHybridRealtimeSync() {
-    stopHybridRealtimeSync();
-
-    // Active chat delta sync: runs every 1.6s when WebSocket is blocked by TSPU, or every 6s as backup
-    hybridMsgTimer = setInterval(() => {
-        if (document.hidden || !state.currentUser?.id || !state.activeChatId) return;
-        import('./network').then(({ networkState }) => {
-            if (!networkState.realtimeConnected || Date.now() % 4 === 0) {
-                if ((window as any).logic?.pollActiveChatDelta) {
-                    (window as any).logic.pollActiveChatDelta();
-                }
-            }
-        });
-    }, 1600);
-
-    // Chat list sync: runs every 4.8s when WebSocket is blocked by TSPU
-    hybridChatsTimer = setInterval(() => {
-        if (document.hidden || !state.currentUser?.id) return;
-        import('./network').then(({ networkState }) => {
-            if (!networkState.realtimeConnected) {
-                if ((window as any).logic?.loadChats) {
-                    (window as any).logic.loadChats(1);
-                }
-            }
-        });
-    }, 4800);
-}
-
-function stopHybridRealtimeSync() {
-    if (hybridMsgTimer) {
-        clearInterval(hybridMsgTimer);
-        hybridMsgTimer = null;
-    }
-    if (hybridChatsTimer) {
-        clearInterval(hybridChatsTimer);
-        hybridChatsTimer = null;
-    }
-}
+// Setup Realtime subscriptions
+let subscriptionsSetup = false;
 
 function setupRealtime() {
     if (subscriptionsSetup || !state.currentUser) return;
     subscriptionsSetup = true;
-    startHybridRealtimeSync();
 
     supabase.channel('public:messages')
         .on('postgres_changes', { event: '*', schema: 'public', table: 'messages' }, async payload => {
             if (payload.eventType === 'INSERT') {
-                if (!state.currentUser?.id || !payload.new?.chat_id) return;
+                if (!state.currentUser?.id) return;
                 if (payload.new.sender_id !== state.currentUser.id) {
-                    const { data: member } = await supabase
-                        .from('chat_members')
-                        .select('id')
-                        .eq('chat_id', payload.new.chat_id)
-                        .eq('user_id', state.currentUser.id)
-                        .maybeSingle();
+                    const { data: member } = await supabase.from('chat_members').select('id').eq('chat_id', payload.new.chat_id).eq('user_id', state.currentUser.id).single();
                     if (!member) return;
                 }
                 
@@ -400,8 +324,8 @@ function setupRealtime() {
                             }
                         }
                         
-                        const { data: profile } = await supabase.from('profiles').select('settings').eq('id', state.currentUser.id).maybeSingle();
-                        const { data: chatData } = await supabase.from('chats').select('description, type, title').eq('id', payload.new.chat_id).maybeSingle();
+                        const { data: profile } = await supabase.from('profiles').select('settings').eq('id', state.currentUser.id).single();
+                        const { data: chatData } = await supabase.from('chats').select('description, type, title').eq('id', payload.new.chat_id).single();
                         const isCommentChat = chatData?.description === 'POST_COMMENTS' || (chatData?.type === 'group' && chatData?.title === 'Комментарии');
                         
                         const settings = profile?.settings || {};
@@ -413,7 +337,7 @@ function setupRealtime() {
                         
                         if (document.hidden && "Notification" in window && Notification.permission === "granted" && !isCommentChat) {
                             try {
-                                const { data: sender } = await supabase.from('profiles').select('display_name, username').eq('id', payload.new.sender_id).maybeSingle();
+                                const { data: sender } = await supabase.from('profiles').select('display_name, username').eq('id', payload.new.sender_id).single();
                                 const senderName = sender?.display_name || sender?.username || 'Пользователь';
                                 const text = payload.new.content || (payload.new.message_type === 'voice' ? '🎤 Голосовое сообщение' : 'Медиа сообщение');
                                 new Notification(`Новое сообщение от ${senderName}`, { body: text });
@@ -422,14 +346,14 @@ function setupRealtime() {
                     }
                 } else {
                     if (payload.new.sender_id !== state.currentUser?.id) {
-                        const { data: profile } = await supabase.from('profiles').select('settings').eq('id', state.currentUser.id).maybeSingle();
-                        const { data: chatData } = await supabase.from('chats').select('description, type, title').eq('id', payload.new.chat_id).maybeSingle();
+                        const { data: profile } = await supabase.from('profiles').select('settings').eq('id', state.currentUser.id).single();
+                        const { data: chatData } = await supabase.from('chats').select('description, type, title').eq('id', payload.new.chat_id).single();
                         const isCommentChat = chatData?.description === 'POST_COMMENTS' || (chatData?.type === 'group' && chatData?.title === 'Комментарии');
                         
                         const settings = profile?.settings || {};
                         const mutedChats = settings.muted_chats || [];
                         if (!mutedChats.includes(payload.new.chat_id) && settings.notifications !== false && !isCommentChat) {
-                            const { data: sender } = await supabase.from('profiles').select('display_name, username, avatar_url').eq('id', payload.new.sender_id).maybeSingle();
+                            const { data: sender } = await supabase.from('profiles').select('display_name, username, avatar_url').eq('id', payload.new.sender_id).single();
                             const senderName = sender?.display_name || sender?.username || 'Пользователь';
                             const text = payload.new.content || (payload.new.message_type === 'voice' ? '🎤 Голосовое сообщение' : 'Медиа сообщение');
                             
@@ -462,11 +386,7 @@ function setupRealtime() {
                  (window as any).logic.loadChats();
             }
         })
-        .subscribe((status: string) => {
-            import('./network').then(({ setRealtimeConnectedState }) => {
-                setRealtimeConnectedState(status === 'SUBSCRIBED');
-            });
-        });
+        .subscribe();
 
     supabase.channel('public:profiles')
         .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'profiles' }, payload => {
@@ -585,9 +505,6 @@ function setupRealtime() {
             }
         })
         .subscribe((status: string) => {
-            import('./network').then(({ setRealtimeConnectedState }) => {
-                setRealtimeConnectedState(status === 'SUBSCRIBED');
-            });
             if (status === 'SUBSCRIBED') {
                 if ((window as any).logic?.loadChats) {
                     (window as any).logic.loadChats();

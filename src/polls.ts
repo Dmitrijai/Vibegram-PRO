@@ -1,5 +1,5 @@
 import { supabase, state } from './supabase';
-import { customToast, escapeHtml } from './utils';
+import { customToast } from './utils';
 
 let editingPollId: string | null = null;
 let currentPollId: string | null = null;
@@ -269,7 +269,7 @@ export async function showPollVoters(messageId: string) {
             html += `
                 <div class="mb-4">
                     <div class="text-sm font-bold text-gray-800 dark:text-gray-200 mb-2 border-b border-gray-100 dark:border-gray-700 pb-1">
-                        ${escapeHtml(opt.text)} <span class="text-gray-500 font-normal ml-1">${opt.votes.length}</span>
+                        ${opt.text} <span class="text-gray-500 font-normal ml-1">${opt.votes.length}</span>
                     </div>
                     <div class="space-y-2 pl-2">
             `;
@@ -278,7 +278,7 @@ export async function showPollVoters(messageId: string) {
                 const profile = profileMap.get(userId);
                 if (!profile) return;
                 
-                const name = escapeHtml(profile.display_name || profile.username || 'User');
+                const name = profile.display_name || profile.username || 'User';
                 const avatar = profile.avatar_url 
                     ? `<img src="${profile.avatar_url}" class="w-6 h-6 rounded-full object-cover">`
                     : `<div class="w-6 h-6 rounded-full bg-gradient-to-br from-blue-400 to-blue-600 flex items-center justify-center text-white text-[10px] font-bold">${name.charAt(0).toUpperCase()}</div>`;

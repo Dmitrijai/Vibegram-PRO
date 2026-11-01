@@ -81,7 +81,7 @@ export function searchUsers(q: string) {
 }
 
 export async function joinChannelWithKey(channel: any, key: string) {
-    const { data: existing } = await supabase.from('chat_members').select('*').eq('chat_id', channel.id).eq('user_id', state.currentUser.id).maybeSingle();
+    const { data: existing } = await supabase.from('chat_members').select('*').eq('chat_id', channel.id).eq('user_id', state.currentUser.id).single();
     if (existing) {
         if (existing.role === 'pending') {
             await supabase.from('chat_members').update({ role: 'member' }).eq('chat_id', channel.id).eq('user_id', state.currentUser.id);
@@ -100,7 +100,7 @@ export async function joinChannelWithKey(channel: any, key: string) {
 }
 
 export async function joinGroup(group: any) {
-    const { data: existing } = await supabase.from('chat_members').select('*').eq('chat_id', group.id).eq('user_id', state.currentUser.id).maybeSingle();
+    const { data: existing } = await supabase.from('chat_members').select('*').eq('chat_id', group.id).eq('user_id', state.currentUser.id).single();
     if (existing) {
         if (existing.role === 'pending') {
             import('./utils').then(m => m.customAlert('Заявка на вступление уже отправлена. Ожидайте подтверждения.'));
@@ -115,7 +115,7 @@ export async function joinGroup(group: any) {
 }
 
 export async function joinChannel(channel: any) {
-    const { data: existing } = await supabase.from('chat_members').select('*').eq('chat_id', channel.id).eq('user_id', state.currentUser.id).maybeSingle();
+    const { data: existing } = await supabase.from('chat_members').select('*').eq('chat_id', channel.id).eq('user_id', state.currentUser.id).single();
     if (!existing) {
         await supabase.from('chat_members').insert({ chat_id: channel.id, user_id: state.currentUser.id, role: 'member' });
         import('./utils').then(m => m.customAlert('Вы подписались на канал.'));

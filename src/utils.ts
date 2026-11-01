@@ -597,11 +597,12 @@ function extractPublicId(fileUrl: string) {
 
 export async function softDeleteCloudinaryFile(fileUrl: string): Promise<boolean> {
     try {
-        if (fileUrl.includes('res.cloudinary.com') || fileUrl.includes('/cloudinary/')) {
+        if (fileUrl.includes('res.cloudinary.com')) {
             const { cloudName, apiKey, apiSecret } = getCloudinaryConfig();
             const publicId = extractPublicId(fileUrl);
             
             if (!publicId || !cloudName || !apiKey || !apiSecret) {
+                // Keep Cloudinary endpoint for backward compatibility on localhost
                 const res = await fetch('/api/cloudinary/soft-delete', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -631,8 +632,7 @@ export async function softDeleteCloudinaryFile(fileUrl: string): Promise<boolean
             formData.append('timestamp', timestamp);
             formData.append('signature', signature);
             
-            const { getActiveMediaGatewayBaseUrl } = await import('./network');
-            const res = await fetch(`${getActiveMediaGatewayBaseUrl()}/cloudinary-api/v1_1/${cloudName}/${resourceType}/destroy`, {
+            const res = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/${resourceType}/destroy`, {
                 method: 'POST',
                 body: formData
             });
@@ -678,8 +678,7 @@ export async function uploadToCloudinary(file: File | Blob, isAvatar = false, ab
             formData.append('timestamp', timestamp);
             formData.append('signature', signature);
             
-            const { getActiveMediaGatewayBaseUrl, rewriteMediaUrl } = await import('./network');
-            const res = await fetch(`${getActiveMediaGatewayBaseUrl()}/cloudinary-api/v1_1/${cloudName}/auto/upload`, {
+            const res = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/auto/upload`, {
                 method: 'POST',
                 body: formData,
                 signal: abortSignal
@@ -696,14 +695,17 @@ export async function uploadToCloudinary(file: File | Blob, isAvatar = false, ab
                  }
             }
             
-            return rewriteMediaUrl(url);
+            return url;
         } catch (err: any) {
             if (err.name === 'AbortError') throw err;
-            console.warn("Cloudinary upload warning, trying fallback storage:", err);
+            console.error("Cloudinary upload failed:", err);
+            customToast("Ошибка загрузки в Cloudinary. Проверьте API ключи.");
+            throw err;
         }
     }
     
-    // Fallback to Supabase Storage through Edge Gateway if Cloudinary is unavailable
+    // Explicit error if Cloudinary is not configured correctly on the backend
+    // Try fallback to Supabase if Cloudinary is not configured
     try {
         let bucket = 'vibegram_media';
         if (targetBucket) {
@@ -728,8 +730,7 @@ export async function uploadToCloudinary(file: File | Blob, isAvatar = false, ab
         }
 
         const { data: publicUrlData } = supabase.storage.from(bucket).getPublicUrl(filePath);
-        const { rewriteMediaUrl } = await import('./network');
-        return rewriteMediaUrl(publicUrlData.publicUrl);
+        return publicUrlData.publicUrl;
     } catch (err: any) {
         if (err.name === 'AbortError') throw err;
         console.error("Upload failed:", err);
@@ -739,22 +740,16 @@ export async function uploadToCloudinary(file: File | Blob, isAvatar = false, ab
 
 (window as any).handleMediaError = function(el: HTMLElement, url: string) {
     let retries = parseInt(el.getAttribute('data-retries') || '0');
-    if (retries < 4) {
+    if (retries < 3) {
         el.setAttribute('data-retries', (retries + 1).toString());
-        import('./network').then(({ MEDIA_GATEWAY_URLS, rewriteMediaUrl }) => {
-            const targetGw = MEDIA_GATEWAY_URLS[(retries + 1) % MEDIA_GATEWAY_URLS.length];
-            const isVideo = el.tagName === 'VIDEO' || url.includes('/video/upload/');
-            const useAutoQuality = isVideo ? true : retries < 2;
-            const fallbackUrl = rewriteMediaUrl(url, targetGw, useAutoQuality);
-            setTimeout(() => {
-                if (el.tagName === 'IMG') {
-                    (el as HTMLImageElement).src = fallbackUrl + (fallbackUrl.includes('?') ? '&' : '?') + 'retry=' + (retries + 1);
-                } else if (el.tagName === 'VIDEO') {
-                    (el as HTMLVideoElement).src = fallbackUrl + (fallbackUrl.includes('?') ? '&' : '?') + 'retry=' + (retries + 1);
-                    (el as HTMLVideoElement).load();
-                }
-            }, 350 * (retries + 1));
-        });
+        setTimeout(() => {
+            if (el.tagName === 'IMG') {
+                (el as HTMLImageElement).src = url + (url.includes('?') ? '&' : '?') + 'retry=' + Date.now();
+            } else if (el.tagName === 'VIDEO') {
+                (el as HTMLVideoElement).src = url + (url.includes('?') ? '&' : '?') + 'retry=' + Date.now();
+                (el as HTMLVideoElement).load();
+            }
+        }, 1000 * (retries + 1));
     } else {
         const isVideo = el.tagName === 'VIDEO';
         const errorText = isVideo ? 'Видео повреждено' : 'Файл поврежден (Кликните чтобы открыть)';
@@ -763,8 +758,10 @@ export async function uploadToCloudinary(file: File | Blob, isAvatar = false, ab
         
         let container = el.parentElement;
         if (isVideo && container && (container.classList.contains('chat-media-item-container') || container.classList.contains('video-circle-container'))) {
-            el = container;
+            el = container; // Replace the whole container for videos
             if (container.classList.contains('video-circle-container')) {
+                // Remove the extra aspect square so it stays round, though outerHTML overrides the classes. 
+                // We'll just define the aspect class manually here.
                 aspectCls = 'w-[200px] h-[200px] rounded-full';
             }
         }

@@ -61,7 +61,7 @@ export function updateSelectionUI() {
                 </button>
             </div>
         `;
-        (document.getElementById('chat-area') || document.getElementById('chat-container'))?.appendChild(bar);
+        document.getElementById('chat-container')?.appendChild(bar);
     }
     
     const countEl = document.getElementById('selection-count');

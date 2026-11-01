@@ -1,5 +1,5 @@
 import { supabase, state } from './supabase';
-import { closeModal, customToast, escapeHtml } from './utils';
+import { closeModal } from './utils';
 import { loadChats } from './chat';
 import { logout } from './auth';
 
@@ -51,7 +51,6 @@ export function openSettings(modeOrSkip: 'full' | 'profile' | boolean = 'full', 
             </div>
 
         <div class="space-y-3 mb-6 mt-4">
-
             <details class="group bg-gray-50 dark:bg-gray-800 rounded-xl overflow-hidden border border-gray-100 dark:border-gray-700 open:shadow-sm transition-all ${mode === 'profile' ? 'hidden' : ''}">
                 <summary class="flex justify-between items-center p-4 cursor-pointer select-none font-medium text-gray-800 dark:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-700/50 transition-colors">
                     <div class="flex items-center gap-3">

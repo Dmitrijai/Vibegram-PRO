@@ -6,71 +6,12 @@ import { toggleReactionMenu, toggleReaction, toggleMessageMenu, toggleEmojiMenu,
 
 import { broadcastTyping, loadMessages } from "./messages-core";
 import { cancelReply } from "./messages-actions";
-
-function stopAllRecordingStreams() {
-    if (state.localStream) {
-        state.localStream.getTracks().forEach(t => t.stop());
-        state.localStream = null;
-    }
-    if ((state as any).recordStream) {
-        (state as any).recordStream.getTracks().forEach((t: MediaStreamTrack) => t.stop());
-        (state as any).recordStream = null;
-    }
-    if (state.mediaStream) {
-        state.mediaStream.getTracks().forEach(t => t.stop());
-        state.mediaStream = null;
-    }
-}
-
-function getSupportedMediaRecorderOptions(type: 'voice' | 'video'): MediaRecorderOptions {
-    if (typeof MediaRecorder === 'undefined') return {};
-    if (type === 'video') {
-        const videoCandidates = [
-            'video/webm;codecs=vp9,opus',
-            'video/webm;codecs=vp8,opus',
-            'video/webm',
-            'video/mp4'
-        ];
-        for (const mime of videoCandidates) {
-            if (typeof MediaRecorder.isTypeSupported === 'function' && MediaRecorder.isTypeSupported(mime)) {
-                return {
-                    mimeType: mime,
-                    videoBitsPerSecond: 650000,
-                    audioBitsPerSecond: 48000
-                };
-            }
-        }
-        return { videoBitsPerSecond: 650000, audioBitsPerSecond: 48000 };
-    } else {
-        const audioCandidates = [
-            'audio/webm;codecs=opus',
-            'audio/webm',
-            'audio/mp4',
-            'audio/ogg;codecs=opus'
-        ];
-        for (const mime of audioCandidates) {
-            if (typeof MediaRecorder.isTypeSupported === 'function' && MediaRecorder.isTypeSupported(mime)) {
-                return {
-                    mimeType: mime,
-                    audioBitsPerSecond: 48000
-                };
-            }
-        }
-        return { audioBitsPerSecond: 48000 };
-    }
-}
-
 export function cancelRecording() {
     if (state.isRecordingVoice || state.isRecordingVideo) {
-        (window as any).isRecordingCancelled = true;
-        try {
-            if (state.mediaRecorder && state.mediaRecorder.state !== 'inactive') {
-                state.mediaRecorder.stop();
-            }
-        } catch (e) {}
+        state.mediaRecorder?.stop();
         state.isRecordingVoice = false;
         state.isRecordingVideo = false;
-        stopAllRecordingStreams();
+        if(state.localStream) { state.localStream.getTracks().forEach(t => t.stop()); state.localStream = null; }
         
         // Clear timer
         if ((window as any).recordingTimer) {
@@ -83,8 +24,6 @@ export function cancelRecording() {
         // Hide UI
         document.getElementById('recording-ui')?.classList.add('hidden');
         document.getElementById('video-preview-container')?.classList.add('hidden');
-        const videoEl = document.getElementById('video-preview') as HTMLVideoElement;
-        if (videoEl) videoEl.srcObject = null;
         
         // Reset buttons
         const micBtn = document.getElementById('mic-btn')!;
@@ -93,13 +32,15 @@ export function cancelRecording() {
         micBtn.classList.add('text-gray-400');
         videoBtn.classList.remove('text-red-500', 'animate-pulse', 'bg-red-50', 'hidden');
         videoBtn.classList.add('text-gray-400');
+        
+        // We need to prevent the onstop handler from sending the message.
+        // We can set a flag.
+        (window as any).isRecordingCancelled = true;
     }
 }
 export function sendRecording() {
     if (state.mediaRecorder && state.mediaRecorder.state !== 'inactive') {
         (window as any).isRecordingCancelled = false;
-        state.isRecordingVoice = false;
-        state.isRecordingVideo = false;
         state.mediaRecorder.stop();
         
         clearInterval((window as any).recordingTimer);
@@ -123,7 +64,10 @@ export function sendRecording() {
         const videoEl = document.getElementById('video-preview') as HTMLVideoElement;
         if (videoEl) videoEl.srcObject = null;
         
-        stopAllRecordingStreams();
+        if (state.mediaStream) {
+            state.mediaStream.getTracks().forEach(t => t.stop());
+            state.mediaStream = null;
+        }
     }
 }
 export async function switchCamera() {
@@ -162,10 +106,7 @@ export async function switchCamera() {
     }
 }
 export async function toggleRecording(type: 'voice' | 'video') {
-    if (state.isTechSupportChat) {
-        customToast('В этом чате отключены голосовые сообщения и кружочки.');
-        return;
-    }
+    if (state.isTechSupportChat) return alert('В этом чате отключены голосовые сообщения и кружочки.');
     const micBtn = document.getElementById('mic-btn')!;
     const videoBtn = document.getElementById('video-btn')!;
     const activeBtn = type === 'voice' ? micBtn : videoBtn;
@@ -188,7 +129,7 @@ export async function toggleRecording(type: 'voice' | 'video') {
         activeBtn.classList.remove('text-red-500', 'animate-pulse', 'bg-red-50');
         activeBtn.classList.add('text-gray-400');
         inactiveBtn.classList.remove('hidden');
-        stopAllRecordingStreams();
+        if(state.localStream) { state.localStream.getTracks().forEach(t => t.stop()); state.localStream = null; }
         document.getElementById('video-preview-container')?.classList.add('hidden');
     } else {
         try {
@@ -245,15 +186,15 @@ export async function toggleRecording(type: 'voice' | 'video') {
                 };
                 draw();
                 
-                const canvasStream = canvas.captureStream(24);
+                const canvasStream = canvas.captureStream(30);
                 const recordStream = new MediaStream([...canvasStream.getVideoTracks(), ...audioStream.getAudioTracks()]);
                 (state as any).recordStream = recordStream;
-                state.mediaRecorder = new MediaRecorder(recordStream, getSupportedMediaRecorderOptions('video'));
+                state.mediaRecorder = new MediaRecorder(recordStream, { mimeType: 'video/webm' });
             } else {
                 stream = await navigator.mediaDevices.getUserMedia({ audio: true });
                 state.localStream = stream;
                 document.getElementById('switch-camera-btn')?.classList.add('hidden');
-                state.mediaRecorder = new MediaRecorder(stream, getSupportedMediaRecorderOptions('voice'));
+                state.mediaRecorder = new MediaRecorder(stream);
             }
             
             state.mediaChunks = [];

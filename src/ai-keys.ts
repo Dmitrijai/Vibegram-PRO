@@ -1,11 +1,11 @@
 import { customToast } from './utils';
 import { GoogleGenAI } from '@google/genai';
-import { AI_GATEWAY_URLS } from './network';
 
 const obfuscatedKey = (process.env.GEMINI_API_KEY_OBFUSCATED as string) || "";
 let rawKeys = "";
 try {
     const reversed = obfuscatedKey.split('').reverse().join('');
+    // atob is available in browser for base64 decoding
     rawKeys = atob(reversed);
 } catch (e) {
     console.error("Failed to decode API keys:", e);
@@ -30,47 +30,32 @@ const HF_API_KEYS = rawHfKeys
     .map(k => k.replace(/['"]/g, '').trim())
     .filter(Boolean);
 
+console.log("Loaded API Keys:", API_KEYS.length, API_KEYS.map(k => `${k.substring(0, 4)}...${k.substring(k.length - 4)}`));
+console.log("Loaded HF API Keys:", HF_API_KEYS.length, HF_API_KEYS.map(k => `${k.substring(0, 4)}...${k.substring(k.length - 4)}`));
+
 let currentKeyIndex = 0;
 let currentHfKeyIndex = 0;
-let currentGatewayIndex = 0;
 const keyStatus = new Map<string, number>();
 const hfKeyStatus = new Map<string, number>();
 const EXHAUSTED_COOLDOWN = 10 * 60 * 1000; // 10 minutes
 
-export function getAvailableGeminiKeys(): string[] {
-    if (API_KEYS.length === 0) return [];
-    const now = Date.now();
-    const active: string[] = [];
-    for (let i = 0; i < API_KEYS.length; i++) {
-        const idx = (currentKeyIndex + i) % API_KEYS.length;
-        const k = API_KEYS[idx];
-        if (now - (keyStatus.get(k) || 0) >= EXHAUSTED_COOLDOWN) {
-            active.push(k);
-        }
-    }
-    currentKeyIndex = (currentKeyIndex + 1) % API_KEYS.length;
-    return active.length > 0 ? active : [...API_KEYS];
-}
-
 function isQuotaError(error: any) {
     if (!error) return false;
+    // Rotate on 429 (Quota/Rate limit) OR 401/403 (Invalid key/unauthorized)
     const msg = error.message?.toLowerCase() || '';
     const status = error.status || error.code;
     return status === 429 || status === 401 || status === 403 || 
            msg.includes('429') || msg.includes('401') || msg.includes('403') || 
            msg.includes('quota') || msg.includes('exhausted') || 
            msg.includes('rate limit') || msg.includes('invalid authentication credentials') ||
-           msg.includes('api_key_invalid') || msg.includes('failed to fetch');
+           msg.includes('failed to fetch');
 }
 
-function isTransientOrLocationError(error: any) {
+function isTransientError(error: any) {
     if (!error) return false;
     const msg = error.message?.toLowerCase() || '';
     const status = error.status || error.code;
-    return status === 500 || status === 502 || status === 503 || status === 504 ||
-           msg.includes('503') || msg.includes('500') || msg.includes('502') || msg.includes('504') ||
-           msg.includes('overloaded') || msg.includes('user location is not supported') ||
-           msg.includes('timed_out') || msg.includes('connection_reset') || msg.includes('networkerror');
+    return status === 500 || status === 503 || status === 504 || msg.includes('503') || msg.includes('500') || msg.includes('504') || msg.includes('overloaded');
 }
 
 export async function executeHfWithFallback<T>(action: (apiKey: string) => Promise<T>): Promise<T> {
@@ -82,6 +67,7 @@ export async function executeHfWithFallback<T>(action: (apiKey: string) => Promi
     const now = Date.now();
     let attempts = 0;
     let transientRetries = 0;
+    
     let lastError: any = null;
     
     while (attempts < HF_API_KEYS.length) {
@@ -99,13 +85,16 @@ export async function executeHfWithFallback<T>(action: (apiKey: string) => Promi
         } catch (error: any) {
             lastError = error;
             
-            if (isTransientOrLocationError(error) && transientRetries < 3) {
+            if (isTransientError(error) && transientRetries < 3) {
+                 console.warn('Model overloaded (503), retrying in 2 seconds...', error.message);
                  transientRetries++;
-                 await new Promise(r => setTimeout(r, 800));
-                 continue;
+                 customToast('Сервер перегружен, ожидание...');
+                 await new Promise(r => setTimeout(r, 2000));
+                 continue; // Retry same key
             }
             
             if (isQuotaError(error)) {
+                console.warn(`HF Key at index ${currentHfKeyIndex} hit quota/auth error. Switching key...`, error.message);
                 hfKeyStatus.set(apiKey, Date.now());
                 currentHfKeyIndex = (currentHfKeyIndex + 1) % HF_API_KEYS.length;
                 attempts++;
@@ -119,7 +108,8 @@ export async function executeHfWithFallback<T>(action: (apiKey: string) => Promi
                 }
                 
                 if (attempts < HF_API_KEYS.length && hasUnexhaustedKeys) {
-                    await new Promise(r => setTimeout(r, 300));
+                    customToast('Поиск свободного ключа HF...');
+                    await new Promise(r => setTimeout(r, 500));
                 }
             } else {
                 throw error;
@@ -127,10 +117,11 @@ export async function executeHfWithFallback<T>(action: (apiKey: string) => Promi
         }
     }
     
+    console.error('All HF keys exhausted!', lastError);
     if (lastError?.message) {
         customToast(`Ошибка API: ${lastError.message.substring(0, 50)}...`);
     } else {
-        customToast('Все свободные слоты заняты. Попробуйте позже.');
+        customToast('Все свободные слоты запяты. Попробуйте позже.');
     }
     throw new Error('All HF API keys exhausted');
 }
@@ -144,6 +135,7 @@ export async function executeAiWithFallback<T>(action: (ai: GoogleGenAI) => Prom
     const now = Date.now();
     let attempts = 0;
     let transientRetries = 0;
+    
     let lastError: any = null;
     
     while (attempts < API_KEYS.length) {
@@ -156,31 +148,25 @@ export async function executeAiWithFallback<T>(action: (ai: GoogleGenAI) => Prom
             continue;
         }
 
-        const gatewayBase = AI_GATEWAY_URLS[currentGatewayIndex % AI_GATEWAY_URLS.length];
-
-        const ai = new GoogleGenAI({
-            apiKey,
-            httpOptions: {
-                baseUrl: `${gatewayBase}/gemini`
-            }
-        });
+        const ai = new GoogleGenAI({ apiKey });
         
         try {
             return await action(ai);
         } catch (error: any) {
             lastError = error;
             
-            if (isTransientOrLocationError(error) && transientRetries < 4) {
+            if (isTransientError(error) && transientRetries < 3) {
+                 console.warn('Model overloaded (503), retrying in 2 seconds...', error.message);
                  transientRetries++;
-                 currentGatewayIndex = (currentGatewayIndex + 1) % AI_GATEWAY_URLS.length;
-                 await new Promise(r => setTimeout(r, 500));
-                 continue;
+                 customToast('Сервер перегружен, ожидание...');
+                 await new Promise(r => setTimeout(r, 2000));
+                 continue; // Retry same key
             }
             
             if (isQuotaError(error)) {
+                console.warn(`Key at index ${currentKeyIndex} hit quota/auth error. Switching key...`, error.message);
                 keyStatus.set(apiKey, Date.now());
                 currentKeyIndex = (currentKeyIndex + 1) % API_KEYS.length;
-                currentGatewayIndex = (currentGatewayIndex + 1) % AI_GATEWAY_URLS.length;
                 attempts++;
                 
                 let hasUnexhaustedKeys = false;
@@ -192,7 +178,8 @@ export async function executeAiWithFallback<T>(action: (ai: GoogleGenAI) => Prom
                 }
                 
                 if (attempts < API_KEYS.length && hasUnexhaustedKeys) {
-                    await new Promise(r => setTimeout(r, 250));
+                    customToast('Поиск свободного ключа...');
+                    await new Promise(r => setTimeout(r, 500));
                 }
             } else {
                 throw error;
@@ -200,10 +187,11 @@ export async function executeAiWithFallback<T>(action: (ai: GoogleGenAI) => Prom
         }
     }
     
+    console.error('All keys exhausted!', lastError);
     if (lastError?.message) {
         customToast(`Ошибка API: ${lastError.message.substring(0, 50)}...`);
     } else {
-        customToast('Все свободные слоты заняты. Попробуйте позже.');
+        customToast('Все свободные слоты запяты. Попробуйте позже.');
     }
     throw new Error('All API keys exhausted');
 }
