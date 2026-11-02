@@ -1,10 +1,12 @@
 import { supabase, state } from './supabase';
-import { scrollToBottom, customAlert, customConfirm, customPrompt, closeModal, customToast } from './utils';
+import { scrollToBottom, customAlert, customConfirm, customPrompt, closeModal, customToast, getOrFetchMediaObjectUrl } from './utils';
 import { isSelectionMode, toggleSelectionMode, toggleMessageSelection, deleteSelectedMessages, forwardSelectedMessages, confirmForwardMultiple, selectedMessages } from './selection';
 import { openLightbox, closeLightbox, lightboxNext, lightboxPrev } from './lightbox';
 import { toggleReactionMenu, toggleReaction, toggleMessageMenu, toggleEmojiMenu, sendEmojiMessage, getNotoEmojiUrl, closeAllMessageMenus, adjustMenuPosition, generateReactionsHtml } from './reactions';
 
 import { handleInput, broadcastTyping, sendMessage } from "./messages-core";
+import { getSyncMediaObjectUrl, getMediaBlobFromCache } from "./cache";
+import { fetchMediaBlobResilient } from "./network";
 let mediaObserver: IntersectionObserver | null = null;
 
 export function getMediaObserver() {
@@ -14,8 +16,23 @@ export function getMediaObserver() {
                 const target = entry.target as HTMLElement;
                 if (entry.isIntersecting) {
                     if (target.hasAttribute('data-src')) {
-                        (target as HTMLImageElement | HTMLVideoElement).src = target.getAttribute('data-src')!;
+                        const rawUrl = target.getAttribute('data-src')!;
                         target.removeAttribute('data-src');
+                        const syncBlobUrl = getSyncMediaObjectUrl(rawUrl);
+                        if (syncBlobUrl) {
+                            (target as HTMLImageElement | HTMLVideoElement).src = syncBlobUrl;
+                        } else {
+                            (target as HTMLImageElement | HTMLVideoElement).src = rawUrl;
+                            // Warm from IndexedDB if already persisted from a previous session
+                            getMediaBlobFromCache(rawUrl).then((cached) => {
+                                if (cached && target.isConnected) {
+                                    const mediaEl = target as HTMLImageElement | HTMLVideoElement;
+                                    if (!mediaEl.src.startsWith('blob:')) {
+                                        mediaEl.src = cached.objectUrl;
+                                    }
+                                }
+                            }).catch(() => {});
+                        }
                     }
                     if (target.tagName !== 'VIDEO') {
                         observer.unobserve(target);
@@ -78,8 +95,8 @@ export function toggleAttachMenu(event: Event) {
 }
 export async function downloadMedia(url: string, filename: string) {
     try {
-        const response = await fetch(url);
-        const blob = await response.blob();
+        customToast('Загрузка файла...');
+        const blob = await fetchMediaBlobResilient(url, undefined, false);
         const blobUrl = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = blobUrl;
@@ -87,12 +104,11 @@ export async function downloadMedia(url: string, filename: string) {
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
-        URL.revokeObjectURL(blobUrl);
+        setTimeout(() => URL.revokeObjectURL(blobUrl), 5000);
         customToast('Файл скачан');
     } catch (e) {
         console.error('Download failed', e);
-        customToast('Ошибка при скачивании. Открываем в новой вкладке...');
-        window.open(url, '_blank');
+        customToast('Ошибка при скачивании файла');
     }
 }
 (window as any).downloadMedia = downloadMedia;
@@ -549,9 +565,13 @@ export function toggleAudio(btn: HTMLElement, url: string) {
     const timeDisplay = container.querySelector('.time-display') as HTMLElement;
 
     if (!player) {
-        player = new Audio(url);
+        const initialSrc = getSyncMediaObjectUrl(url) || url;
+        player = new Audio(initialSrc);
         player.preload = 'auto';
         state.audioPlayers.set(url, player);
+        if (!initialSrc.startsWith('blob:')) {
+            getOrFetchMediaObjectUrl(url).catch(() => {});
+        }
     }
     
     // Always attach event handlers to the latest DOM elements
@@ -564,6 +584,23 @@ export function toggleAudio(btn: HTMLElement, url: string) {
         pauseIcon.classList.remove('hidden');
     };
     player.onerror = () => {
+        if (!(player as any)._retriedBlob) {
+            (player as any)._retriedBlob = true;
+            getOrFetchMediaObjectUrl(url)
+                .then((blobObjUrl) => {
+                    if (player && blobObjUrl) {
+                        player.src = blobObjUrl;
+                        player.play().catch(() => {});
+                    }
+                })
+                .catch(() => {
+                    customToast('Аудио повреждено или недоступно');
+                    playIcon.classList.remove('hidden');
+                    pauseIcon.classList.add('hidden');
+                    if (timeDisplay) timeDisplay.textContent = 'Ошибка';
+                });
+            return;
+        }
         customToast('Аудио повреждено или недоступно');
         playIcon.classList.remove('hidden');
         pauseIcon.classList.add('hidden');
@@ -603,8 +640,22 @@ export function toggleAudio(btn: HTMLElement, url: string) {
         
         player.play().catch(e => {
             if (e.name !== 'AbortError') {
-                console.warn('Error playing audio:', e);
-                customToast('Не удалось воспроизвести аудио. Возможно, формат не поддерживается вашим браузером.');
+                if (!(player as any)._retriedBlob) {
+                    (player as any)._retriedBlob = true;
+                    getOrFetchMediaObjectUrl(url)
+                        .then((blobObjUrl) => {
+                            if (player && blobObjUrl) {
+                                player.src = blobObjUrl;
+                                player.play().catch(() => {});
+                            }
+                        })
+                        .catch(() => {
+                            customToast('Не удалось воспроизвести аудио.');
+                        });
+                } else {
+                    console.warn('Error playing audio:', e);
+                    customToast('Не удалось воспроизвести аудио.');
+                }
             }
         });
     } else {

@@ -1,8 +1,16 @@
 import { supabase, state } from "./supabase";
 import { getStatusText, customConfirm, escapeHtml } from "./utils";
 import { loadMessages, markMessagesAsRead, renderMessages } from "./messages";
-import { getCachedChats, saveCachedChats, getCachedMessages } from "./cache";
-import { setSyncingState } from "./network";
+import {
+  getCachedChats,
+  saveCachedChats,
+  getCachedMessages,
+  getCachedMessagesAsync,
+  saveActiveChatMeta,
+  getCachedActiveChatMeta,
+  getDraft
+} from "./cache";
+import { setSyncingState, networkState } from "./network";
 
 export let cachedSavedMessagesChat: any = null;
 let isLoadChatsInFlight = false;
@@ -16,6 +24,32 @@ export function renderCachedChatsImmediately(): boolean {
     return true;
   }
   return false;
+}
+
+export function restoreActiveChatFromCache(): boolean {
+  if (state.activeChatId || !state.currentUser) return false;
+  // On mobile, only auto-reopen if URL hash is #chat; on desktop, always reopen the last active chat
+  const isDesktop = window.innerWidth >= 768;
+  const isChatHash = window.location.hash === "#chat" || window.location.hash.startsWith("#chat=");
+  if (!isDesktop && !isChatHash) return false;
+
+  const meta = getCachedActiveChatMeta();
+  if (!meta || !meta.chatId || !meta.chatDetails) return false;
+  const d = meta.chatDetails;
+  openChat(
+    meta.chatId,
+    d.chatName || "Чат",
+    d.firstLetter || "?",
+    !!d.isGroup,
+    meta.chatType || "direct",
+    d.members || [],
+    d.avatarUrl,
+    d.description,
+    d.isPublic,
+    true,
+    !!d.isVerified
+  );
+  return true;
 }
 
 export async function loadChats(retriesLeft = 2) {
@@ -907,6 +941,24 @@ export async function openChat(
   state.activeChatIsPublic = isPublic || false;
   state.activeChatMembers = members || [];
 
+  if (chatName && chatName !== "Загрузка...") {
+    saveActiveChatMeta({
+      chatId,
+      otherUser: null,
+      chatType: (chatType as any) || "direct",
+      chatDetails: {
+        chatName,
+        firstLetter,
+        isGroup,
+        members: (members || []).slice(0, 20),
+        avatarUrl,
+        description,
+        isPublic,
+        isVerified
+      }
+    });
+  }
+
   if (
     state.activeChatParentInfo &&
     state.activeChatParentInfo.messageId !== chatId
@@ -1085,30 +1137,32 @@ export async function openChat(
   state.typingUsers.clear();
   updateTypingStatus();
 
-  // Setup broadcast channel for typing indicators
-  state.chatChannel = supabase.channel(`room:${chatId}`);
-  state.chatChannel
-    .on("broadcast", { event: "typing" }, (payload: any) => {
-      if (state.isTechSupportChat) return;
-      if (payload.payload.userId === state.currentUser.id) return;
+  // Setup broadcast channel for typing indicators only when WebSocket Realtime is active
+  if (networkState.realtimeConnected) {
+    state.chatChannel = supabase.channel(`room:${chatId}`);
+    state.chatChannel
+      .on("broadcast", { event: "typing" }, (payload: any) => {
+        if (state.isTechSupportChat) return;
+        if (payload.payload.userId === state.currentUser.id) return;
 
-      const userId = payload.payload.userId;
-      const action = payload.payload.action; // 'typing', 'recording_voice', 'recording_video', 'uploading_file'
-      const userName = payload.payload.userName;
+        const userId = payload.payload.userId;
+        const action = payload.payload.action; // 'typing', 'recording_voice', 'recording_video', 'uploading_file'
+        const userName = payload.payload.userName;
 
-      if (state.typingUsers.has(userId)) {
-        clearTimeout(state.typingUsers.get(userId)!.timer);
-      }
+        if (state.typingUsers.has(userId)) {
+          clearTimeout(state.typingUsers.get(userId)!.timer);
+        }
 
-      const timer = setTimeout(() => {
-        state.typingUsers.delete(userId);
+        const timer = setTimeout(() => {
+          state.typingUsers.delete(userId);
+          updateTypingStatus();
+        }, 3000);
+
+        state.typingUsers.set(userId, { action, timer, userName });
         updateTypingStatus();
-      }, 3000);
-
-      state.typingUsers.set(userId, { action, timer, userName });
-      updateTypingStatus();
-    })
-    .subscribe();
+      })
+      .subscribe();
+  }
 
   const avatar = document.getElementById("chat-header-avatar")!;
   avatar.classList.remove("hidden");
@@ -1137,6 +1191,12 @@ export async function openChat(
 
   updateChatInputUI();
 
+  // Restore per-chat unsent draft
+  const msgInput = document.getElementById("message-input") as HTMLTextAreaElement | null;
+  if (msgInput) {
+    msgInput.value = getDraft(chatId);
+  }
+
   const adminBanner = document.getElementById("admin-incognito-banner");
   if (adminBanner) {
     if (state.isAdminStatus) {
@@ -1155,7 +1215,7 @@ export async function openChat(
     (window as any).handleInput();
   }
 
-  // Fast chat switching: render cached messages in 0ms if available, otherwise show loader
+  // Fast chat switching: render cached messages in 0ms if available, otherwise check IndexedDB or show loader
   const list = document.getElementById("messages-list")!;
   const cachedMsgs = getCachedMessages(chatId);
   if (cachedMsgs && cachedMsgs.length > 0) {
@@ -1163,6 +1223,16 @@ export async function openChat(
   } else {
     list.innerHTML =
       '<div class="flex h-full items-center justify-center"><div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div></div>';
+    getCachedMessagesAsync(chatId).then((idbMsgs) => {
+      if (
+        idbMsgs &&
+        idbMsgs.length > 0 &&
+        state.activeChatId === chatId &&
+        !list.querySelector(".msg-wrapper")
+      ) {
+        renderMessages(idbMsgs, true);
+      }
+    });
   }
 
   loadMessages(chatId, true);

@@ -1,5 +1,6 @@
 import { isSelectionMode } from './selection';
 import Panzoom from '@panzoom/panzoom';
+import { getSyncMediaObjectUrl } from './cache';
 
 let lightboxItems: string[] = [];
 let currentLightboxIndex = 0;
@@ -10,7 +11,7 @@ export function openLightbox(url: string) {
         return; // Handled by wrapper onclick
     }
     const mediaItems = Array.from(document.querySelectorAll('.chat-media-item')) as (HTMLImageElement | HTMLVideoElement)[];
-    lightboxItems = mediaItems.map(item => item.src || item.getAttribute('data-src') || '');
+    lightboxItems = mediaItems.map(item => item.getAttribute('data-src') || item.src || '');
     currentLightboxIndex = lightboxItems.indexOf(url);
     if (currentLightboxIndex === -1) {
         lightboxItems = [url];
@@ -58,6 +59,7 @@ function renderLightbox() {
     const url = lightboxItems[currentLightboxIndex];
     if (!url) return;
     
+    const resolvedSrc = getSyncMediaObjectUrl(url) || url;
     const isVideo = url.includes('.webm') || url.includes('.mp4') || url.includes('.mov') || url.includes('video');
     
     if (currentPanzoom) {
@@ -66,9 +68,9 @@ function renderLightbox() {
     }
     
     if (isVideo) {
-        content.innerHTML = `<video src="${url}" class="max-w-full max-h-full object-contain rounded-lg shadow-2xl" controls autoplay onerror="this.onerror=null; window.handleMediaError(this, '${url}');"></video>`;
+        content.innerHTML = `<video src="${resolvedSrc}" class="max-w-full max-h-full object-contain rounded-lg shadow-2xl" controls autoplay onerror="window.handleMediaError(this, '${url}');"></video>`;
     } else {
-        content.innerHTML = `<img src="${url}" id="lightbox-zoom-img" class="max-w-full max-h-full object-contain rounded-lg shadow-2xl origin-center" onerror="this.onerror=null; window.handleMediaError(this, '${url}');">`;
+        content.innerHTML = `<img src="${resolvedSrc}" id="lightbox-zoom-img" class="max-w-full max-h-full object-contain rounded-lg shadow-2xl origin-center" onerror="window.handleMediaError(this, '${url}');">`;
         setTimeout(() => {
             const img = document.getElementById('lightbox-zoom-img') as HTMLImageElement;
             if (img && content) {

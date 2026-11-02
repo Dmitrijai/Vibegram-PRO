@@ -1072,8 +1072,8 @@ export async function openChatInfo(skipPushState = false) {
                     
                     ${
                       item.media.type?.startsWith("image/")
-                        ? `<img src="${item.media.url}" draggable="false" class="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105 pointer-events-none" onerror="this.onerror=null; this.src=''; this.parentElement.innerHTML='<div class=\\'w-full h-full flex items-center justify-center text-xs text-red-500 p-2 text-center\\'>Повреждено</div>';">`
-                        : `<video src="${item.media.url}" draggable="false" class="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105 pointer-events-none" onerror="this.onerror=null; this.parentElement.innerHTML='<div class=\\'w-full h-full flex items-center justify-center text-xs text-red-500 p-2 text-center\\'>Повреждено</div>';"></video><div class="absolute inset-0 flex items-center justify-center bg-black/20 pointer-events-none"><svg class="w-8 h-8 text-white drop-shadow-md" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></div>`
+                        ? `<img src="${item.media.url}" draggable="false" class="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105 pointer-events-none" onerror="window.handleMediaError(this, '${item.media.url}');">`
+                        : `<video src="${item.media.url}" preload="none" draggable="false" class="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105 pointer-events-none" onerror="window.handleMediaError(this, '${item.media.url}');"></video><div class="absolute inset-0 flex items-center justify-center bg-black/20 pointer-events-none"><svg class="w-8 h-8 text-white drop-shadow-md" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></div>`
                     }
                 </div>
             `,
@@ -1096,7 +1096,7 @@ export async function openChatInfo(skipPushState = false) {
                      ontouchstart="startMediaLongPress(event, '${item.msgId}', '${item.media.url}', '${item.media.name || ""}')" 
                      ontouchend="cancelMediaLongPress()" 
                      ontouchcancel="cancelMediaLongPress()"
-                     onclick="if(window.isMediaSelectionMode) { toggleMediaSelection('${item.msgId}'); } else if(!window.isLongPressing) window.open('${item.media.url}', '_blank')">
+                     onclick="if(window.isMediaSelectionMode) { toggleMediaSelection('${item.msgId}'); } else if(!window.isLongPressing) window.downloadMedia('${item.media.url}', '${item.media.name || "file"}')">
                     
                     <div class="media-checkbox w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 pointer-events-none transition-all duration-200 hidden">
                         <svg class="w-3 h-3 text-white opacity-0 transition-opacity duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"></path></svg>
@@ -1165,7 +1165,7 @@ export async function openChatInfo(skipPushState = false) {
                             </div>
 
                             <div class="w-12 h-12 rounded-full overflow-hidden border-2 border-blue-500 shrink-0 pointer-events-none relative shadow-md">
-                                <video src="${item.media.url}" class="w-full h-full object-cover pointer-events-none" draggable="false" preload="metadata" muted loop playsinline onerror="this.onerror=null; this.parentElement.innerHTML='<div class=\\'w-full h-full flex items-center justify-center bg-red-100 dark:bg-red-900/30 text-red-500\\'><svg class=\\'w-5 h-5\\' fill=\\'none\\' stroke=\\'currentColor\\' viewBox=\\'0 0 24 24\\'><path stroke-linecap=\\'round\\' stroke-linejoin=\\'round\\' stroke-width=\\'2\\' d=\\'M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z\\'></path></svg></div>';"></video>
+                                <video src="${item.media.url}" class="w-full h-full object-cover pointer-events-none" draggable="false" preload="none" muted loop playsinline onerror="window.handleMediaError(this, '${item.media.url}');"></video>
                                 <div class="absolute inset-0 bg-black/20 flex items-center justify-center play-overlay">
                                     <svg class="w-5 h-5 text-white ml-0.5" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
                                 </div>

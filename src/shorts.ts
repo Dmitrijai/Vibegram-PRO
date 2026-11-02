@@ -1,5 +1,7 @@
 import { supabase, state } from "./supabase";
 import { rewriteMediaUrl, getVideoPosterUrl } from "./network";
+import { saveCachedShorts, getCachedShorts, getSyncMediaObjectUrl } from "./cache";
+import { getOrFetchMediaObjectUrl } from "./utils";
 
 let shortsList: any[] = [];
 let currentShortIdForComments: string | null = null;
@@ -736,9 +738,19 @@ async function fetchShortsBatch(
       }
     }
 
+    if (!authorFilterId && newBatch.length > 0) {
+      saveCachedShorts(newBatch);
+    }
+
     return newBatch;
   } catch (e) {
     console.error(e);
+    if (!authorFilterId) {
+      const cached = getCachedShorts();
+      if (cached && cached.length > 0) {
+        return cached.filter((s) => !loadedShortIds.has(s.id));
+      }
+    }
     return [];
   }
 }
@@ -877,9 +889,10 @@ function appendShortsFromQueue(count: number) {
 
         const isPreloaded = i < 2;
         const posterUrl = getVideoPosterUrl(short.video_url);
+        const resolvedVideoSrc = getSyncMediaObjectUrl(short.video_url) || short.video_url;
         const shortHTML = `
             <div class="short-video-wrapper w-full h-full snap-start relative bg-black flex items-center justify-center overflow-hidden" data-index="${index}" data-id="${short.id}">
-                <video ${isPreloaded ? `src="${short.video_url}"` : ""} data-src="${short.video_url}" ${posterUrl ? `poster="${posterUrl}"` : ""} preload="${index === 0 ? "auto" : "metadata"}" loop playsinline onerror="window.handleMediaError(this, '${short.video_url}')" class="max-w-full max-h-full object-contain cursor-pointer" onclick="window.togglePlayShort(this)"></video>
+                <video ${isPreloaded ? `src="${resolvedVideoSrc}"` : ""} data-src="${short.video_url}" ${posterUrl ? `poster="${posterUrl}"` : ""} preload="${index === 0 ? "auto" : "metadata"}" loop playsinline onerror="window.handleMediaError(this, '${short.video_url}')" class="max-w-full max-h-full object-contain cursor-pointer" onclick="window.togglePlayShort(this)"></video>
                 
                 <div class="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/20 pointer-events-none"></div>
                 
@@ -945,7 +958,7 @@ function appendShortsFromQueue(count: number) {
                 
                 <div class="absolute inset-0 flex items-center justify-center pointer-events-none opacity-0 transition-opacity duration-300" id="play-pause-icon-${index}">
                 </div>
-                <div class="absolute inset-0 flex items-center justify-center pointer-events-none transition-opacity duration-300 z-10 bg-black" id="buffering-icon-${index}">
+                <div class="absolute inset-0 flex items-center justify-center pointer-events-none transition-opacity duration-300 z-10 bg-black/20" id="buffering-icon-${index}">
                     <div class="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
                 </div>
             </div>
@@ -965,22 +978,17 @@ function appendShortsFromQueue(count: number) {
         ) as HTMLElement;
 
         if (video && bufferingIcon) {
+          const hideBuf = () => {
+            bufferingIcon.style.opacity = "0";
+          };
           video.addEventListener("waiting", () => {
             bufferingIcon.style.opacity = "1";
-            bufferingIcon.classList.remove("bg-black");
           });
-          video.addEventListener("playing", () => {
-            bufferingIcon.style.opacity = "0";
-            bufferingIcon.classList.remove("bg-black"); // remove black bg after first load
-          });
-          video.addEventListener("canplay", () => {
-            bufferingIcon.style.opacity = "0";
-            bufferingIcon.classList.remove("bg-black");
-          });
-          video.addEventListener("loadstart", () => {
-            bufferingIcon.style.opacity = "1";
-            bufferingIcon.classList.add("bg-black"); // show black bg initially
-          });
+          video.addEventListener("playing", hideBuf);
+          video.addEventListener("canplay", hideBuf);
+          video.addEventListener("loadeddata", hideBuf);
+          video.addEventListener("loadedmetadata", hideBuf);
+          video.addEventListener("error", hideBuf);
         }
       });
     });
@@ -1015,7 +1023,7 @@ function setupShortsObserver() {
                   vidElement.load();
                 }
               } else if (!vidElement.src && vidElement.dataset.src) {
-                vidElement.src = vidElement.dataset.src;
+                vidElement.src = getSyncMediaObjectUrl(vidElement.dataset.src) || vidElement.dataset.src;
                 vidElement.load();
               }
             });
@@ -1025,7 +1033,21 @@ function setupShortsObserver() {
             loadMoreShorts();
           }
 
-          video?.play().catch((e) => console.log("Autoplay prevented"));
+          if (video) {
+            const rawUrl = video.dataset.src || video.src;
+            if (rawUrl && !video.src.startsWith("blob:")) {
+              getOrFetchMediaObjectUrl(rawUrl).catch(() => {});
+            }
+            video.play().catch(() => {
+              // Browser blocked unmuted autoplay: fallback to muted autoplay immediately
+              video.muted = true;
+              (video as any)._autoMuted = true;
+              video.play().catch(() => {
+                const buf = document.getElementById(`buffering-icon-${index}`);
+                if (buf) buf.style.opacity = "0";
+              });
+            });
+          }
           activeVideo = video;
           if (shortId) {
             recordView(shortId);
@@ -1242,8 +1264,18 @@ async function recordView(shortId: string) {
     `[id="play-pause-icon-${index}"]`,
   ) as HTMLElement;
 
+  if ((video as any)._autoMuted && video.muted && !video.paused) {
+    video.muted = false;
+    (video as any)._autoMuted = false;
+    return;
+  }
+
   if (video.paused) {
-    video.play();
+    video.muted = false;
+    video.play().catch(() => {
+      video.muted = true;
+      video.play().catch(() => {});
+    });
     if (icon) {
       icon.style.opacity = "1";
       icon.innerHTML = `<svg class="w-20 h-20 text-white drop-shadow-xl bg-black/30 rounded-full p-4 backdrop-blur-md" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clip-rule="evenodd"></path></svg>`;

@@ -284,6 +284,7 @@ export function closeChatMobile(skipHistoryBack = false) {
         }
     }
     state.activeChatId = null; 
+    import('./cache').then(c => c.clearActiveChatMeta()).catch(() => {});
     document.getElementById('current-chat-name')!.innerHTML = 'Выберите чат';
     document.getElementById('current-chat-status')!.innerText = '';
     document.getElementById('chat-header-avatar')!.classList.add('hidden');
@@ -671,7 +672,7 @@ function normalizeMediaCacheKey(url: string): string {
         .split('?')[0]
         .replace(/^https?:\/\/[^/]+/, '')
         .replace(/^\/cloudinary/, '')
-        .replace(/\/upload\/(?:f_[^/]+|q_[^/]+|w_[^/]+|h_[^/]+|c_[^/]+|g_[^/]+|br_[^/]+|ac_[^/]+|ar_[^/]+)+\//, '/upload/');
+        .replace(/\/upload\/(?:f_[^/]+|q_[^/]+|w_[^/]+|h_[^/]+|c_[^/]+|g_[^/]+|br_[^/]+|ac_[^/]+|ar_[^/]+|vc_[^/]+|so_[^/]+)+\//, '/upload/');
 }
 
 export function cacheLocalMediaBlob(url: string, blob: Blob) {
@@ -679,6 +680,7 @@ export function cacheLocalMediaBlob(url: string, blob: Blob) {
     localMediaBlobCache.set(url, blob);
     const norm = normalizeMediaCacheKey(url);
     if (norm) localMediaBlobCache.set(norm, blob);
+    import('./cache').then((c) => c.saveMediaBlobToCache(url, blob)).catch(() => {});
 }
 
 export function getLocalMediaBlob(url: string): Blob | undefined {
@@ -686,6 +688,36 @@ export function getLocalMediaBlob(url: string): Blob | undefined {
     if (localMediaBlobCache.has(url)) return localMediaBlobCache.get(url);
     const norm = normalizeMediaCacheKey(url);
     return norm ? localMediaBlobCache.get(norm) : undefined;
+}
+
+export async function getOrFetchMediaObjectUrl(url: string, signal?: AbortSignal): Promise<string> {
+    if (!url) return '';
+    if (url.startsWith('blob:') || url.startsWith('data:')) return url;
+
+    const memBlob = getLocalMediaBlob(url);
+    if (memBlob) {
+        const { saveMediaBlobToCache } = await import('./cache');
+        return await saveMediaBlobToCache(url, memBlob);
+    }
+
+    const { getSyncMediaObjectUrl, getMediaBlobFromCache, saveMediaBlobToCache } = await import('./cache');
+    const syncObj = getSyncMediaObjectUrl(url);
+    if (syncObj) return syncObj;
+
+    const cached = await getMediaBlobFromCache(url);
+    if (cached) {
+        localMediaBlobCache.set(url, cached.blob);
+        const norm = normalizeMediaCacheKey(url);
+        if (norm) localMediaBlobCache.set(norm, cached.blob);
+        return cached.objectUrl;
+    }
+
+    const { fetchMediaBlobResilient } = await import('./network');
+    const fetchedBlob = await fetchMediaBlobResilient(url, signal, true);
+    localMediaBlobCache.set(url, fetchedBlob);
+    const norm = normalizeMediaCacheKey(url);
+    if (norm) localMediaBlobCache.set(norm, fetchedBlob);
+    return await saveMediaBlobToCache(url, fetchedBlob);
 }
 
 export async function compressImageFile(file: File | Blob, isAvatar = false): Promise<File | Blob> {
@@ -896,36 +928,67 @@ export async function uploadToCloudinary(file: File | Blob, isAvatar = false, ab
 }
 
 (window as any).handleMediaError = function(el: HTMLElement, url: string) {
-    let retries = parseInt(el.getAttribute('data-retries') || '0');
-    if (retries < 5) {
+    if (!el || !url) return;
+    let retries = parseInt(el.getAttribute('data-retries') || '0', 10);
+    if (retries < 4) {
         el.setAttribute('data-retries', (retries + 1).toString());
-        import('./network').then(({ MEDIA_GATEWAY_URLS, rewriteMediaUrl }) => {
-            const isVideo = el.tagName === 'VIDEO' || url.includes('/video/upload/');
-            if (!isVideo && el.tagName === 'IMG' && retries === 4) {
-                // Final image fallback via global wsrv.nl image CDN proxy
-                let rawCloudinaryUrl = url;
-                const cloudIdx = url.indexOf('/cloudinary/');
-                if (cloudIdx !== -1) {
-                    rawCloudinaryUrl = 'https://res.cloudinary.com' + url.substring(cloudIdx + '/cloudinary'.length);
-                }
-                (el as HTMLImageElement).src = `https://wsrv.nl/?url=${encodeURIComponent(rawCloudinaryUrl)}&output=webp`;
-                return;
-            }
-            const targetGw = MEDIA_GATEWAY_URLS[(retries + 1) % MEDIA_GATEWAY_URLS.length];
-            const useAutoQuality = isVideo ? true : retries < 2;
-            const fallbackUrl = rewriteMediaUrl(url, targetGw, useAutoQuality);
-            setTimeout(() => {
+        const isVideo = el.tagName === 'VIDEO' || url.includes('/video/upload/');
+
+        // Step 1: Try alternate working Edge Gateway first (vibegram-edge-gw / vibegram-ru-node)
+        if (retries === 0) {
+            import('./network').then(({ rewriteMediaUrl }) => {
+                const currentSrc = (el as HTMLMediaElement | HTMLImageElement).src || url;
+                const nextGw = currentSrc.includes('vibegram-edge-gw.vercel.app')
+                    ? 'https://vibegram-ru-node.vercel.app'
+                    : 'https://vibegram-edge-gw.vercel.app';
+                const fallbackUrl = rewriteMediaUrl(url, nextGw, true);
+                const bustUrl = fallbackUrl + (fallbackUrl.includes('?') ? '&' : '?') + 'retry=1';
                 if (el.tagName === 'IMG') {
-                    (el as HTMLImageElement).src = fallbackUrl + (fallbackUrl.includes('?') ? '&' : '?') + 'retry=' + (retries + 1);
+                    (el as HTMLImageElement).src = bustUrl;
                 } else if (el.tagName === 'VIDEO') {
-                    (el as HTMLVideoElement).src = fallbackUrl + (fallbackUrl.includes('?') ? '&' : '?') + 'retry=' + (retries + 1);
+                    (el as HTMLVideoElement).src = bustUrl;
                     (el as HTMLVideoElement).load();
                 }
-            }, 300 * (retries + 1));
-        });
+            });
+            return;
+        }
+
+        // Step 2: For images on retry 1, use wsrv.nl global WebP proxy
+        if (!isVideo && el.tagName === 'IMG' && retries === 1) {
+            let rawCloudinaryUrl = url;
+            const cloudIdx = url.indexOf('/cloudinary/');
+            if (cloudIdx !== -1) {
+                rawCloudinaryUrl = 'https://res.cloudinary.com' + url.substring(cloudIdx + '/cloudinary'.length);
+            }
+            (el as HTMLImageElement).src = `https://wsrv.nl/?url=${encodeURIComponent(rawCloudinaryUrl)}&output=webp&q=80`;
+            return;
+        }
+
+        // Step 3: Resilient Chunked Range / Blob Fetch + IndexedDB Cache
+        getOrFetchMediaObjectUrl(url)
+            .then((blobObjUrl) => {
+                if (!blobObjUrl) return;
+                el.onerror = null;
+                if (el.tagName === 'IMG') {
+                    (el as HTMLImageElement).src = blobObjUrl;
+                } else if (el.tagName === 'VIDEO') {
+                    const vid = el as HTMLVideoElement;
+                    const wasPlaying = !vid.paused;
+                    vid.src = blobObjUrl;
+                    vid.load();
+                    if (wasPlaying) {
+                        vid.play().catch(() => {});
+                    }
+                }
+            })
+            .catch(() => {
+                // Trigger next retry or final fallback UI
+                el.setAttribute('data-retries', '4');
+                (window as any).handleMediaError(el, url);
+            });
     } else {
         const isVideo = el.tagName === 'VIDEO';
-        const errorText = isVideo ? 'Видео повреждено' : 'Файл поврежден (Кликните чтобы открыть)';
+        const errorText = isVideo ? 'Нажмите, чтобы загрузить видео' : 'Нажмите, чтобы загрузить медиа';
         const aspectClsMatcher = Array.from(el.classList).find(c => c.startsWith('aspect-'));
         let aspectCls = aspectClsMatcher || 'aspect-square max-w-[180px] sm:max-w-[220px]';
         
@@ -937,6 +1000,7 @@ export async function uploadToCloudinary(file: File | Blob, isAvatar = false, ab
             }
         }
         
-        el.outerHTML = `<div class="${aspectCls} w-full bg-gray-100 dark:bg-gray-800 rounded-xl flex flex-col items-center justify-center text-gray-400 text-xs p-4 text-center border border-gray-200 dark:border-gray-700 cursor-pointer" onclick="window.open('${url}', '_blank')"><svg class="w-8 h-8 mb-2 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>${errorText}</div>`;
+        const safeUrl = escapeHtml(url);
+        el.outerHTML = `<div class="${aspectCls} w-full bg-gray-100 dark:bg-gray-800 rounded-xl flex flex-col items-center justify-center text-gray-500 dark:text-gray-300 text-xs p-4 text-center border border-gray-200 dark:border-gray-700 cursor-pointer hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors" onclick="event.stopPropagation(); window.downloadMedia('${safeUrl}', 'media_file')"><svg class="w-8 h-8 mb-2 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>${errorText}</div>`;
     }
 };

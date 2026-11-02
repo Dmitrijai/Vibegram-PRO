@@ -6,8 +6,8 @@ import { toggleReactionMenu, toggleReaction, toggleMessageMenu, toggleEmojiMenu,
 
 import { getMediaObserver, clearFile } from "./messages-media";
 import { cancelReply } from "./messages-actions";
-import { saveCachedMessages, getCachedMessages } from "./cache";
-import { getVideoPosterUrl } from "./network";
+import { saveCachedMessages, getCachedMessages, getCachedMessagesAsync, saveDraft, getSyncMediaObjectUrl } from "./cache";
+import { getVideoPosterUrl, networkState } from "./network";
 import { getCachedTranscription } from "./transcribe";
 
 export let currentMessageLimit = 50;
@@ -256,7 +256,7 @@ export async function loadMessages(chatId: string, isInitialLoad = false, retrie
         const list = document.getElementById('messages-list')!;
         const alreadyHasMessages = list.querySelector('.msg-wrapper') !== null;
         if (!alreadyHasMessages) {
-            const cached = getCachedMessages(chatId);
+            const cached = getCachedMessages(chatId) || (await getCachedMessagesAsync(chatId));
             if (cached && cached.length > 0) {
                 renderMessages(cached, true);
             } else {
@@ -515,6 +515,7 @@ export function renderMessages(messages: any[], isInitialLoad = false) {
             `;
         } else if (msg.message_type === 'video_circle' && actualMedia.length > 0) {
             const circlePoster = getVideoPosterUrl(actualMedia[0].url);
+            const cachedCircleSrc = getSyncMediaObjectUrl(actualMedia[0].url);
             const txVal = actualMedia[0].transcription || getCachedTranscription(msg.id, actualMedia[0].url) || '';
             const durAttr = Number(actualMedia[0].duration) > 0 ? `data-duration="${Number(actualMedia[0].duration)}"` : '';
             const transcriptionText = `<div id="transcription-text-${msg.id}" class="w-full flex ${isMe ? 'justify-end' : 'justify-start'}">${txVal ? `<div class="mt-1 text-sm text-gray-700 dark:text-gray-200 bg-black/5 dark:bg-white/5 p-2 rounded-lg max-w-[200px]">${escapeHtml(txVal)}</div>` : ''}</div>`;
@@ -524,7 +525,7 @@ export function renderMessages(messages: any[], isInitialLoad = false) {
                 <div class="flex flex-col mb-1 ${isMe ? 'items-end' : 'items-start'}">
                     <div class="relative">
                         <div class="video-circle-container uninteracted" onclick="handleVideoCircleClick(event, this)">
-                            <video data-src="${actualMedia[0].url}" ${circlePoster ? `poster="${circlePoster}"` : ''} ${durAttr} preload="metadata" loop muted playsinline data-autoplay="true" ontimeupdate="updateVideoProgress(this)" onerror="this.onerror=null; window.handleMediaError(this, '${actualMedia[0].url}');"></video>
+                            <video ${cachedCircleSrc ? `src="${cachedCircleSrc}"` : `data-src="${actualMedia[0].url}"`} ${circlePoster ? `poster="${circlePoster}"` : ''} ${durAttr} preload="none" loop muted playsinline data-autoplay="true" ontimeupdate="updateVideoProgress(this)" onerror="window.handleMediaError(this, '${actualMedia[0].url}');"></video>
                             <svg class="video-progress-ring" viewBox="0 0 100 100">
                                 <circle cx="50" cy="50" r="48" stroke-linecap="round"></circle>
                             </svg>
@@ -566,12 +567,14 @@ export function renderMessages(messages: any[], isInitialLoad = false) {
                 else if (file.ratio === '1/1') aspectCls = 'aspect-square max-w-[180px] sm:max-w-[220px]';
 
                 if(file.type?.startsWith('image/') && !file.asFile) {
-                    fileHtml += `<img data-src="${file.url}" class="${aspectCls} w-full rounded-xl object-cover cursor-pointer hover:opacity-95 shadow-sm border border-black/5 chat-media-item bg-gray-200 dark:bg-gray-800" onclick="openLightbox('${file.url}')" onload="const l=this.closest('#messages-list'); if(l && l.scrollHeight - l.scrollTop - l.clientHeight < 250) l.scrollTop = l.scrollHeight;" onerror="this.onerror=null; window.handleMediaError(this, '${file.url}');">`;
+                    const cachedImg = getSyncMediaObjectUrl(file.url);
+                    fileHtml += `<img ${cachedImg ? `src="${cachedImg}"` : `data-src="${file.url}"`} class="${aspectCls} w-full rounded-xl object-cover cursor-pointer hover:opacity-95 shadow-sm border border-black/5 chat-media-item bg-gray-200 dark:bg-gray-800" onclick="openLightbox('${file.url}')" onload="const l=this.closest('#messages-list'); if(l && l.scrollHeight - l.scrollTop - l.clientHeight < 250) l.scrollTop = l.scrollHeight;" onerror="window.handleMediaError(this, '${file.url}');">`;
                 } else if(file.type?.startsWith('video/') && !file.asFile) {
                     const videoPoster = getVideoPosterUrl(file.url);
+                    const cachedVid = getSyncMediaObjectUrl(file.url);
                     fileHtml += `
                         <div class="relative ${aspectCls} w-full rounded-xl overflow-hidden shadow-sm border border-black/5 group chat-media-item-container mb-1 bg-gray-800">
-                            <video data-src="${file.url}" ${videoPoster ? `poster="${videoPoster}"` : ''} preload="metadata" class="w-full h-full object-cover chat-media-item cursor-pointer" onclick="toggleInlineVideo(this)" onloadeddata="const l=this.closest('#messages-list'); if(l && l.scrollHeight - l.scrollTop - l.clientHeight < 250) l.scrollTop = l.scrollHeight;" onloadedmetadata="if(Number.isFinite(this.duration)&&this.duration>0){this.parentElement.querySelector('.video-time').textContent = Math.floor(this.duration / 60) + ':' + Math.floor(this.duration % 60).toString().padStart(2, '0')}" onerror="this.onerror=null; window.handleMediaError(this, '${file.url}');"></video>
+                            <video ${cachedVid ? `src="${cachedVid}"` : `data-src="${file.url}"`} ${videoPoster ? `poster="${videoPoster}"` : ''} preload="none" class="w-full h-full object-cover chat-media-item cursor-pointer" onclick="toggleInlineVideo(this)" onloadeddata="const l=this.closest('#messages-list'); if(l && l.scrollHeight - l.scrollTop - l.clientHeight < 250) l.scrollTop = l.scrollHeight;" onloadedmetadata="if(Number.isFinite(this.duration)&&this.duration>0){this.parentElement.querySelector('.video-time').textContent = Math.floor(this.duration / 60) + ':' + Math.floor(this.duration % 60).toString().padStart(2, '0')}" onerror="window.handleMediaError(this, '${file.url}');"></video>
                             <div class="absolute inset-0 bg-black/20 group-hover:bg-black/30 transition-colors flex items-center justify-center pointer-events-none video-overlay">
                                 <div class="w-12 h-12 bg-black/50 rounded-full flex items-center justify-center text-white backdrop-blur-sm">
                                     <svg class="w-6 h-6 ml-0.5 play-icon" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
@@ -590,7 +593,9 @@ export function renderMessages(messages: any[], isInitialLoad = false) {
                         </div>
                     `;
                 } else {
-                    fileHtml += `<a href="${escapeHtml(file.url)}" target="_blank" class="flex items-center gap-3 bg-black/5 dark:bg-white/5 hover:bg-black/10 dark:hover:bg-white/10 p-3 rounded-xl transition-colors border border-black/5 dark:border-white/5 w-full min-w-0 overflow-hidden"><div class="bg-blue-500 text-white p-2.5 rounded-lg shrink-0"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg></div><div class="flex-1 min-w-0"><span class="truncate font-semibold text-sm block w-full">${escapeHtml(file.name || 'Файл')}</span><span class="text-xs opacity-70 mt-0.5 block">${file.size ? (file.size / 1024 / 1024).toFixed(2) + ' MB' : ''}</span></div></a>`;
+                    const safeUrl = escapeHtml(file.url);
+                    const safeName = escapeHtml(file.name || 'Файл');
+                    fileHtml += `<div onclick="event.stopPropagation(); window.downloadMedia('${safeUrl}', '${safeName}')" class="cursor-pointer flex items-center gap-3 bg-black/5 dark:bg-white/5 hover:bg-black/10 dark:hover:bg-white/10 p-3 rounded-xl transition-colors border border-black/5 dark:border-white/5 w-full min-w-0 overflow-hidden"><div class="bg-blue-500 text-white p-2.5 rounded-lg shrink-0"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg></div><div class="flex-1 min-w-0"><span class="truncate font-semibold text-sm block w-full">${safeName}</span><span class="text-xs opacity-70 mt-0.5 block">${file.size ? (file.size / 1024 / 1024).toFixed(2) + ' MB' : 'Скачать'}</span></div></div>`;
                 }
             });
             fileHtml += '</div>';
@@ -975,6 +980,7 @@ function hideUnreadFloatingCounter() {
 
 export function broadcastTyping(action: string = 'typing') {
     if (state.isTechSupportChat) return;
+    if (!networkState.realtimeConnected) return;
     if (!state.chatChannel || !state.currentUser) return;
     
     state.chatChannel.send({
@@ -998,6 +1004,10 @@ export function handleInput() {
         input.classList.add('scrollbar-hide');
     }
     
+    if (state.activeChatId) {
+        saveDraft(state.activeChatId, input.value);
+    }
+
     const hasContent = !!input.value.trim() || state.selectedFiles.length > 0 || !!state.forwardingMsg;
     const isAiMode = input.value.trimStart().startsWith('@ai ');
     
@@ -1008,7 +1018,7 @@ export function handleInput() {
     document.getElementById('video-btn')!.classList.toggle('hidden', hasContent);
     document.getElementById('emoji-btn')?.classList.toggle('hidden', hasContent);
     
-    if (input.value.trim()) {
+    if (input.value.trim() && networkState.realtimeConnected) {
         if (typingTimeout) clearTimeout(typingTimeout);
         typingTimeout = setTimeout(() => {
             broadcastTyping('typing');
@@ -1116,6 +1126,7 @@ export async function sendMessage() {
 
 async function actuallySend(text: string, files: File[], input: HTMLTextAreaElement) {
     input.value = ''; input.style.height = '';
+    if (state.activeChatId) saveDraft(state.activeChatId, '');
     clearFile();
     
     // Optimistic UI with instant local media previews

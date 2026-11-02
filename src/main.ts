@@ -608,15 +608,25 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
     });
-    window.addEventListener('beforeunload', () => {
+    const flushCurrentStateBeforeUnload = () => {
         if ((window as any).logic?.pauseAllMedia) {
             (window as any).logic.pauseAllMedia(undefined, true);
+        }
+        if (state.activeChatId) {
+            const msgInput = document.getElementById('message-input') as HTMLTextAreaElement | null;
+            if (msgInput) {
+                import('./cache').then(({ saveDraft }) => {
+                    saveDraft(state.activeChatId!, msgInput.value);
+                });
+            }
         }
         const savedIncognito = localStorage.getItem('incognito_chat_args');
         if (savedIncognito) {
             localStorage.removeItem('incognito_chat_args');
         }
-    });
+    };
+    window.addEventListener('beforeunload', flushCurrentStateBeforeUnload);
+    window.addEventListener('pagehide', flushCurrentStateBeforeUnload);
 
     document.addEventListener('click', (e) => {
         if ("Notification" in window && Notification.permission === "default") {

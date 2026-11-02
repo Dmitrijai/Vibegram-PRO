@@ -1,6 +1,6 @@
 import { supabase, state } from './supabase';
 import { getFakeEmail, showError, customConfirm } from './utils';
-import { loadChats, renderCachedChatsImmediately } from './chat';
+import { loadChats, renderCachedChatsImmediately, restoreActiveChatFromCache } from './chat';
 import { initWebRTC } from './webrtc';
 import { getCachedBootstrap, saveCachedBootstrap, clearAllVibegramCache } from './cache';
 
@@ -472,6 +472,8 @@ function finalizeAppSetup(isFromCache = false) {
 
             if (isFromCache) {
                 renderCachedChatsImmediately();
+                restoreActiveChatFromCache();
+                loadChats();
                 return;
             }
             
@@ -491,6 +493,9 @@ function finalizeAppSetup(isFromCache = false) {
                 }
             }
 
+            if (!state.activeChatId) {
+                restoreActiveChatFromCache();
+            }
             loadChats();
             if (!alreadySetup) {
                 initWebRTC(); // Initialize WebRTC listener for incoming calls

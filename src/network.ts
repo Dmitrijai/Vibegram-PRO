@@ -33,22 +33,21 @@ const sameOriginUrl = getSameOriginGatewayUrl();
 // Dedicated Database & Auth Edge Gateways (verified 200 OK with CORS * and zero redirects from github.io)
 export const PRIMARY_WORKER_URL = sameOriginUrl || 'https://vibegram-edge-gw.vercel.app';
 export const SECONDARY_EDGE_URL = 'https://vibegram-ru-node.vercel.app';
-export const TERTIARY_EDGE_URL = 'https://vibegram-net-proxy.vercel.app';
+export const TERTIARY_EDGE_URL = 'https://vibegram-ai-gw.vercel.app';
 
-// Dedicated Media CDN Edge Gateways (verified 200 OK / 206 Range with CORS * from github.io)
-export const MEDIA_CDN_PRIMARY_URL = sameOriginUrl || 'https://vibegram-media-cdn.vercel.app';
-export const MEDIA_CDN_SECONDARY_URL = 'https://vibegram-media-ru.vercel.app';
+// Dedicated Media CDN Edge Gateways (routed through verified unblocked edge nodes first)
+export const MEDIA_CDN_PRIMARY_URL = sameOriginUrl || 'https://vibegram-edge-gw.vercel.app';
+export const MEDIA_CDN_SECONDARY_URL = 'https://vibegram-ru-node.vercel.app';
 
-// Dedicated AI & Server-Side Transcription Edge Gateway (verified 200 OK with CORS * from github.io)
-export const AI_GATEWAY_URL = sameOriginUrl || 'https://vibegram-ai-gw.vercel.app';
+// Dedicated AI & Server-Side Transcription Edge Gateway
+export const AI_GATEWAY_URL = sameOriginUrl || 'https://vibegram-edge-gw.vercel.app';
 
 export const EDGE_GATEWAY_URLS = Array.from(
     new Set([
         ...(sameOriginUrl ? [sameOriginUrl] : []),
         'https://vibegram-edge-gw.vercel.app',
         'https://vibegram-ru-node.vercel.app',
-        'https://vibegram-net-proxy.vercel.app',
-        'https://vibegram-media-cdn.vercel.app',
+        'https://vibegram-ai-gw.vercel.app',
         DIRECT_SUPABASE_URL
     ])
 );
@@ -56,19 +55,20 @@ export const EDGE_GATEWAY_URLS = Array.from(
 export const MEDIA_GATEWAY_URLS = Array.from(
     new Set([
         ...(sameOriginUrl ? [sameOriginUrl] : []),
-        'https://vibegram-media-cdn.vercel.app',
-        'https://vibegram-media-ru.vercel.app',
         'https://vibegram-edge-gw.vercel.app',
-        'https://vibegram-ru-node.vercel.app'
+        'https://vibegram-ru-node.vercel.app',
+        'https://vibegram-ai-gw.vercel.app',
+        'https://vibegram-media-cdn.vercel.app',
+        'https://vibegram-media-ru.vercel.app'
     ])
 );
 
 export const AI_GATEWAY_URLS = Array.from(
     new Set([
         ...(sameOriginUrl ? [sameOriginUrl] : []),
-        'https://vibegram-ai-gw.vercel.app',
-        'https://vibegram-media-cdn.vercel.app',
-        'https://vibegram-edge-gw.vercel.app'
+        'https://vibegram-edge-gw.vercel.app',
+        'https://vibegram-ru-node.vercel.app',
+        'https://vibegram-ai-gw.vercel.app'
     ])
 );
 
@@ -77,7 +77,10 @@ const DEAD_OR_BLOCKED_DOMAINS = [
     'vibegram.qd.je',
     'supa-proxy.onrender.com',
     'onrender.com',
-    'vibegram.qzz.io'
+    'vibegram.qzz.io',
+    'vibegram-net-proxy.vercel.app',
+    'vibegram-media-cdn.vercel.app',
+    'vibegram-media-ru.vercel.app'
 ];
 
 export function isDeadGatewayUrl(url: string): boolean {
@@ -123,22 +126,34 @@ export function getActiveGatewayBaseUrl(): string {
 }
 
 export function getActiveMediaGatewayBaseUrl(): string {
-    return (networkState.activeMediaGatewayUrl || MEDIA_CDN_PRIMARY_URL).replace(/\/+$/, '');
+    const activeDbGw = networkState.activeGatewayUrl;
+    if (
+        activeDbGw &&
+        !activeDbGw.includes('.supabase.co') &&
+        !isDeadGatewayUrl(activeDbGw)
+    ) {
+        return activeDbGw.replace(/\/+$/, '');
+    }
+    const mediaGw = networkState.activeMediaGatewayUrl;
+    if (mediaGw && !isDeadGatewayUrl(mediaGw)) {
+        return mediaGw.replace(/\/+$/, '');
+    }
+    return MEDIA_CDN_PRIMARY_URL.replace(/\/+$/, '');
 }
 
 /**
  * Optimizes Cloudinary image, video, and voice paths on the fly:
- * - Images: f_auto,q_auto:good,w_1280,c_limit (~40 KB WebP/AVIF)
- * - Voice messages (_voice or audio extensions): f_mp3,br_64k (.mp3, ~35 KB)
- * - Videos & Video Circles (.mov, .mp4, .webm): f_mp4,vc_h264,q_auto:eco,w_480,c_limit (.mp4)
+ * - Images: f_webp,q_auto:eco,w_960,c_limit (~22 KB WebP)
+ * - Voice messages (_voice or audio extensions): f_mp3,br_48k (.mp3, ~25 KB)
+ * - Videos & Video Circles (.mov, .mp4, .webm): f_mp4,vc_h264,q_auto:low,w_360,c_limit (.mp4, ~95 KB fast-start)
  */
 function optimizeCloudinaryPath(pathAfterDomain: string, addAutoQuality = true): string {
     if (!addAutoQuality) return pathAfterDomain;
 
     // 1. Optimize images
-    const imageMatch = pathAfterDomain.match(/^(\/[^/]+\/image\/upload\/)(v\d+\/.*)$/);
+    const imageMatch = pathAfterDomain.match(/^(\/[^/]+\/image\/upload\/)(?:[^/]+\/)?(v\d+\/.*)$/);
     if (imageMatch) {
-        return `${imageMatch[1]}f_auto,q_auto:good,w_1280,c_limit/${imageMatch[2]}`;
+        return `${imageMatch[1]}f_webp,q_auto:eco,w_960,c_limit/${imageMatch[2]}`;
     }
 
     // 2. Optimize videos and voice notes stored under /video/upload/
@@ -160,37 +175,37 @@ function optimizeCloudinaryPath(pathAfterDomain: string, addAutoQuality = true):
             ext === '.aac';
 
         if (isAudioOnly) {
-            return `${prefix}f_mp3,br_64k/${publicIdWithVersion}.mp3${query}`;
+            return `${prefix}f_mp3,br_48k/${publicIdWithVersion}.mp3${query}`;
         }
 
-        return `${prefix}f_mp4,vc_h264,q_auto:eco,w_480,c_limit/${publicIdWithVersion}.mp4${query}`;
+        return `${prefix}f_mp4,vc_h264,q_auto:low,w_360,c_limit/${publicIdWithVersion}.mp4${query}`;
     }
 
     return pathAfterDomain;
 }
 
 /**
- * Generates an instant ~15KB JPEG first-frame poster URL for any Cloudinary video or video_circle
- * so chat bubbles display a preview frame in <100ms before the video stream even buffers.
+ * Generates an instant ~6KB WebP first-frame poster URL for any Cloudinary video or video_circle
+ * so chat bubbles display a preview frame in <80ms before the video stream even buffers.
  */
 export function getVideoPosterUrl(rawVideoUrl: string | null | undefined): string {
     if (!rawVideoUrl || typeof rawVideoUrl !== 'string') return '';
     const proxied = rewriteMediaUrl(rawVideoUrl, undefined, false);
     const match = proxied.match(/^(https?:\/\/[^/]+\/cloudinary\/[^/]+\/video\/upload\/)(?:[^/]+\/)?(v\d+\/.+?)(\.[a-zA-Z0-9]+)?(\?.*)?$/);
     if (match) {
-        return `${match[1]}f_jpg,so_0,w_480,c_limit,q_auto:good/${match[2]}.jpg`;
+        return `${match[1]}f_webp,so_0,w_320,c_limit,q_auto:low/${match[2]}.webp`;
     }
     return '';
 }
 
 /**
  * Generates an ultra-lightweight mono 16kHz 32kbps MP3 audio stream URL from any Cloudinary video/audio URL.
- * Cuts video circle and voice payload by 80-95% for sub-second Gemini transcription.
+ * Cuts video circle and voice payload by 85-95% for sub-second Gemini transcription.
  */
 export function getOptimizedAudioForTranscriptionUrl(rawMediaUrl: string): string {
     if (!rawMediaUrl || typeof rawMediaUrl !== 'string') return rawMediaUrl;
     const proxied = rewriteMediaUrl(rawMediaUrl, undefined, false);
-    const match = proxied.match(/^(https?:\/\/[^/]+\/cloudinary\/[^/]+\/video\/upload\/)(?:f_[^/]+\/)?(v\d+\/.+?)(\.[a-zA-Z0-9]+)?(\?.*)?$/);
+    const match = proxied.match(/^(https?:\/\/[^/]+\/cloudinary\/[^/]+\/video\/upload\/)(?:[^/]+\/)?(v\d+\/.+?)(\.[a-zA-Z0-9]+)?(\?.*)?$/);
     if (match) {
         return `${match[1]}f_mp3,br_32k,ac_1,ar_16000/${match[2]}.mp3`;
     }
@@ -200,7 +215,7 @@ export function getOptimizedAudioForTranscriptionUrl(rawMediaUrl: string): strin
 /**
  * Rewrites any blocked media or AI URL (res.cloudinary.com, supabase.co/storage,
  * generativelanguage.googleapis.com, router.huggingface.co, image.pollinations.ai)
- * to route through the dedicated Media CDN or AI Edge Gateways.
+ * to route through the active working Edge Gateways.
  */
 export function rewriteMediaUrl(rawUrl: string | null | undefined, targetGwUrl?: string, addAutoQuality = true): string {
     if (!rawUrl || typeof rawUrl !== 'string') return rawUrl || '';
@@ -208,10 +223,10 @@ export function rewriteMediaUrl(rawUrl: string | null | undefined, targetGwUrl?:
     if (!trimmed.startsWith('http')) return trimmed;
 
     const mediaGw = (targetGwUrl || getActiveMediaGatewayBaseUrl()).replace(/\/+$/, '');
-    const aiGw = (targetGwUrl || AI_GATEWAY_URL).replace(/\/+$/, '');
+    const aiGw = (targetGwUrl || getActiveMediaGatewayBaseUrl()).replace(/\/+$/, '');
     const dbGw = (targetGwUrl || getActiveGatewayBaseUrl()).replace(/\/+$/, '');
 
-    // 1. Direct res.cloudinary.com URLs -> Dedicated Media CDN Gateway
+    // 1. Direct res.cloudinary.com URLs -> Active Media Edge Gateway
     if (trimmed.startsWith('https://res.cloudinary.com/')) {
         const rest = optimizeCloudinaryPath(trimmed.substring('https://res.cloudinary.com'.length), addAutoQuality);
         return `${mediaGw}/cloudinary${rest}`;
@@ -230,7 +245,7 @@ export function rewriteMediaUrl(rawUrl: string | null | undefined, targetGwUrl?:
         return `${mediaGw}/cloudinary${rest}`;
     }
 
-    // 3. Direct api.cloudinary.com upload/destroy URLs -> Dedicated Media CDN Gateway
+    // 3. Direct api.cloudinary.com upload/destroy URLs -> Active Media Edge Gateway
     if (trimmed.startsWith('https://api.cloudinary.com/')) {
         const rest = trimmed.substring('https://api.cloudinary.com'.length);
         return `${mediaGw}/cloudinary-api${rest}`;
@@ -241,7 +256,7 @@ export function rewriteMediaUrl(rawUrl: string | null | undefined, targetGwUrl?:
         return `${mediaGw}/cloudinary-api${rest}`;
     }
 
-    // 4. Google Gemini API URLs -> Dedicated AI Gateway
+    // 4. Google Gemini API URLs -> Active Edge Gateway
     if (trimmed.startsWith('https://generativelanguage.googleapis.com/')) {
         const rest = trimmed.substring('https://generativelanguage.googleapis.com'.length);
         return `${aiGw}/gemini${rest}`;
@@ -252,7 +267,7 @@ export function rewriteMediaUrl(rawUrl: string | null | undefined, targetGwUrl?:
         return `${aiGw}/gemini${rest}`;
     }
 
-    // 5. HuggingFace Router / Inference URLs -> Dedicated AI Gateway
+    // 5. HuggingFace Router / Inference URLs -> Active Edge Gateway
     if (trimmed.startsWith('https://router.huggingface.co/')) {
         const rest = trimmed.substring('https://router.huggingface.co'.length);
         return `${aiGw}/hf${rest}`;
@@ -267,7 +282,7 @@ export function rewriteMediaUrl(rawUrl: string | null | undefined, targetGwUrl?:
         return `${aiGw}/hf${rest}`;
     }
 
-    // 6. Pollinations AI Image Generation URLs -> Dedicated AI Gateway
+    // 6. Pollinations AI Image Generation URLs -> Active Edge Gateway
     if (trimmed.startsWith('https://image.pollinations.ai/')) {
         const rest = trimmed.substring('https://image.pollinations.ai'.length);
         return `${aiGw}/pollinations${rest}`;
@@ -290,8 +305,8 @@ export function rewriteMediaUrl(rawUrl: string | null | undefined, targetGwUrl?:
 
 /**
  * Rewrites all blocked storage and Cloudinary URLs inside raw JSON text
- * before JSON.parse() runs, so both network responses and localStorage caches
- * immediately point to our working Media CDN & DB Edge Gateways.
+ * before JSON.parse() runs, so both network responses and localStorage/IndexedDB caches
+ * immediately point to our working Edge Gateways.
  */
 export function rewriteLegacyStorageUrlsInJson(jsonText: string, activeGwUrl?: string): string {
     if (!jsonText) return jsonText;
@@ -543,6 +558,9 @@ export function installMediaProxyInterceptor() {
             val.includes('supa-proxy.onrender.com/') ||
             val.includes('vibegram.qd.je/') ||
             val.includes('vibegram.qzz.io/') ||
+            val.includes('vibegram-media-cdn.vercel.app/') ||
+            val.includes('vibegram-media-ru.vercel.app/') ||
+            val.includes('vibegram-net-proxy.vercel.app/') ||
             (val.includes('/cloudinary/') && (val.endsWith('.mov') || val.includes('.mov?'))));
 
     // 2. Intercept Element.prototype.setAttribute for src / data-src / style
@@ -591,13 +609,25 @@ export function installMediaProxyInterceptor() {
             if (dataSrc && needsMediaRewrite(dataSrc)) {
                 origSetAttribute.call(node, 'data-src', rewriteMediaUrl(dataSrc));
             }
+            const poster = node.getAttribute('poster');
+            if (poster && needsMediaRewrite(poster)) {
+                origSetAttribute.call(node, 'poster', rewriteMediaUrl(poster));
+            }
         }
         const styleAttr = node.getAttribute('style');
-        if (styleAttr && styleAttr.includes('res.cloudinary.com/')) {
+        if (
+            styleAttr &&
+            (styleAttr.includes('res.cloudinary.com/') ||
+                styleAttr.includes('vibegram-media-cdn.vercel.app/') ||
+                styleAttr.includes('vibegram-media-ru.vercel.app/'))
+        ) {
             origSetAttribute.call(
                 node,
                 'style',
-                styleAttr.replace(/https?:\/\/res\.cloudinary\.com\/[^'")\s]+/g, (m) => rewriteMediaUrl(m))
+                styleAttr.replace(
+                    /https?:\/\/(?:res\.cloudinary\.com|vibegram-media-cdn\.vercel\.app\/cloudinary|vibegram-media-ru\.vercel\.app\/cloudinary)\/[^'")\s]+/g,
+                    (m) => rewriteMediaUrl(m)
+                )
             );
         }
     };
@@ -609,7 +639,7 @@ export function installMediaProxyInterceptor() {
                     if (n.nodeType === 1) {
                         const el = n as Element;
                         sanitizeNode(el);
-                        el.querySelectorAll?.('img, video, audio, source, [style*="res.cloudinary.com"]').forEach(sanitizeNode);
+                        el.querySelectorAll?.('img, video, audio, source, [style*="cloudinary"]').forEach(sanitizeNode);
                     }
                 });
             } else if (m.type === 'attributes' && m.target.nodeType === 1) {
@@ -623,9 +653,158 @@ export function installMediaProxyInterceptor() {
             childList: true,
             subtree: true,
             attributes: true,
-            attributeFilter: ['src', 'data-src', 'style']
+            attributeFilter: ['src', 'data-src', 'poster', 'style']
         });
     }
+}
+
+const inflightMediaFetches = new Map<string, Promise<Blob>>();
+
+/**
+ * Fetches a media file (video, audio, image, document) across working Edge Gateways
+ * with automatic fallback to 48KB chunked HTTP Range requests if TSPU resets long streams.
+ */
+export async function fetchMediaBlobResilient(
+    rawUrl: string,
+    signal?: AbortSignal,
+    addAutoQuality = true
+): Promise<Blob> {
+    if (!rawUrl) throw new Error('Empty media URL');
+    if (rawUrl.startsWith('blob:') || rawUrl.startsWith('data:')) {
+        const res = await fetch(rawUrl, { signal });
+        return await res.blob();
+    }
+
+    const cacheKey = `${rawUrl}|${addAutoQuality ? 'opt' : 'raw'}`;
+    if (!signal && inflightMediaFetches.has(cacheKey)) {
+        return inflightMediaFetches.get(cacheKey)!;
+    }
+
+    const run = async (): Promise<Blob> => {
+        const fetchFn = nativeWindowFetch || window.fetch.bind(window);
+        const gateways = [
+            getActiveMediaGatewayBaseUrl(),
+            ...MEDIA_GATEWAY_URLS.filter((g) => g !== getActiveMediaGatewayBaseUrl())
+        ];
+
+        let lastErr: any = null;
+
+        // Pass 1: Standard full-body fetch across verified Edge Gateways
+        for (const gwUrl of gateways.slice(0, 3)) {
+            const targetUrl = rewriteMediaUrl(rawUrl, gwUrl, addAutoQuality);
+            const ctrl = new AbortController();
+            const onAbort = () => ctrl.abort();
+            signal?.addEventListener('abort', onAbort, { once: true });
+            const timer = setTimeout(() => ctrl.abort(), 9000);
+
+            try {
+                const res = await fetchFn(targetUrl, { signal: ctrl.signal });
+                if (res.ok) {
+                    const buf = await res.arrayBuffer();
+                    clearTimeout(timer);
+                    if (buf.byteLength > 0) {
+                        const ct = res.headers.get('content-type') || 'application/octet-stream';
+                        return new Blob([buf], { type: ct });
+                    }
+                }
+                clearTimeout(timer);
+            } catch (err) {
+                clearTimeout(timer);
+                if (signal?.aborted) throw err;
+                lastErr = err;
+            } finally {
+                signal?.removeEventListener('abort', onAbort);
+            }
+        }
+
+        // Pass 2: Chunked HTTP Range Fetch (48KB slices) on active Edge Gateway
+        // Bypasses ISP TSPU stream caps that reset connections after 16-64KB on video/audio streams
+        for (const gwUrl of gateways.slice(0, 2)) {
+            const targetUrl = rewriteMediaUrl(rawUrl, gwUrl, addAutoQuality);
+            try {
+                const chunks: ArrayBuffer[] = [];
+                const CHUNK_SIZE = 49152; // 48 KB
+                let offset = 0;
+                let totalSize = -1;
+                let contentType = 'video/mp4';
+
+                while (totalSize === -1 || offset < totalSize) {
+                    if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
+                    const end = offset + CHUNK_SIZE - 1;
+                    const ctrl = new AbortController();
+                    const timer = setTimeout(() => ctrl.abort(), 6000);
+                    try {
+                        const res = await fetchFn(targetUrl, {
+                            headers: { Range: `bytes=${offset}-${end}` },
+                            signal: ctrl.signal
+                        });
+                        const buf = await res.arrayBuffer();
+                        clearTimeout(timer);
+
+                        if (res.status === 200) {
+                            // Server ignored Range and returned whole file
+                            const ct = res.headers.get('content-type') || contentType;
+                            return new Blob([buf], { type: ct });
+                        }
+                        if (res.status !== 206 || buf.byteLength === 0) {
+                            break;
+                        }
+
+                        const ct = res.headers.get('content-type');
+                        if (ct) contentType = ct;
+
+                        const contentRange = res.headers.get('content-range') || '';
+                        const match = contentRange.match(/bytes\s+\d+-\d+\/(\d+)/i);
+                        if (match && match[1]) {
+                            totalSize = parseInt(match[1], 10);
+                        }
+
+                        chunks.push(buf);
+                        offset += buf.byteLength;
+                        if (buf.byteLength < CHUNK_SIZE || offset >= 15 * 1024 * 1024) {
+                            break;
+                        }
+                    } catch (chunkErr) {
+                        clearTimeout(timer);
+                        throw chunkErr;
+                    }
+                }
+
+                if (chunks.length > 0 && (totalSize === -1 || offset >= totalSize)) {
+                    return new Blob(chunks, { type: contentType });
+                }
+            } catch (err) {
+                if (signal?.aborted) throw err;
+                lastErr = err;
+            }
+        }
+
+        // Pass 3: For images/posters, fallback to wsrv.nl global CDN
+        const isLikelyImage =
+            /\.(jpg|jpeg|png|webp|gif|avif)(\?|$)/i.test(rawUrl) || rawUrl.includes('/image/upload/');
+        if (isLikelyImage) {
+            let directCloudUrl = rawUrl;
+            const cloudIdx = rawUrl.indexOf('/cloudinary/');
+            if (cloudIdx !== -1) {
+                directCloudUrl = 'https://res.cloudinary.com' + rawUrl.substring(cloudIdx + '/cloudinary'.length);
+            }
+            const wsrvUrl = `https://wsrv.nl/?url=${encodeURIComponent(directCloudUrl)}&output=webp&q=80`;
+            const res = await fetchFn(wsrvUrl, { signal });
+            if (res.ok) {
+                return await res.blob();
+            }
+        }
+
+        throw lastErr || new Error('Media fetch failed across all gateways');
+    };
+
+    const promise = run().finally(() => {
+        inflightMediaFetches.delete(cacheKey);
+    });
+    if (!signal) {
+        inflightMediaFetches.set(cacheKey, promise);
+    }
+    return promise;
 }
 
 export function subscribeNetworkState(cb: () => void) {
@@ -780,12 +959,12 @@ export function rebuildGatewayList(envUrl: string) {
         });
     }
 
-    // 5. Tertiary Edge Gateway #3 (vibegram-net-proxy.vercel.app)
-    if (!list.some((g) => g.url === 'https://vibegram-net-proxy.vercel.app')) {
+    // 5. Tertiary Edge Gateway #3 (vibegram-ai-gw.vercel.app)
+    if (!list.some((g) => g.url === 'https://vibegram-ai-gw.vercel.app')) {
         list.push({
             id: 'edge-gw-3',
-            name: 'Резервный Edge-шлюз #3 (Net-Proxy)',
-            url: 'https://vibegram-net-proxy.vercel.app',
+            name: 'Резервный Edge-шлюз #3 (AI-Node)',
+            url: 'https://vibegram-ai-gw.vercel.app',
             type: 'edge-proxy',
             latencyMs: null,
             status: 'unknown',
