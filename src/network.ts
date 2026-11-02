@@ -56,10 +56,7 @@ export const MEDIA_GATEWAY_URLS = Array.from(
     new Set([
         ...(sameOriginUrl ? [sameOriginUrl] : []),
         'https://vibegram-edge-gw.vercel.app',
-        'https://vibegram-ru-node.vercel.app',
-        'https://vibegram-ai-gw.vercel.app',
-        'https://vibegram-media-cdn.vercel.app',
-        'https://vibegram-media-ru.vercel.app'
+        'https://vibegram-ru-node.vercel.app'
     ])
 );
 
@@ -558,6 +555,7 @@ export function installMediaProxyInterceptor() {
             val.includes('supa-proxy.onrender.com/') ||
             val.includes('vibegram.qd.je/') ||
             val.includes('vibegram.qzz.io/') ||
+            val.includes('vibegram-ai-gw.vercel.app/cloudinary/') ||
             val.includes('vibegram-media-cdn.vercel.app/') ||
             val.includes('vibegram-media-ru.vercel.app/') ||
             val.includes('vibegram-net-proxy.vercel.app/') ||
@@ -566,6 +564,13 @@ export function installMediaProxyInterceptor() {
     // 2. Intercept Element.prototype.setAttribute for src / data-src / style
     const origSetAttribute = Element.prototype.setAttribute;
     Element.prototype.setAttribute = function (name: string, value: string) {
+        if (
+            name === 'src' &&
+            this instanceof HTMLElement &&
+            this.hasAttribute('data-direct-cdn')
+        ) {
+            return origSetAttribute.call(this, name, value);
+        }
         if (
             needsMediaRewrite(value) &&
             (name === 'src' || name === 'data-src' || name === 'href' || name === 'poster')
@@ -587,7 +592,10 @@ export function installMediaProxyInterceptor() {
                     return desc.get!.call(this);
                 },
                 set(val: string) {
-                    if (needsMediaRewrite(val)) {
+                    if (
+                        !(this instanceof HTMLElement && this.hasAttribute('data-direct-cdn')) &&
+                        needsMediaRewrite(val)
+                    ) {
                         val = rewriteMediaUrl(val);
                     }
                     desc.set!.call(this, val);
@@ -600,6 +608,7 @@ export function installMediaProxyInterceptor() {
 
     // 4. MutationObserver to catch any innerHTML-inserted media or inline background-image styles
     const sanitizeNode = (node: Element) => {
+        if (node.hasAttribute('data-direct-cdn')) return;
         if (node.tagName === 'IMG' || node.tagName === 'VIDEO' || node.tagName === 'AUDIO' || node.tagName === 'SOURCE') {
             const src = node.getAttribute('src');
             if (src && needsMediaRewrite(src)) {
@@ -618,6 +627,7 @@ export function installMediaProxyInterceptor() {
         if (
             styleAttr &&
             (styleAttr.includes('res.cloudinary.com/') ||
+                styleAttr.includes('vibegram-ai-gw.vercel.app/cloudinary') ||
                 styleAttr.includes('vibegram-media-cdn.vercel.app/') ||
                 styleAttr.includes('vibegram-media-ru.vercel.app/'))
         ) {
@@ -625,7 +635,7 @@ export function installMediaProxyInterceptor() {
                 node,
                 'style',
                 styleAttr.replace(
-                    /https?:\/\/(?:res\.cloudinary\.com|vibegram-media-cdn\.vercel\.app\/cloudinary|vibegram-media-ru\.vercel\.app\/cloudinary)\/[^'")\s]+/g,
+                    /https?:\/\/(?:res\.cloudinary\.com|vibegram-ai-gw\.vercel\.app\/cloudinary|vibegram-media-cdn\.vercel\.app\/cloudinary|vibegram-media-ru\.vercel\.app\/cloudinary)\/[^'")\s]+/g,
                     (m) => rewriteMediaUrl(m)
                 )
             );
@@ -695,10 +705,47 @@ export async function fetchMediaBlobResilient(
             const ctrl = new AbortController();
             const onAbort = () => ctrl.abort();
             signal?.addEventListener('abort', onAbort, { once: true });
-            const timer = setTimeout(() => ctrl.abort(), 9000);
+            const timer = setTimeout(() => ctrl.abort(), 8000);
 
             try {
                 const res = await fetchFn(targetUrl, { signal: ctrl.signal });
+                if (res.ok) {
+                    const buf = await res.arrayBuffer();
+                    clearTimeout(timer);
+                    if (buf.byteLength > 0) {
+                        const ct = res.headers.get('content-type') || 'application/octet-stream';
+                        return new Blob([buf], { type: ct });
+                    }
+                }
+                clearTimeout(timer);
+            } catch (err) {
+                clearTimeout(timer);
+                if (signal?.aborted) throw err;
+                lastErr = err;
+            } finally {
+                signal?.removeEventListener('abort', onAbort);
+            }
+        }
+
+        // Pass 1.5: Direct Cloudinary CDN fallback (fast when res.cloudinary.com is reachable directly)
+        let directCloudinaryUrl = '';
+        if (rawUrl.startsWith('https://res.cloudinary.com/')) {
+            const rest = optimizeCloudinaryPath(rawUrl.substring('https://res.cloudinary.com'.length), addAutoQuality);
+            directCloudinaryUrl = `https://res.cloudinary.com${rest}`;
+        } else if (rawUrl.includes('/cloudinary/')) {
+            const idx = rawUrl.indexOf('/cloudinary/');
+            let rest = rawUrl.substring(idx + '/cloudinary'.length);
+            if (addAutoQuality) rest = optimizeCloudinaryPath(rest, true);
+            directCloudinaryUrl = `https://res.cloudinary.com${rest}`;
+        }
+
+        if (directCloudinaryUrl) {
+            const ctrl = new AbortController();
+            const onAbort = () => ctrl.abort();
+            signal?.addEventListener('abort', onAbort, { once: true });
+            const timer = setTimeout(() => ctrl.abort(), 7000);
+            try {
+                const res = await fetchFn(directCloudinaryUrl, { signal: ctrl.signal });
                 if (res.ok) {
                     const buf = await res.arrayBuffer();
                     clearTimeout(timer);
@@ -742,7 +789,6 @@ export async function fetchMediaBlobResilient(
                         clearTimeout(timer);
 
                         if (res.status === 200) {
-                            // Server ignored Range and returned whole file
                             const ct = res.headers.get('content-type') || contentType;
                             return new Blob([buf], { type: ct });
                         }

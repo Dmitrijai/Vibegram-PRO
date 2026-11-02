@@ -235,8 +235,10 @@ body { font-family: 'Inter', sans-serif; background-color: #f3f4f6; -webkit-tap-
     border-radius: 50%;
     overflow: hidden;
     cursor: pointer;
-    border: 2px solid rgba(59, 130, 246, 0.3);
+    border: 2px solid rgba(59, 130, 246, 0.35);
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    background-color: #111827;
+    transform: translateZ(0);
 }
 
 @media (min-width: 640px) {
@@ -260,16 +262,16 @@ body { font-family: 'Inter', sans-serif; background-color: #f3f4f6; -webkit-tap-
     height: 100%;
     pointer-events: none;
     transform: rotate(-90deg);
-    z-index: 30;
+    z-index: 25;
 }
 
 .video-progress-ring circle {
     fill: transparent;
     stroke: #3b82f6;
-    stroke-width: 3; /* thinner scroll */
+    stroke-width: 3.5;
     stroke-dasharray: 301.6; /* 2 * PI * 48 */
     stroke-dashoffset: 301.6;
-    transition: stroke-dashoffset 0.25s linear;
+    transition: stroke-dashoffset 0.15s linear;
     pointer-events: stroke;
     cursor: pointer;
 }
@@ -279,7 +281,7 @@ body { font-family: 'Inter', sans-serif; background-color: #f3f4f6; -webkit-tap-
     top: 50%;
     left: 50%;
     transform: translate(-50%, -50%);
-    background: rgba(0, 0, 0, 0.4);
+    background: rgba(0, 0, 0, 0.45);
     color: white;
     width: 48px;
     height: 48px;
@@ -288,14 +290,23 @@ body { font-family: 'Inter', sans-serif; background-color: #f3f4f6; -webkit-tap-
     justify-content: center;
     border-radius: 50%;
     opacity: 0;
-    transition: opacity 0.3s ease;
+    transition: opacity 0.25s ease;
     pointer-events: none;
     z-index: 20;
 }
 
 .video-circle-container.uninteracted .video-progress-ring,
-.video-circle-container.uninteracted .video-overlay-icon {
+.video-circle-container.uninteracted .video-overlay-icon,
+.video-circle-container.uninteracted .video-circle-scrubber {
     display: none !important;
+}
+
+.video-circle-container:not(.uninteracted) .circle-mute-icon {
+    display: none;
+}
+
+.video-circle-container:not(.uninteracted) .circle-mute-badge {
+    bottom: 22px;
 }
 
 .video-circle-container.paused .video-overlay-icon,

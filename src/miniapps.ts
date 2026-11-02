@@ -583,6 +583,141 @@ export function closeCreateMiniApp() {
   document.getElementById("mini-app-create-modal")!.classList.add("hidden");
 }
 
+const MINIAPP_STORAGE_POLYFILL = `<script>
+(function(){
+  try {
+    var createMemStorage = function() {
+      var store = Object.create(null);
+      var api = {
+        getItem: function(k) { k = String(k); return Object.prototype.hasOwnProperty.call(store, k) ? store[k] : null; },
+        setItem: function(k, v) { store[String(k)] = String(v); },
+        removeItem: function(k) { delete store[String(k)]; },
+        clear: function() { store = Object.create(null); },
+        key: function(i) { var keys = Object.keys(store); return keys[i] !== undefined ? keys[i] : null; },
+        get length() { return Object.keys(store).length; }
+      };
+      if (typeof Proxy !== 'undefined') {
+        return new Proxy(api, {
+          get: function(target, prop) {
+            if (prop in target) {
+              var val = target[prop];
+              return typeof val === 'function' ? val.bind(target) : val;
+            }
+            return Object.prototype.hasOwnProperty.call(store, prop) ? store[prop] : undefined;
+          },
+          set: function(target, prop, value) {
+            if (prop in target) { target[prop] = value; return true; }
+            store[String(prop)] = String(value);
+            return true;
+          },
+          deleteProperty: function(target, prop) {
+            delete store[String(prop)];
+            return true;
+          }
+        });
+      }
+      return api;
+    };
+    var memLocal = createMemStorage();
+    var memSession = createMemStorage();
+    try { Object.defineProperty(window, 'localStorage', { get: function() { return memLocal; }, configurable: true }); } catch (e1) {}
+    try { Object.defineProperty(window, 'sessionStorage', { get: function() { return memSession; }, configurable: true }); } catch (e2) {}
+    try { Object.defineProperty(Window.prototype, 'localStorage', { get: function() { return memLocal; }, configurable: true }); } catch (e3) {}
+    try { Object.defineProperty(Window.prototype, 'sessionStorage', { get: function() { return memSession; }, configurable: true }); } catch (e4) {}
+    try {
+      var cookieStore = '';
+      Object.defineProperty(Document.prototype, 'cookie', {
+        get: function() { return cookieStore; },
+        set: function(v) { cookieStore = String(v).split(';')[0]; },
+        configurable: true
+      });
+    } catch (e5) {}
+  } catch (err) {}
+  window.vibegram_sdk = true;
+  window.VibeAPI = {
+    ready: function() { window.parent.postMessage({ type: 'vibe_ready' }, '*'); },
+    getUser: function() {
+      return new Promise(function(resolve) {
+        var id = Math.random().toString(36).substring(7);
+        var handler = function(e) {
+          if (e.data && e.data.type === 'vibe_user_data' && (!e.data.reqId || e.data.reqId === id)) {
+            window.removeEventListener('message', handler);
+            resolve(e.data.user);
+          }
+        };
+        window.addEventListener('message', handler);
+        window.parent.postMessage({ type: 'vibe_get_user', reqId: id }, '*');
+      });
+    },
+    showAlert: function(msg) { window.parent.postMessage({ type: 'vibe_show_alert', message: msg }, '*'); },
+    close: function() { window.parent.postMessage({ type: 'vibe_close' }, '*'); }
+  };
+  window.getUserProfile = window.VibeAPI.getUser;
+})();
+</script>`;
+
+function prepareMiniAppHtml(rawHtml: string, baseUrl?: string): string {
+  if (!rawHtml) return "";
+  let html = rawHtml;
+  const baseTag = baseUrl ? `<base href="${baseUrl}">` : "";
+  const injection = baseTag + MINIAPP_STORAGE_POLYFILL;
+  if (/<head[^>]*>/i.test(html)) {
+    html = html.replace(/<head[^>]*>/i, (match) => match + injection);
+  } else if (/<html[^>]*>/i.test(html)) {
+    html = html.replace(/<html[^>]*>/i, (match) => match + `<head>${injection}</head>`);
+  } else if (/<body[^>]*>/i.test(html)) {
+    html = html.replace(/<body[^>]*>/i, (match) => `<head>${injection}</head>` + match);
+  } else {
+    html = injection + html;
+  }
+  return html;
+}
+
+function loadMiniAppIntoIframe(iframe: HTMLIFrameElement, data: any, appId: string) {
+  if (data.html_content && data.html_content.trim().startsWith("<")) {
+    iframe.removeAttribute("src");
+    iframe.srcdoc = prepareMiniAppHtml(data.html_content);
+    return;
+  }
+  const targetUrl =
+    data.html_content && data.html_content.startsWith("https://")
+      ? data.html_content
+      : data.html_url || "";
+
+  if (targetUrl) {
+    let baseHref = targetUrl;
+    try {
+      const u = new URL(targetUrl);
+      if (!u.pathname.endsWith("/")) {
+        u.pathname = u.pathname.substring(0, u.pathname.lastIndexOf("/") + 1);
+      }
+      baseHref = u.toString();
+    } catch {}
+
+    fetch(targetUrl)
+      .then((res) => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return res.text();
+      })
+      .then((html) => {
+        if (targetUrl.includes("res.cloudinary.com") && targetUrl.includes("/raw/upload/")) {
+          supabase.from("mini_apps").update({ html_content: html, html_url: null }).eq("id", appId).then();
+        }
+        iframe.removeAttribute("src");
+        iframe.srcdoc = prepareMiniAppHtml(html, baseHref);
+      })
+      .catch(() => {
+        iframe.removeAttribute("srcdoc");
+        iframe.src = targetUrl;
+      });
+    return;
+  }
+  if (data.html_content) {
+    iframe.removeAttribute("src");
+    iframe.srcdoc = prepareMiniAppHtml(data.html_content);
+  }
+}
+
 export async function submitMiniApp() {
   const titleBtn = document.getElementById("miniapp-title") as HTMLInputElement;
   const descBtn = document.getElementById(
@@ -639,46 +774,7 @@ export async function submitMiniApp() {
         throw new Error("Файл не похож на HTML.");
       }
 
-      // Add script injection before upload
-      const scriptInjection = `
-                <script>
-                    window.VibeAPI = {
-                        ready: function() {
-                            window.parent.postMessage({ type: 'vibe_ready' }, '*');
-                        },
-                        getUser: function() {
-                            return new Promise((resolve) => {
-                                const id = Math.random().toString(36).substring(7);
-                                const handler = (e) => {
-                                    if(e.data && e.data.type === 'vibe_user_data' && e.data.reqId === id) {
-                                        window.removeEventListener('message', handler);
-                                        resolve(e.data.user);
-                                    }
-                                };
-                                window.addEventListener('message', handler);
-                                window.parent.postMessage({ type: 'vibe_get_user', reqId: id }, '*');
-                            });
-                        },
-                        showAlert: function(msg) {
-                            window.parent.postMessage({ type: 'vibe_show_alert', message: msg }, '*');
-                        },
-                        close: function() {
-                            window.parent.postMessage({ type: 'vibe_close' }, '*');
-                        }
-                    };
-                </script>
-            `;
-
-      let htmlToLoad = text;
-      if (htmlToLoad.includes("<head>")) {
-        htmlToLoad = htmlToLoad.replace("<head>", "<head>" + scriptInjection);
-      } else if (htmlToLoad.includes("<body>")) {
-        htmlToLoad = htmlToLoad.replace("<body>", "<body>" + scriptInjection);
-      } else {
-        htmlToLoad = scriptInjection + htmlToLoad;
-      }
-
-      htmlContent = htmlToLoad;
+      htmlContent = prepareMiniAppHtml(text);
     } else {
       htmlUrl = urlInput.value.trim();
     }
@@ -812,29 +908,8 @@ export async function submitEditMiniApp() {
     if (isFileMode) {
       if (fileInput.files && fileInput.files.length > 0) {
         const file = fileInput.files[0];
-        let htmlToLoad = await file.text();
-
-        // basic injection
-        if (!htmlToLoad.includes("vibegram_sdk")) {
-          const scriptInjection = `<script>
-                        window.vibegram_sdk = true;
-                        // Mock simple functions for test inside window
-                        window.getUserProfile = () => {
-                            return new Promise((resolve) => {
-                                window.parent.postMessage({ type: 'vibe_get_user' }, '*');
-                                window.addEventListener('message', function handler(e) {
-                                    if (e.data && e.data.type === 'vibe_user_data') {
-                                        window.removeEventListener('message', handler);
-                                        resolve(e.data.user);
-                                    }
-                                });
-                            });
-                        };
-                     </script>\n`;
-          htmlToLoad = scriptInjection + htmlToLoad;
-        }
-
-        htmlContent = htmlToLoad;
+        const htmlToLoad = await file.text();
+        htmlContent = prepareMiniAppHtml(htmlToLoad);
         htmlUrl = null;
       }
     } else {
@@ -902,9 +977,6 @@ export async function runMiniApp(id: string) {
   ) as HTMLIFrameElement;
   iframe.removeAttribute("srcdoc");
   iframe.removeAttribute("src");
-  
-  // Show spinner overlay in iframe container if possible, or just wait
-  // (We'll just wait for the db fetch)
 
   try {
     const { data, error } = await supabase
@@ -928,30 +1000,7 @@ export async function runMiniApp(id: string) {
       iconEl.textContent = data.title.substring(0, 2).toUpperCase();
     }
 
-    if (data.html_content && data.html_content.trim().startsWith("<")) {
-      iframe.removeAttribute("src");
-      iframe.srcdoc = data.html_content;
-    } else if (data.html_content && data.html_content.startsWith("https://")) {
-      iframe.removeAttribute("srcdoc");
-      iframe.src = data.html_content;
-    } else if (data.html_url) {
-      if (data.html_url.includes("res.cloudinary.com") && data.html_url.includes("/raw/upload/")) {
-        fetch(data.html_url).then(res => res.text()).then(html => {
-          supabase.from("mini_apps").update({ html_content: html, html_url: null }).eq("id", id).then();
-          iframe.removeAttribute("src");
-          iframe.srcdoc = html;
-        }).catch(() => {
-          iframe.removeAttribute("srcdoc");
-          iframe.src = data.html_url;
-        });
-      } else {
-        iframe.removeAttribute("srcdoc");
-        iframe.src = data.html_url;
-      }
-    } else if (data.html_content) {
-      iframe.removeAttribute("src");
-      iframe.srcdoc = data.html_content;
-    }
+    loadMiniAppIntoIframe(iframe, data, id);
 
     const shareBtn = document.getElementById('run-app-share-btn');
     if (shareBtn) {
@@ -965,7 +1014,6 @@ export async function runMiniApp(id: string) {
     // Increment views
     supabase.rpc("increment_miniapp_view", { app_id: id }).then((res) => {
       if (res.error) {
-        // Alternatively if RPC doesn't exist, just manual update
         supabase
           .from("mini_apps")
           .update({ views_count: (data.views_count || 0) + 1 })
@@ -1088,30 +1136,7 @@ export async function runStandaloneMiniApp(id: string) {
       return;
     }
 
-    if (data.html_content && data.html_content.trim().startsWith("<")) {
-      iframe.removeAttribute("src");
-      iframe.srcdoc = data.html_content;
-    } else if (data.html_content && data.html_content.startsWith("https://")) {
-      iframe.removeAttribute("srcdoc");
-      iframe.src = data.html_content;
-    } else if (data.html_url) {
-      if (data.html_url.includes("res.cloudinary.com") && data.html_url.includes("/raw/upload/")) {
-        fetch(data.html_url).then(res => res.text()).then(html => {
-          supabase.from("mini_apps").update({ html_content: html, html_url: null }).eq("id", id).then();
-          iframe.removeAttribute("src");
-          iframe.srcdoc = html;
-        }).catch(() => {
-          iframe.removeAttribute("srcdoc");
-          iframe.src = data.html_url;
-        });
-      } else {
-        iframe.removeAttribute("srcdoc");
-        iframe.src = data.html_url;
-      }
-    } else if (data.html_content) {
-      iframe.removeAttribute("src");
-      iframe.srcdoc = data.html_content;
-    }
+    loadMiniAppIntoIframe(iframe, data, id);
 
     supabase.rpc("increment_miniapp_view", { app_id: id }).then((res) => {
       if (res.error)

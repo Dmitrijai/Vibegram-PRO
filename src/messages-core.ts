@@ -230,6 +230,7 @@ export async function loadMessages(chatId: string, isInitialLoad = false, retrie
             .limit(currentMessageLimit);
             
         if (error) throw error;
+        if (state.activeChatId !== chatId) return;
         
         if (messages) {
             hasMoreMessages = messages.length === currentMessageLimit;
@@ -241,6 +242,7 @@ export async function loadMessages(chatId: string, isInitialLoad = false, retrie
             renderMessages(ordered, isInitialLoad && !alreadyHasRenderedMsgs);
         }
     } catch (error: any) {
+        if (state.activeChatId !== chatId) return;
         const isNetworkGlitch =
             error?.message === "Failed to fetch" ||
             error?.message?.includes("Failed to fetch") ||
@@ -249,6 +251,7 @@ export async function loadMessages(chatId: string, isInitialLoad = false, retrie
         
         if (isNetworkGlitch && retriesLeft > 0) {
             await new Promise((r) => setTimeout(r, 800));
+            if (state.activeChatId !== chatId) return;
             return loadMessages(chatId, isInitialLoad, retriesLeft - 1);
         }
         
@@ -257,10 +260,11 @@ export async function loadMessages(chatId: string, isInitialLoad = false, retrie
         const alreadyHasMessages = list.querySelector('.msg-wrapper') !== null;
         if (!alreadyHasMessages) {
             const cached = getCachedMessages(chatId) || (await getCachedMessagesAsync(chatId));
+            if (state.activeChatId !== chatId) return;
             if (cached && cached.length > 0) {
                 renderMessages(cached, true);
             } else {
-                list.innerHTML = '<div class="flex h-full items-center justify-center"><div class="bg-black/50 text-white px-5 py-2.5 rounded-2xl text-xs font-medium backdrop-blur-md shadow-lg text-center">Синхронизация сообщений через резервный шлюз...</div></div>';
+                list.innerHTML = '<div class="flex h-full items-center justify-center msg-placeholder"><div class="bg-black/50 text-white px-5 py-2.5 rounded-2xl text-xs font-medium backdrop-blur-md shadow-lg text-center">Синхронизация сообщений через резервный шлюз...</div></div>';
             }
         }
     }
@@ -318,9 +322,8 @@ export function renderMessages(messages: any[], isInitialLoad = false) {
         const children = Array.from(list.children) as HTMLElement[];
         for (let child of children) {
             if (child.id && child.id.startsWith('msg-wrapper-')) {
-                // Determine if this element is near the top of the viewport
                 const offset = child.offsetTop - list.scrollTop;
-                if (offset >= -50) { // Slight negative threshold to catch partially hidden elements
+                if (offset >= -50) {
                     anchorElement = child;
                     anchorOffset = offset;
                     break;
@@ -334,13 +337,19 @@ export function renderMessages(messages: any[], isInitialLoad = false) {
     }
 
     if (messages.length === 0) {
-        list.innerHTML = '<div class="flex h-full items-center justify-center"><div class="bg-black/40 text-white px-5 py-2 rounded-full text-sm font-medium backdrop-blur-md shadow-lg">Здесь пока пусто. Напишите первым!</div></div>';
+        list.innerHTML = '<div class="flex h-full items-center justify-center msg-placeholder"><div class="bg-black/40 text-white px-5 py-2 rounded-full text-sm font-medium backdrop-blur-md shadow-lg">Здесь пока пусто. Напишите первым!</div></div>';
         return;
     }
 
-    if (list.children.length === 1 && list.children[0].textContent?.includes('Здесь пока пусто')) {
-        list.innerHTML = '';
-    }
+    // Always remove any non-message loader/spinner/empty placeholders so they never get pushed to the bottom of the chat
+    Array.from(list.children).forEach(child => {
+        const isMsg = child.classList?.contains('msg-wrapper');
+        const isDivider = child.classList?.contains('msg-date-divider');
+        const isTemp = child.id?.startsWith('temp_');
+        if (!isMsg && !isDivider && !isTemp) {
+            child.remove();
+        }
+    });
 
     const existingIds = new Set();
     Array.from(list.children).forEach(child => {
@@ -498,15 +507,17 @@ export function renderMessages(messages: any[], isInitialLoad = false) {
             fileHtml = `
                 <div class="flex flex-col mb-1">
                     <div class="flex items-center">
-                        <div class="audio-player-container flex items-center gap-2 w-[200px] sm:w-[240px] bg-blue-500/10 dark:bg-blue-500/20 p-1.5 rounded-full">
+                        <div class="audio-player-container flex items-center gap-2 w-[210px] sm:w-[250px] bg-blue-500/10 dark:bg-blue-500/20 p-1.5 rounded-full" data-url="${actualMedia[0].url}" ${durSec > 0 ? `data-duration="${durSec}"` : ''}>
                             <button onclick="toggleAudio(this, '${actualMedia[0].url}')" class="w-9 h-9 shrink-0 bg-blue-500 hover:bg-blue-600 text-white rounded-full flex items-center justify-center transition-colors shadow-sm">
                                 <svg class="w-4 h-4 ml-0.5 play-icon" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
                                 <svg class="w-4 h-4 pause-icon hidden" fill="currentColor" viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
                             </button>
-                            <div class="flex-1 h-1 bg-blue-200 dark:bg-blue-900/50 rounded-full relative overflow-hidden cursor-pointer media-progress-container">
-                                <div class="absolute left-0 top-0 h-full bg-blue-500 progress-bar" style="width: 0%"></div>
+                            <div class="flex-1 h-6 flex items-center cursor-pointer media-progress-container select-none" onclick="event.stopPropagation()">
+                                <div class="w-full h-1.5 bg-blue-200 dark:bg-blue-900/50 rounded-full relative overflow-hidden">
+                                    <div class="absolute left-0 top-0 h-full bg-blue-500 progress-bar rounded-full" style="width: 0%"></div>
+                                </div>
                             </div>
-                            <span class="text-[11px] font-medium text-blue-600 dark:text-blue-400 w-8 text-right time-display">${durLabel}</span>
+                            <span class="text-[11px] font-medium text-blue-600 dark:text-blue-400 w-9 text-right time-display tabular-nums pr-1">${durLabel}</span>
                         </div>
                         ${transcribeBtn}
                     </div>
@@ -517,21 +528,32 @@ export function renderMessages(messages: any[], isInitialLoad = false) {
             const circlePoster = getVideoPosterUrl(actualMedia[0].url);
             const cachedCircleSrc = getSyncMediaObjectUrl(actualMedia[0].url);
             const txVal = actualMedia[0].transcription || getCachedTranscription(msg.id, actualMedia[0].url) || '';
-            const durAttr = Number(actualMedia[0].duration) > 0 ? `data-duration="${Number(actualMedia[0].duration)}"` : '';
+            const durSec = Number(actualMedia[0].duration) || 0;
+            const durAttr = durSec > 0 ? `data-duration="${durSec}"` : '';
+            const durLabel = durSec > 0 ? `${Math.floor(durSec / 60)}:${(durSec % 60).toString().padStart(2, '0')}` : '';
             const transcriptionText = `<div id="transcription-text-${msg.id}" class="w-full flex ${isMe ? 'justify-end' : 'justify-start'}">${txVal ? `<div class="mt-1 text-sm text-gray-700 dark:text-gray-200 bg-black/5 dark:bg-white/5 p-2 rounded-lg max-w-[200px]">${escapeHtml(txVal)}</div>` : ''}</div>`;
-            const transcribeBtn = !txVal ? `<button id="transcribe-btn-${msg.id}" onclick="transcribeMedia('${actualMedia[0].url}', '${msg.id}', 'video_circle')" class="absolute bottom-0 right-0 w-8 h-8 bg-gray-800/70 hover:bg-gray-800 text-white rounded-full flex items-center justify-center transition-colors z-10 backdrop-blur-sm" title="Расшифровать"><span class="text-[11px] font-bold">Aa</span></button>` : '';
+            const transcribeBtn = !txVal ? `<button id="transcribe-btn-${msg.id}" onclick="event.stopPropagation(); transcribeMedia('${actualMedia[0].url}', '${msg.id}', 'video_circle')" class="absolute bottom-1 right-1 w-8 h-8 bg-gray-900/75 hover:bg-gray-900 text-white rounded-full flex items-center justify-center transition-colors z-30 backdrop-blur-sm shadow" title="Расшифровать"><span class="text-[11px] font-bold">Aa</span></button>` : '';
 
             fileHtml = `
                 <div class="flex flex-col mb-1 ${isMe ? 'items-end' : 'items-start'}">
-                    <div class="relative">
-                        <div class="video-circle-container uninteracted" onclick="handleVideoCircleClick(event, this)">
-                            <video ${cachedCircleSrc ? `src="${cachedCircleSrc}"` : `data-src="${actualMedia[0].url}"`} ${circlePoster ? `poster="${circlePoster}"` : ''} ${durAttr} preload="none" loop muted playsinline data-autoplay="true" ontimeupdate="updateVideoProgress(this)" onerror="window.handleMediaError(this, '${actualMedia[0].url}');"></video>
+                    <div class="relative flex flex-col items-center">
+                        <div class="video-circle-container uninteracted shrink-0" ${durAttr} onclick="handleVideoCircleClick(event, this)">
+                            <video ${cachedCircleSrc ? `src="${cachedCircleSrc}"` : `data-src="${actualMedia[0].url}"`} data-url="${actualMedia[0].url}" ${circlePoster ? `poster="${circlePoster}"` : ''} ${durAttr} preload="metadata" loop muted playsinline data-autoplay="true" ontimeupdate="updateVideoProgress(this)" onloadedmetadata="updateVideoProgress(this)" onerror="window.handleMediaError(this, '${actualMedia[0].url}');"></video>
                             <svg class="video-progress-ring" viewBox="0 0 100 100">
                                 <circle cx="50" cy="50" r="48" stroke-linecap="round"></circle>
                             </svg>
                             <div class="video-overlay-icon flex items-center justify-center">
                                 <svg class="w-8 h-8 ml-0.5 play-icon hidden" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
                                 <svg class="w-8 h-8 pause-icon" fill="currentColor" viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
+                            </div>
+                            <div class="circle-mute-badge absolute bottom-2.5 left-1/2 -translate-x-1/2 bg-black/50 backdrop-blur-sm text-white text-[10px] font-medium px-2 py-0.5 rounded-full flex items-center gap-1 pointer-events-none z-20">
+                                <svg class="w-3 h-3 circle-mute-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2"></path></svg>
+                                <span class="circle-time-text tabular-nums">${durLabel}</span>
+                            </div>
+                            <div class="video-circle-scrubber media-progress-container absolute bottom-0 left-6 right-6 h-6 flex items-center z-30 cursor-pointer" onclick="event.stopPropagation()">
+                                <div class="w-full h-1.5 bg-white/35 rounded-full overflow-hidden backdrop-blur-sm shadow-sm">
+                                    <div class="h-full bg-blue-500 progress-bar rounded-full" style="width: 0%"></div>
+                                </div>
                             </div>
                         </div>
                         ${transcribeBtn}
@@ -541,8 +563,9 @@ export function renderMessages(messages: any[], isInitialLoad = false) {
             `;
         } else if (actualMedia.length === 1 && actualMedia[0].type?.startsWith('audio/')) {
             const file = actualMedia[0];
+            const durSec = Number(file.duration) || 0;
             fileHtml = `
-                <div class="audio-player-container flex items-center gap-3 w-[240px] sm:w-[280px] bg-black/5 dark:bg-white/5 p-2 rounded-xl mb-1 border border-black/5 dark:border-white/5">
+                <div class="audio-player-container flex items-center gap-3 w-[240px] sm:w-[280px] bg-black/5 dark:bg-white/5 p-2 rounded-xl mb-1 border border-black/5 dark:border-white/5" data-url="${file.url}" ${durSec > 0 ? `data-duration="${durSec}"` : ''}>
                     <button onclick="toggleAudio(this, '${file.url}')" class="w-10 h-10 shrink-0 bg-blue-500 hover:bg-blue-600 text-white rounded-full flex items-center justify-center transition-colors shadow-sm">
                         <svg class="w-5 h-5 ml-0.5 play-icon" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
                         <svg class="w-5 h-5 pause-icon hidden" fill="currentColor" viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
@@ -550,52 +573,59 @@ export function renderMessages(messages: any[], isInitialLoad = false) {
                     <div class="flex-1 min-w-0 flex flex-col justify-center">
                         <div class="text-sm font-semibold text-gray-800 dark:text-gray-200 truncate w-full mb-1">${escapeHtml(file.name || 'Аудио')}</div>
                         <div class="flex items-center gap-2">
-                            <div class="flex-1 h-1.5 bg-gray-200 dark:bg-gray-700 rounded-full relative overflow-hidden cursor-pointer media-progress-container">
-                                <div class="absolute left-0 top-0 h-full bg-blue-500 progress-bar" style="width: 0%"></div>
+                            <div class="flex-1 h-5 flex items-center cursor-pointer media-progress-container select-none" onclick="event.stopPropagation()">
+                                <div class="w-full h-1.5 bg-gray-200 dark:bg-gray-700 rounded-full relative overflow-hidden">
+                                    <div class="absolute left-0 top-0 h-full bg-blue-500 progress-bar rounded-full" style="width: 0%"></div>
+                                </div>
                             </div>
-                            <span class="text-[10px] font-medium text-gray-500 dark:text-gray-400 w-8 text-right time-display">0:00</span>
+                            <span class="text-[10px] font-medium text-gray-500 dark:text-gray-400 w-9 text-right time-display tabular-nums">0:00</span>
                         </div>
                     </div>
                 </div>
             `;
         } else if (actualMedia.length > 0) {
-            fileHtml = '<div class="flex flex-wrap gap-1 mb-1.5 w-full">';
+            fileHtml = '<div class="flex flex-wrap gap-1 mb-1.5">';
             actualMedia.forEach((file: any) => {
-                let aspectCls = 'aspect-[4/3] max-w-[200px] sm:max-w-[260px]'; // fallback
-                if (file.ratio === '16/9') aspectCls = 'aspect-[16/9] max-w-[240px] sm:max-w-[300px]';
-                else if (file.ratio === '9/16') aspectCls = 'aspect-[9/16] max-w-[140px] sm:max-w-[180px]';
-                else if (file.ratio === '1/1') aspectCls = 'aspect-square max-w-[180px] sm:max-w-[220px]';
+                // Explicit dimensions so chat bubbles never jump or change shape while images/videos load
+                let aspectCls = 'aspect-[4/3] w-[220px] sm:w-[260px]';
+                if (file.ratio === '16/9') aspectCls = 'aspect-[16/9] w-[240px] sm:w-[300px]';
+                else if (file.ratio === '9/16') aspectCls = 'aspect-[9/16] w-[160px] sm:w-[190px]';
+                else if (file.ratio === '1/1') aspectCls = 'aspect-square w-[200px] sm:w-[220px]';
 
                 if(file.type?.startsWith('image/') && !file.asFile) {
                     const cachedImg = getSyncMediaObjectUrl(file.url);
-                    fileHtml += `<img ${cachedImg ? `src="${cachedImg}"` : `data-src="${file.url}"`} class="${aspectCls} w-full rounded-xl object-cover cursor-pointer hover:opacity-95 shadow-sm border border-black/5 chat-media-item bg-gray-200 dark:bg-gray-800" onclick="openLightbox('${file.url}')" onload="const l=this.closest('#messages-list'); if(l && l.scrollHeight - l.scrollTop - l.clientHeight < 250) l.scrollTop = l.scrollHeight;" onerror="window.handleMediaError(this, '${file.url}');">`;
+                    fileHtml += `<img ${cachedImg ? `src="${cachedImg}"` : `data-src="${file.url}"`} class="${aspectCls} max-w-full rounded-xl object-cover cursor-pointer hover:opacity-95 shadow-sm border border-black/5 chat-media-item bg-gray-200 dark:bg-gray-800 shrink-0" onclick="openLightbox('${file.url}')" onerror="window.handleMediaError(this, '${file.url}');">`;
                 } else if(file.type?.startsWith('video/') && !file.asFile) {
                     const videoPoster = getVideoPosterUrl(file.url);
                     const cachedVid = getSyncMediaObjectUrl(file.url);
+                    const durSec = Number(file.duration) || 0;
+                    const durAttr = durSec > 0 ? `data-duration="${durSec}"` : '';
                     fileHtml += `
-                        <div class="relative ${aspectCls} w-full rounded-xl overflow-hidden shadow-sm border border-black/5 group chat-media-item-container mb-1 bg-gray-800">
-                            <video ${cachedVid ? `src="${cachedVid}"` : `data-src="${file.url}"`} ${videoPoster ? `poster="${videoPoster}"` : ''} preload="none" class="w-full h-full object-cover chat-media-item cursor-pointer" onclick="toggleInlineVideo(this)" onloadeddata="const l=this.closest('#messages-list'); if(l && l.scrollHeight - l.scrollTop - l.clientHeight < 250) l.scrollTop = l.scrollHeight;" onloadedmetadata="if(Number.isFinite(this.duration)&&this.duration>0){this.parentElement.querySelector('.video-time').textContent = Math.floor(this.duration / 60) + ':' + Math.floor(this.duration % 60).toString().padStart(2, '0')}" onerror="window.handleMediaError(this, '${file.url}');"></video>
+                        <div class="relative ${aspectCls} max-w-full rounded-xl overflow-hidden shadow-sm border border-black/5 group chat-media-item-container mb-1 bg-gray-800 shrink-0" ${durAttr}>
+                            <video ${cachedVid ? `src="${cachedVid}"` : `data-src="${file.url}"`} data-url="${file.url}" ${videoPoster ? `poster="${videoPoster}"` : ''} ${durAttr} preload="metadata" playsinline class="w-full h-full object-cover chat-media-item cursor-pointer" onclick="toggleInlineVideo(this)" onloadedmetadata="if(Number.isFinite(this.duration)&&this.duration>0){this.parentElement.querySelector('.video-time').textContent = Math.floor(this.duration / 60) + ':' + Math.floor(this.duration % 60).toString().padStart(2, '0')}" onerror="window.handleMediaError(this, '${file.url}');"></video>
                             <div class="absolute inset-0 bg-black/20 group-hover:bg-black/30 transition-colors flex items-center justify-center pointer-events-none video-overlay">
                                 <div class="w-12 h-12 bg-black/50 rounded-full flex items-center justify-center text-white backdrop-blur-sm">
                                     <svg class="w-6 h-6 ml-0.5 play-icon" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
                                     <svg class="w-6 h-6 pause-icon hidden" fill="currentColor" viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
                                 </div>
                             </div>
-                            <div class="absolute top-2 right-2 z-10 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <div class="absolute top-2 right-2 z-20 opacity-90 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
                                 <button onclick="event.stopPropagation(); openLightbox('${file.url}')" class="w-8 h-8 bg-black/50 hover:bg-black/70 rounded-full flex items-center justify-center text-white backdrop-blur-sm transition-colors" title="Открыть на весь экран">
                                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"></path></svg>
                                 </button>
                             </div>
-                            <div class="absolute bottom-0 left-0 right-0 h-1.5 bg-black/30 cursor-pointer media-progress-container" onclick="event.stopPropagation()">
-                                <div class="h-full bg-blue-500 video-progress-bar progress-bar" style="width: 0%"></div>
+                            <div class="absolute bottom-4 left-2 text-[10px] text-white bg-black/50 px-1.5 py-0.5 rounded backdrop-blur-sm video-time pointer-events-none tabular-nums z-10">${durSec > 0 ? `${Math.floor(durSec / 60)}:${(durSec % 60).toString().padStart(2, '0')}` : '0:00'}</div>
+                            <div class="absolute bottom-0 left-0 right-0 h-5 px-2 flex items-center cursor-pointer media-progress-container z-20 bg-gradient-to-t from-black/60 to-transparent select-none" onclick="event.stopPropagation()">
+                                <div class="w-full h-1.5 bg-white/30 rounded-full overflow-hidden">
+                                    <div class="h-full bg-blue-500 video-progress-bar progress-bar rounded-full" style="width: 0%"></div>
+                                </div>
                             </div>
-                            <div class="absolute bottom-2 left-2 text-[10px] text-white bg-black/50 px-1.5 py-0.5 rounded backdrop-blur-sm video-time">0:00</div>
                         </div>
                     `;
                 } else {
                     const safeUrl = escapeHtml(file.url);
                     const safeName = escapeHtml(file.name || 'Файл');
-                    fileHtml += `<div onclick="event.stopPropagation(); window.downloadMedia('${safeUrl}', '${safeName}')" class="cursor-pointer flex items-center gap-3 bg-black/5 dark:bg-white/5 hover:bg-black/10 dark:hover:bg-white/10 p-3 rounded-xl transition-colors border border-black/5 dark:border-white/5 w-full min-w-0 overflow-hidden"><div class="bg-blue-500 text-white p-2.5 rounded-lg shrink-0"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg></div><div class="flex-1 min-w-0"><span class="truncate font-semibold text-sm block w-full">${safeName}</span><span class="text-xs opacity-70 mt-0.5 block">${file.size ? (file.size / 1024 / 1024).toFixed(2) + ' MB' : 'Скачать'}</span></div></div>`;
+                    fileHtml += `<div onclick="event.stopPropagation(); window.downloadMedia('${safeUrl}', '${safeName}')" class="cursor-pointer flex items-center gap-3 bg-black/5 dark:bg-white/5 hover:bg-black/10 dark:hover:bg-white/10 p-3 rounded-xl transition-colors border border-black/5 dark:border-white/5 w-[220px] sm:w-[260px] max-w-full min-w-0 overflow-hidden"><div class="bg-blue-500 text-white p-2.5 rounded-lg shrink-0"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg></div><div class="flex-1 min-w-0"><span class="truncate font-semibold text-sm block w-full">${safeName}</span><span class="text-xs opacity-70 mt-0.5 block">${file.size ? (file.size / 1024 / 1024).toFixed(2) + ' MB' : 'Скачать'}</span></div></div>`;
                 }
             });
             fileHtml += '</div>';
@@ -791,7 +821,7 @@ export function renderMessages(messages: any[], isInitialLoad = false) {
         if (!div) {
             div = document.createElement('div');
             div.id = `msg-wrapper-${msg.id}`;
-            div.className = `msg-wrapper relative flex flex-col max-w-[85%] md:max-w-[65%] min-w-0 ${isMe ? 'self-end items-end' : 'self-start items-start'} animate-fadeIn`;
+            div.className = `msg-wrapper relative flex flex-col max-w-[85%] md:max-w-[65%] min-w-0 ${isMe ? 'self-end items-end' : 'self-start items-start'}`;
             div.innerHTML = innerHTML;
             (div as any)._generatedHtml = innerHTML;
             div.onclick = (e) => {

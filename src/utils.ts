@@ -946,22 +946,51 @@ export async function uploadToCloudinary(file: File | Blob, isAvatar = false, ab
                 if (el.tagName === 'IMG') {
                     (el as HTMLImageElement).src = bustUrl;
                 } else if (el.tagName === 'VIDEO') {
-                    (el as HTMLVideoElement).src = bustUrl;
-                    (el as HTMLVideoElement).load();
+                    const vid = el as HTMLVideoElement;
+                    const savedTime = vid.currentTime || 0;
+                    const wasPlaying = !vid.paused;
+                    vid.src = bustUrl;
+                    vid.load();
+                    if (savedTime > 0) {
+                        vid.addEventListener('loadedmetadata', () => {
+                            try { vid.currentTime = savedTime; } catch {}
+                        }, { once: true });
+                    }
+                    if (wasPlaying || vid.hasAttribute('data-autoplay')) {
+                        vid.play().catch(() => {});
+                    }
                 }
             });
             return;
         }
 
-        // Step 2: For images on retry 1, use wsrv.nl global WebP proxy
-        if (!isVideo && el.tagName === 'IMG' && retries === 1) {
+        // Step 2: For images on retry 1, use wsrv.nl global WebP proxy; for videos, try direct res.cloudinary.com CDN
+        if (retries === 1) {
             let rawCloudinaryUrl = url;
             const cloudIdx = url.indexOf('/cloudinary/');
             if (cloudIdx !== -1) {
                 rawCloudinaryUrl = 'https://res.cloudinary.com' + url.substring(cloudIdx + '/cloudinary'.length);
             }
-            (el as HTMLImageElement).src = `https://wsrv.nl/?url=${encodeURIComponent(rawCloudinaryUrl)}&output=webp&q=80`;
-            return;
+            if (!isVideo && el.tagName === 'IMG') {
+                (el as HTMLImageElement).src = `https://wsrv.nl/?url=${encodeURIComponent(rawCloudinaryUrl)}&output=webp&q=80`;
+                return;
+            } else if (el.tagName === 'VIDEO' && rawCloudinaryUrl.startsWith('https://res.cloudinary.com/')) {
+                const vid = el as HTMLVideoElement;
+                const savedTime = vid.currentTime || 0;
+                const wasPlaying = !vid.paused;
+                vid.setAttribute('data-direct-cdn', 'true');
+                vid.src = rawCloudinaryUrl;
+                vid.load();
+                if (savedTime > 0) {
+                    vid.addEventListener('loadedmetadata', () => {
+                        try { vid.currentTime = savedTime; } catch {}
+                    }, { once: true });
+                }
+                if (wasPlaying || vid.hasAttribute('data-autoplay')) {
+                    vid.play().catch(() => {});
+                }
+                return;
+            }
         }
 
         // Step 3: Resilient Chunked Range / Blob Fetch + IndexedDB Cache
@@ -973,16 +1002,21 @@ export async function uploadToCloudinary(file: File | Blob, isAvatar = false, ab
                     (el as HTMLImageElement).src = blobObjUrl;
                 } else if (el.tagName === 'VIDEO') {
                     const vid = el as HTMLVideoElement;
+                    const savedTime = vid.currentTime || 0;
                     const wasPlaying = !vid.paused;
                     vid.src = blobObjUrl;
                     vid.load();
-                    if (wasPlaying) {
+                    if (savedTime > 0) {
+                        vid.addEventListener('loadedmetadata', () => {
+                            try { vid.currentTime = savedTime; } catch {}
+                        }, { once: true });
+                    }
+                    if (wasPlaying || vid.hasAttribute('data-autoplay')) {
                         vid.play().catch(() => {});
                     }
                 }
             })
             .catch(() => {
-                // Trigger next retry or final fallback UI
                 el.setAttribute('data-retries', '4');
                 (window as any).handleMediaError(el, url);
             });

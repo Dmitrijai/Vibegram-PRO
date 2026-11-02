@@ -8,6 +8,157 @@ import { handleInput, broadcastTyping, sendMessage } from "./messages-core";
 import { getSyncMediaObjectUrl, getMediaBlobFromCache } from "./cache";
 import { fetchMediaBlobResilient } from "./network";
 let mediaObserver: IntersectionObserver | null = null;
+const mediaDurationCache = new Map<string, number>();
+const pendingDurationProbes = new Map<string, Promise<number>>();
+let sharedDecodeCtx: AudioContext | null = null;
+
+function formatMediaTime(seconds: number): string {
+    if (!Number.isFinite(seconds) || seconds < 0) return '0:00';
+    const totalSecs = Math.floor(seconds);
+    const mins = Math.floor(totalSecs / 60);
+    const secs = totalSecs % 60;
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+}
+
+export function getEffectiveMediaDuration(
+    mediaEl: HTMLMediaElement | null | undefined,
+    containerEl?: Element | null,
+    url?: string
+): number {
+    if (mediaEl && Number.isFinite(mediaEl.duration) && mediaEl.duration > 0.2 && mediaEl.duration < 86400) {
+        (mediaEl as any)._trueDuration = mediaEl.duration;
+        if (url) mediaDurationCache.set(url, mediaEl.duration);
+        return mediaEl.duration;
+    }
+    if (mediaEl && Number.isFinite((mediaEl as any)._trueDuration) && (mediaEl as any)._trueDuration > 0) {
+        return (mediaEl as any)._trueDuration;
+    }
+    if (url && mediaDurationCache.has(url)) {
+        return mediaDurationCache.get(url)!;
+    }
+    const attrStr =
+        mediaEl?.getAttribute('data-duration') ||
+        containerEl?.getAttribute('data-duration') ||
+        containerEl?.closest('[data-duration]')?.getAttribute('data-duration') ||
+        '0';
+    const attrDur = parseFloat(attrStr);
+    if (Number.isFinite(attrDur) && attrDur > 0) {
+        return attrDur;
+    }
+    if (mediaEl && Number.isFinite((mediaEl as any)._fallbackDuration) && (mediaEl as any)._fallbackDuration > 0) {
+        return (mediaEl as any)._fallbackDuration;
+    }
+    return 0;
+}
+
+async function resolveTrueMediaDuration(
+    url: string,
+    mediaEl?: HTMLMediaElement | null,
+    containerEl?: Element | null,
+    onResolved?: (dur: number) => void
+): Promise<number> {
+    if (!url) return 0;
+    if (mediaDurationCache.has(url)) {
+        const cachedDur = mediaDurationCache.get(url)!;
+        if (mediaEl) (mediaEl as any)._trueDuration = cachedDur;
+        if (onResolved) onResolved(cachedDur);
+        return cachedDur;
+    }
+    if (pendingDurationProbes.has(url)) {
+        const dur = await pendingDurationProbes.get(url)!;
+        if (dur > 0) {
+            if (mediaEl) (mediaEl as any)._trueDuration = dur;
+            if (onResolved) onResolved(dur);
+        }
+        return dur;
+    }
+
+    const probePromise = (async () => {
+        try {
+            const blobObjUrl = await getOrFetchMediaObjectUrl(url);
+            if (!blobObjUrl) return 0;
+            const res = await fetch(blobObjUrl);
+            const arrayBuf = await res.arrayBuffer();
+            if (!arrayBuf || arrayBuf.byteLength === 0) return 0;
+
+            const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+            if (!AudioContextClass) return 0;
+            if (!sharedDecodeCtx) {
+                sharedDecodeCtx = new AudioContextClass();
+            }
+            const audioBuf = await sharedDecodeCtx.decodeAudioData(arrayBuf.slice(0));
+            if (audioBuf && Number.isFinite(audioBuf.duration) && audioBuf.duration > 0.1) {
+                const exactDur = audioBuf.duration;
+                mediaDurationCache.set(url, exactDur);
+                if (mediaEl) (mediaEl as any)._trueDuration = exactDur;
+                if (containerEl) containerEl.setAttribute('data-duration', String(Math.round(exactDur)));
+                if (onResolved) onResolved(exactDur);
+                return exactDur;
+            }
+        } catch {
+            // Ignore decode errors for silent videos or unsupported containers
+        }
+        return 0;
+    })().finally(() => {
+        pendingDurationProbes.delete(url);
+    });
+
+    pendingDurationProbes.set(url, probePromise);
+    return probePromise;
+}
+
+function upgradeVideoToLocalBlob(video: HTMLVideoElement, rawUrl: string) {
+    if (!video || !rawUrl || video.src.startsWith('blob:') || (video as any)._upgradingBlob) return;
+    (video as any)._upgradingBlob = true;
+    getOrFetchMediaObjectUrl(rawUrl)
+        .then((blobObjUrl) => {
+            if (!blobObjUrl || !video.isConnected || video.src.startsWith('blob:')) return;
+            // Only hot-swap immediately if paused or muted-looping, or if user tried to seek while remote stream wasn't seekable
+            const swapNow = video.paused || video.muted || (video as any)._pendingSeekPercent !== undefined;
+            const performSwap = () => {
+                if (!video.isConnected || video.src.startsWith('blob:')) return;
+                const wasPlaying = !video.paused;
+                const savedMuted = video.muted;
+                const savedTime = video.currentTime || 0;
+                const pendingPercent = (video as any)._pendingSeekPercent;
+                delete (video as any)._pendingSeekPercent;
+
+                video.src = blobObjUrl;
+                video.muted = savedMuted;
+                video.load();
+                video.addEventListener(
+                    'loadedmetadata',
+                    () => {
+                        const dur = getEffectiveMediaDuration(video, video.parentElement, rawUrl);
+                        if (pendingPercent !== undefined && dur > 0) {
+                            try {
+                                video.currentTime = pendingPercent * dur;
+                            } catch {}
+                        } else if (savedTime > 0) {
+                            try {
+                                video.currentTime = savedTime;
+                            } catch {}
+                        }
+                        if (wasPlaying) {
+                            video.play().catch(() => {});
+                        }
+                    },
+                    { once: true }
+                );
+            };
+
+            if (swapNow) {
+                performSwap();
+            } else {
+                video.addEventListener('ended', performSwap, { once: true });
+                video.addEventListener('pause', performSwap, { once: true });
+            }
+        })
+        .catch(() => {})
+        .finally(() => {
+            (video as any)._upgradingBlob = false;
+        });
+}
 
 export function getMediaObserver() {
     if (!mediaObserver) {
@@ -17,38 +168,64 @@ export function getMediaObserver() {
                 if (entry.isIntersecting) {
                     if (target.hasAttribute('data-src')) {
                         const rawUrl = target.getAttribute('data-src')!;
+                        target.setAttribute('data-url', rawUrl);
                         target.removeAttribute('data-src');
                         const syncBlobUrl = getSyncMediaObjectUrl(rawUrl);
                         if (syncBlobUrl) {
                             (target as HTMLImageElement | HTMLVideoElement).src = syncBlobUrl;
                         } else {
                             (target as HTMLImageElement | HTMLVideoElement).src = rawUrl;
-                            // Warm from IndexedDB if already persisted from a previous session
                             getMediaBlobFromCache(rawUrl).then((cached) => {
                                 if (cached && target.isConnected) {
                                     const mediaEl = target as HTMLImageElement | HTMLVideoElement;
                                     if (!mediaEl.src.startsWith('blob:')) {
+                                        const wasPlaying = target.tagName === 'VIDEO' && !(mediaEl as HTMLVideoElement).paused;
+                                        const curTime = target.tagName === 'VIDEO' ? (mediaEl as HTMLVideoElement).currentTime : 0;
                                         mediaEl.src = cached.objectUrl;
+                                        if (target.tagName === 'VIDEO') {
+                                            const vid = mediaEl as HTMLVideoElement;
+                                            if (curTime > 0) {
+                                                vid.addEventListener('loadedmetadata', () => {
+                                                    try { vid.currentTime = curTime; } catch {}
+                                                }, { once: true });
+                                            }
+                                            if (wasPlaying || vid.hasAttribute('data-autoplay')) {
+                                                vid.play().catch(() => {});
+                                            }
+                                        }
                                     }
+                                } else if (target.tagName === 'VIDEO' && target.isConnected) {
+                                    upgradeVideoToLocalBlob(target as HTMLVideoElement, rawUrl);
                                 }
                             }).catch(() => {});
                         }
+                    } else if (target.tagName === 'VIDEO') {
+                        const rawUrl = target.getAttribute('data-url') || (target as HTMLVideoElement).src;
+                        if (rawUrl && !rawUrl.startsWith('blob:')) {
+                            upgradeVideoToLocalBlob(target as HTMLVideoElement, rawUrl);
+                        }
                     }
+
                     if (target.tagName !== 'VIDEO') {
                         observer.unobserve(target);
                     }
                     if (target.tagName === 'VIDEO' && target.hasAttribute('data-autoplay') && !target.hasAttribute('data-src')) {
-                        // Pause other autoplaying muted video circles so at most 1 video circle streams at once
-                        document.querySelectorAll('.video-circle-container video').forEach((otherVid) => {
-                            if (otherVid !== target && (otherVid as HTMLVideoElement).muted && !(otherVid as HTMLVideoElement).paused) {
-                                (otherVid as HTMLVideoElement).pause();
-                            }
-                        });
-                        (target as HTMLVideoElement).play().catch(() => {});
+                        const vid = target as HTMLVideoElement;
+                        const circleContainer = vid.closest('.video-circle-container');
+                        // Telegram behavior: all visible uninteracted circular videos play silently in the background!
+                        if (circleContainer && circleContainer.classList.contains('uninteracted')) {
+                            vid.muted = true;
+                            vid.loop = true;
+                            circleContainer.classList.remove('paused');
+                            vid.play().catch(() => {});
+                        } else if (!vid.muted) {
+                            vid.play().catch(() => {});
+                        }
                     }
                 } else {
                     if (target.tagName === 'VIDEO') {
-                        (target as HTMLVideoElement).pause();
+                        const vid = target as HTMLVideoElement;
+                        vid.pause();
                         
                         // Update UI for inline videos
                         const container = target.closest('.chat-media-item-container');
@@ -63,7 +240,7 @@ export function getMediaObserver() {
                         
                         // Update UI for video circles
                         const circleContainer = target.closest('.video-circle-container');
-                        if (circleContainer) {
+                        if (circleContainer && !circleContainer.classList.contains('uninteracted')) {
                             circleContainer.classList.add('paused');
                             const playIcon = circleContainer.querySelector('.play-icon');
                             const pauseIcon = circleContainer.querySelector('.pause-icon');
@@ -73,7 +250,7 @@ export function getMediaObserver() {
                     }
                 }
             });
-        }, { threshold: 0.1, rootMargin: '250px' });
+        }, { threshold: 0.15, rootMargin: '200px' });
     }
     return mediaObserver;
 }
@@ -355,11 +532,26 @@ export function pauseAllMedia(exceptMediaElement?: HTMLAudioElement | HTMLVideoE
         } catch (e) { console.error('Error pausing audio', e); }
     });
 
-    // Videos
+    // Videos (keep muted background-playing video circles running unless resetTime is true)
     document.querySelectorAll('video').forEach(v => {
         try {
             if (v !== exceptMediaElement) {
+                const circleContainer = v.closest('.video-circle-container');
+                const isMutedBackgroundCircle =
+                    !resetTime &&
+                    circleContainer &&
+                    circleContainer.classList.contains('uninteracted') &&
+                    v.muted;
+                if (isMutedBackgroundCircle) return;
+
                 if (!v.paused) v.pause();
+                if (circleContainer && !circleContainer.classList.contains('uninteracted')) {
+                    circleContainer.classList.add('paused');
+                    const playIcon = circleContainer.querySelector('.play-icon');
+                    const pauseIcon = circleContainer.querySelector('.pause-icon');
+                    if (playIcon) playIcon.classList.remove('hidden');
+                    if (pauseIcon) pauseIcon.classList.add('hidden');
+                }
                 if (resetTime && !isNaN(v.duration) && v.currentTime > 0) {
                     v.currentTime = 0;
                 }
@@ -372,77 +564,111 @@ export function handleVideoCircleClick(event: MouseEvent, container: HTMLElement
     if (isSelectionMode) {
         return; // Handled by wrapper onclick
     }
+    const targetEl = event.target as HTMLElement | null;
+    if (targetEl && targetEl.closest('.media-progress-container')) {
+        return; // Handled by scrubber drag
+    }
+
     const video = container.querySelector('video')!;
     if (!video) return;
     if (!video.src && video.hasAttribute('data-src')) {
-        video.src = video.getAttribute('data-src')!;
+        const raw = video.getAttribute('data-src')!;
+        video.setAttribute('data-url', raw);
+        video.src = getSyncMediaObjectUrl(raw) || raw;
         video.removeAttribute('data-src');
     }
     if (!video.src) return;
-    
+
+    const rawUrl = video.getAttribute('data-url') || video.src;
+    if (rawUrl && !video.src.startsWith('blob:')) {
+        upgradeVideoToLocalBlob(video, rawUrl);
+    }
+    if (rawUrl) {
+        resolveTrueMediaDuration(rawUrl, video, container, () => updateVideoProgress(video));
+    }
+
+    // When another circle was previously unmuted, return it to muted background mode
+    document.querySelectorAll('.video-circle-container:not(.uninteracted)').forEach((other) => {
+        if (other !== container) {
+            const otherVid = other.querySelector('video') as HTMLVideoElement | null;
+            if (otherVid) {
+                otherVid.muted = true;
+                otherVid.loop = true;
+                other.classList.add('uninteracted');
+                other.classList.remove('paused', 'show-status');
+                otherVid.play().catch(() => {});
+            }
+        }
+    });
+
     if (container.classList.contains('uninteracted')) {
         container.classList.remove('uninteracted');
         video.muted = false;
-        video.currentTime = 0;
+        video.loop = false;
+        try {
+            video.currentTime = 0;
+        } catch {}
         pauseAllMedia(video);
         video.play().catch(() => {});
         video.setAttribute('data-autoplay', 'true');
-        
+
+        // When unmuted circle finishes playing, return to silent looping background mode like Telegram
+        video.onended = () => {
+            video.muted = true;
+            video.loop = true;
+            container.classList.add('uninteracted');
+            container.classList.remove('paused', 'show-status');
+            const circle = container.querySelector('.video-progress-ring circle') as SVGCircleElement | null;
+            if (circle) circle.style.strokeDashoffset = '301.6';
+            video.play().catch(() => {});
+        };
+
         const overlay = container.querySelector('.video-overlay-icon')!;
         const playIcon = overlay.querySelector('.play-icon')!;
         const pauseIcon = overlay.querySelector('.pause-icon')!;
-        
+
         container.classList.remove('paused');
         playIcon.classList.add('hidden');
         pauseIcon.classList.remove('hidden');
-        
+
         container.classList.add('show-status');
         if ((container as any).statusTimeout) clearTimeout((container as any).statusTimeout);
-        (container as any).statusTimeout = setTimeout(() => container.classList.remove('show-status'), 1000);
+        (container as any).statusTimeout = setTimeout(() => container.classList.remove('show-status'), 900);
+        updateVideoProgress(video);
         return;
     }
-    
+
     const rect = container.getBoundingClientRect();
-    
     const cx = rect.width / 2;
     const cy = rect.height / 2;
     const x = event.clientX - rect.left;
     const y = event.clientY - rect.top;
-    
     const dx = x - cx;
     const dy = y - cy;
     const distance = Math.sqrt(dx * dx + dy * dy);
-    
-    // Если клик ближе к краю (внешние 30% радиуса), перематываем
-    if (distance > cx * 0.7) {
+
+    // Clicking on the outer 28% ring seeks to that angle on the circle
+    if (distance > cx * 0.72) {
         let angle = Math.atan2(dy, dx) + Math.PI / 2;
         if (angle < 0) angle += 2 * Math.PI;
-        const progress = angle / (2 * Math.PI);
-        const attrDur = parseFloat(video.getAttribute('data-duration') || '0');
-        const effDuration = (Number.isFinite(video.duration) && video.duration > 0)
-            ? video.duration
-            : ((video as any)._knownDuration || (attrDur > 0 ? attrDur : 0));
-        if (effDuration > 0 && Number.isFinite(progress)) {
-            video.currentTime = progress * effDuration;
-        }
-        
-        // Показываем статус при перемотке
+        const progress = Math.max(0, Math.min(1, angle / (2 * Math.PI)));
+        seekMedia(container, progress);
+
         container.classList.add('show-status');
         if ((container as any).statusTimeout) clearTimeout((container as any).statusTimeout);
-        (container as any).statusTimeout = setTimeout(() => container.classList.remove('show-status'), 1000);
+        (container as any).statusTimeout = setTimeout(() => container.classList.remove('show-status'), 900);
         return;
     }
-    
+
     const overlay = container.querySelector('.video-overlay-icon')!;
     const playIcon = overlay.querySelector('.play-icon')!;
     const pauseIcon = overlay.querySelector('.pause-icon')!;
-    
+
     if (video.paused) {
         pauseAllMedia(video);
         video.play().catch(e => {
             if (e.name !== 'AbortError') {
                 console.warn('Error playing video circle:', e);
-                customToast('Не удалось воспроизвести видео. Возможно, формат не поддерживается вашим браузером.');
                 container.classList.add('paused');
                 playIcon.classList.remove('hidden');
                 pauseIcon.classList.add('hidden');
@@ -459,99 +685,140 @@ export function handleVideoCircleClick(event: MouseEvent, container: HTMLElement
         pauseIcon.classList.add('hidden');
         video.removeAttribute('data-autoplay');
     }
-    
+
     container.classList.add('show-status');
     if ((container as any).statusTimeout) clearTimeout((container as any).statusTimeout);
-    (container as any).statusTimeout = setTimeout(() => container.classList.remove('show-status'), 1000);
+    (container as any).statusTimeout = setTimeout(() => container.classList.remove('show-status'), 900);
 }
+
 export function updateVideoProgress(video: HTMLVideoElement) {
-    const container = video.closest('.video-circle-container');
+    const container = video.closest('.video-circle-container') as HTMLElement | null;
     if (!container) return;
-    const ring = container.querySelector('.video-progress-ring');
-    if (isDraggingMedia && currentDragContainer === ring) return;
-    const circle = container.querySelector('.video-progress-ring circle') as SVGCircleElement;
-    if (!circle) return;
-    
-    if (Number.isFinite(video.duration) && video.duration > 0) {
-        (video as any)._knownDuration = video.duration;
-    } else if (Number.isFinite(video.currentTime) && video.currentTime > ((video as any)._knownDuration || 0)) {
-        (video as any)._knownDuration = Math.max(video.currentTime + 1, 5);
+
+    const rawUrl = video.getAttribute('data-url') || video.src;
+    let effDuration = getEffectiveMediaDuration(video, container, rawUrl);
+    const cur = video.currentTime || 0;
+
+    if (effDuration <= 0 || cur > effDuration) {
+        // Fallback if duration wasn't stored in DB and hasn't finished decoding yet
+        effDuration = Math.max(effDuration, cur + 0.5, 5);
+        (video as any)._fallbackDuration = effDuration;
+        if (rawUrl && !mediaDurationCache.has(rawUrl)) {
+            resolveTrueMediaDuration(rawUrl, video, container);
+        }
     }
-    const attrDur = parseFloat(video.getAttribute('data-duration') || '0');
-    const effDuration = (Number.isFinite(video.duration) && video.duration > 0)
-        ? video.duration
-        : ((video as any)._knownDuration || (attrDur > 0 ? attrDur : 10));
-    const percent = Math.max(0, Math.min(1, (video.currentTime || 0) / effDuration));
-    const circumference = 301.6; // 2 * PI * 48
-    const offset = circumference - (percent * circumference);
-    if (Number.isFinite(offset)) {
-        circle.style.strokeDashoffset = offset.toString();
+
+    const percent = Math.max(0, Math.min(1, cur / effDuration));
+
+    // Update time badge inside circle
+    const badgeText = container.querySelector('.circle-time-text') as HTMLElement | null;
+    if (badgeText) {
+        if (container.classList.contains('uninteracted')) {
+            badgeText.textContent = formatMediaTime(effDuration);
+        } else {
+            badgeText.textContent = `${formatMediaTime(cur)} / ${formatMediaTime(effDuration)}`;
+        }
+    }
+
+    const ring = container.querySelector('.video-progress-ring');
+    const scrubberBar = container.querySelector('.video-circle-scrubber .progress-bar') as HTMLElement | null;
+    if (isDraggingMedia && (currentDragContainer === ring || currentDragContainer === container.querySelector('.video-circle-scrubber'))) {
+        return;
+    }
+
+    const circle = container.querySelector('.video-progress-ring circle') as SVGCircleElement | null;
+    if (circle) {
+        const circumference = 301.6; // 2 * PI * 48
+        const offset = circumference - (percent * circumference);
+        if (Number.isFinite(offset)) {
+            circle.style.strokeDashoffset = offset.toString();
+        }
+    }
+    if (scrubberBar) {
+        scrubberBar.style.width = `${percent * 100}%`;
     }
 }
+
 export function toggleInlineVideo(video: HTMLVideoElement) {
     if (isSelectionMode) {
         return; // Handled by wrapper onclick
     }
     if (!video.src && video.hasAttribute('data-src')) {
-        video.src = video.getAttribute('data-src')!;
+        const raw = video.getAttribute('data-src')!;
+        video.setAttribute('data-url', raw);
+        video.src = getSyncMediaObjectUrl(raw) || raw;
         video.removeAttribute('data-src');
     }
     if (!video.src) return;
     const container = video.closest('.chat-media-item-container') as HTMLElement;
     if (!container) return;
-    
+
+    const rawUrl = video.getAttribute('data-url') || video.src;
+    if (rawUrl && !video.src.startsWith('blob:')) {
+        upgradeVideoToLocalBlob(video, rawUrl);
+    }
+    if (rawUrl) {
+        resolveTrueMediaDuration(rawUrl, video, container);
+    }
+
     const playIcon = container.querySelector('.play-icon');
     const pauseIcon = container.querySelector('.pause-icon');
     const overlay = container.querySelector('.video-overlay');
-    
+
+    // Setup timeupdate listener if not already done
+    if (!video.hasAttribute('data-listener-attached')) {
+        video.addEventListener('timeupdate', () => {
+            if (isDraggingMedia && currentDragContainer === container.querySelector('.media-progress-container')) return;
+            const progressBar = container.querySelector('.video-progress-bar') as HTMLElement;
+            const timeDisplay = container.querySelector('.video-time') as HTMLElement;
+            const cur = video.currentTime || 0;
+            const dur = getEffectiveMediaDuration(video, container, rawUrl);
+            if (progressBar && dur > 0) {
+                const percent = Math.max(0, Math.min(100, (cur / dur) * 100));
+                progressBar.style.width = `${percent}%`;
+            }
+            if (timeDisplay) {
+                timeDisplay.textContent = dur > 0 ? `${formatMediaTime(cur)} / ${formatMediaTime(dur)}` : formatMediaTime(cur);
+            }
+        });
+        video.addEventListener('ended', () => {
+            if (video.currentTime > 0) {
+                (video as any)._trueDuration = video.currentTime;
+                if (rawUrl) mediaDurationCache.set(rawUrl, video.currentTime);
+            }
+            if (playIcon) playIcon.classList.remove('hidden');
+            if (pauseIcon) pauseIcon.classList.add('hidden');
+            if (overlay) overlay.classList.remove('opacity-0');
+        });
+        video.addEventListener('pause', () => {
+            if (playIcon) playIcon.classList.remove('hidden');
+            if (pauseIcon) pauseIcon.classList.add('hidden');
+            if (overlay) overlay.classList.remove('opacity-0');
+        });
+        video.addEventListener('play', () => {
+            if (playIcon) playIcon.classList.add('hidden');
+            if (pauseIcon) pauseIcon.classList.remove('hidden');
+            if (overlay) overlay.classList.add('opacity-0');
+        });
+        video.setAttribute('data-listener-attached', 'true');
+    }
+
     if (video.paused) {
         pauseAllMedia(video);
-        
         video.play().catch(e => {
             if (e.name !== 'AbortError') {
                 console.warn('Error playing inline video:', e);
-                customToast('Не удалось воспроизвести видео. Возможно, формат не поддерживается вашим браузером.');
+                customToast('Не удалось воспроизвести видео.');
                 if (playIcon) playIcon.classList.remove('hidden');
                 if (pauseIcon) pauseIcon.classList.add('hidden');
                 if (overlay) overlay.classList.remove('opacity-0');
             }
         });
-        if (playIcon) playIcon.classList.add('hidden');
-        if (pauseIcon) pauseIcon.classList.remove('hidden');
-        if (overlay) overlay.classList.add('opacity-0');
-        
-        // Setup timeupdate listener if not already done
-        if (!video.hasAttribute('data-listener-attached')) {
-            video.addEventListener('timeupdate', () => {
-                if (isDraggingMedia && currentDragContainer === container.querySelector('.media-progress-container')) return;
-                const progressBar = container.querySelector('.video-progress-bar') as HTMLElement;
-                const timeDisplay = container.querySelector('.video-time') as HTMLElement;
-                if (progressBar && Number.isFinite(video.duration) && video.duration > 0) {
-                    const percent = (video.currentTime / video.duration) * 100;
-                    progressBar.style.width = `${percent}%`;
-                }
-                if (timeDisplay) {
-                    const mins = Math.floor(video.currentTime / 60);
-                    const secs = Math.floor(video.currentTime % 60);
-                    timeDisplay.textContent = `${mins}:${secs.toString().padStart(2, '0')}`;
-                }
-            });
-            video.addEventListener('ended', () => {
-                if (playIcon) playIcon.classList.remove('hidden');
-                if (pauseIcon) pauseIcon.classList.add('hidden');
-                if (overlay) overlay.classList.remove('opacity-0');
-            });
-            video.addEventListener('pause', () => {
-                if (playIcon) playIcon.classList.remove('hidden');
-                if (pauseIcon) pauseIcon.classList.add('hidden');
-                if (overlay) overlay.classList.remove('opacity-0');
-            });
-            video.setAttribute('data-listener-attached', 'true');
-        }
     } else {
         video.pause();
     }
 }
+
 export function toggleAudio(btn: HTMLElement, url: string) {
     if (isSelectionMode) {
         return; // Handled by wrapper onclick
@@ -560,20 +827,39 @@ export function toggleAudio(btn: HTMLElement, url: string) {
     let player = state.audioPlayers.get(url);
     const playIcon = btn.querySelector('.play-icon')!;
     const pauseIcon = btn.querySelector('.pause-icon')!;
-    const container = btn.closest('.audio-player-container') || btn.closest('div')!;
+    const container = (btn.closest('.audio-player-container') || btn.closest('div')!) as HTMLElement;
     const progressBar = container.querySelector('.progress-bar') as HTMLElement;
     const timeDisplay = container.querySelector('.time-display') as HTMLElement;
+
+    const attrDur = parseFloat(container.getAttribute('data-duration') || '0');
+    if (attrDur > 0 && !mediaDurationCache.has(url)) {
+        mediaDurationCache.set(url, attrDur);
+    }
 
     if (!player) {
         const initialSrc = getSyncMediaObjectUrl(url) || url;
         player = new Audio(initialSrc);
         player.preload = 'auto';
+        if (attrDur > 0) (player as any)._trueDuration = attrDur;
         state.audioPlayers.set(url, player);
         if (!initialSrc.startsWith('blob:')) {
-            getOrFetchMediaObjectUrl(url).catch(() => {});
+            getOrFetchMediaObjectUrl(url)
+                .then((blobObjUrl) => {
+                    if (player && blobObjUrl && !player.src.startsWith('blob:') && player.paused) {
+                        player.src = blobObjUrl;
+                    }
+                })
+                .catch(() => {});
         }
     }
-    
+
+    // Probe exact decoded duration so WebM voice notes never jump back and forth
+    resolveTrueMediaDuration(url, player, container, (exactDur) => {
+        if (player && player.paused && timeDisplay && (player.currentTime || 0) === 0) {
+            timeDisplay.textContent = formatMediaTime(exactDur);
+        }
+    });
+
     // Always attach event handlers to the latest DOM elements
     player.onpause = () => {
         playIcon.classList.remove('hidden');
@@ -609,35 +895,33 @@ export function toggleAudio(btn: HTMLElement, url: string) {
     player.ontimeupdate = () => {
         if (isDraggingMedia && currentDragContainer === progressBar?.closest('.media-progress-container')) return;
         const cur = player!.currentTime || 0;
-        const dur = player!.duration;
-        if (Number.isFinite(dur) && dur > 0) {
-            (player as any)._knownDuration = dur;
+        let effectiveDur = getEffectiveMediaDuration(player, container, url);
+        if (effectiveDur <= 0 || cur > effectiveDur) {
+            effectiveDur = Math.max(effectiveDur, cur + 0.5, 5);
+            (player as any)._fallbackDuration = effectiveDur;
         }
-        const effectiveDur = (Number.isFinite(dur) && dur > 0) ? dur : ((player as any)._knownDuration || Math.max(cur + 2, 10));
-        const percent = Math.min(100, (cur / effectiveDur) * 100);
+        const percent = Math.max(0, Math.min(100, (cur / effectiveDur) * 100));
         if (progressBar && !isNaN(percent)) progressBar.style.width = `${percent}%`;
-        
+
         if (timeDisplay) {
-            const mins = Math.floor(cur / 60);
-            const secs = Math.floor(cur % 60);
-            if (!isNaN(mins) && !isNaN(secs)) {
-                timeDisplay.textContent = `${mins}:${secs.toString().padStart(2, '0')}`;
-            }
+            timeDisplay.textContent = formatMediaTime(cur);
         }
     };
     player.onended = () => {
-        if (player && player.currentTime > 0) {
-            (player as any)._knownDuration = player.currentTime;
+        const finalTime = player?.currentTime || 0;
+        if (finalTime > 0.2) {
+            (player as any)._trueDuration = finalTime;
+            mediaDurationCache.set(url, finalTime);
         }
         playIcon.classList.remove('hidden');
         pauseIcon.classList.add('hidden');
         if (progressBar) progressBar.style.width = '0%';
-        if (timeDisplay) timeDisplay.textContent = '0:00';
+        const finalDur = getEffectiveMediaDuration(player, container, url);
+        if (timeDisplay) timeDisplay.textContent = finalDur > 0 ? formatMediaTime(finalDur) : '0:00';
     };
 
     if (player.paused) {
         pauseAllMedia(player);
-        
         player.play().catch(e => {
             if (e.name !== 'AbortError') {
                 if (!(player as any)._retriedBlob) {
@@ -662,16 +946,17 @@ export function toggleAudio(btn: HTMLElement, url: string) {
         player.pause();
     }
 }
+
 let isDraggingMedia = false;
 let currentDragContainer: HTMLElement | null = null;
 let mediaDragMoved = false;
 
-document.addEventListener('mousedown', startMediaDrag);
-document.addEventListener('touchstart', startMediaDrag, { passive: false });
-document.addEventListener('mousemove', handleMediaDrag);
-document.addEventListener('touchmove', handleMediaDrag, { passive: false });
-document.addEventListener('mouseup', stopMediaDrag);
-document.addEventListener('touchend', stopMediaDrag);
+document.addEventListener('mousedown', startMediaDrag, true);
+document.addEventListener('touchstart', startMediaDrag, { passive: false, capture: true });
+document.addEventListener('mousemove', handleMediaDrag, true);
+document.addEventListener('touchmove', handleMediaDrag, { passive: false, capture: true });
+document.addEventListener('mouseup', stopMediaDrag, true);
+document.addEventListener('touchend', stopMediaDrag, true);
 document.addEventListener('click', (e) => {
     if (mediaDragMoved) {
         e.stopPropagation();
@@ -681,9 +966,13 @@ document.addEventListener('click', (e) => {
 }, true);
 
 function startMediaDrag(e: MouseEvent | TouchEvent) {
-    const target = e.target as HTMLElement;
-    const container = target.closest('.media-progress-container') as HTMLElement || target.closest('.video-progress-ring') as HTMLElement;
+    const target = e.target as HTMLElement | null;
+    if (!target) return;
+    const container =
+        (target.closest('.media-progress-container') as HTMLElement) ||
+        (target.closest('.video-progress-ring') as HTMLElement);
     if (container) {
+        e.stopPropagation();
         isDraggingMedia = true;
         currentDragContainer = container;
         mediaDragMoved = false;
@@ -693,27 +982,31 @@ function startMediaDrag(e: MouseEvent | TouchEvent) {
 
 function handleMediaDrag(e: MouseEvent | TouchEvent) {
     if (!isDraggingMedia || !currentDragContainer) return;
-    
+
     mediaDragMoved = true;
-    
-    // Only prevent default for touch events to allow normal mouse behavior elsewhere
-    if ('touches' in e && e.cancelable) {
+    e.stopPropagation();
+
+    if (e.cancelable) {
         e.preventDefault();
     }
-    
+
+    const touchObj = 'touches' in e ? (e.touches[0] || e.changedTouches[0]) : (e as MouseEvent);
+    if (!touchObj) return;
+    const clientX = touchObj.clientX;
+    const clientY = touchObj.clientY;
+
     let percent = 0;
-    
+
     if (currentDragContainer.classList.contains('video-progress-ring')) {
         const rect = currentDragContainer.getBoundingClientRect();
-        const clientX = 'touches' in e ? e.touches[0].clientX : (e as MouseEvent).clientX;
-        const clientY = 'touches' in e ? e.touches[0].clientY : (e as MouseEvent).clientY;
+        if (rect.width <= 0 || rect.height <= 0) return;
         const centerX = rect.left + rect.width / 2;
         const centerY = rect.top + rect.height / 2;
         let angle = Math.atan2(clientY - centerY, clientX - centerX);
         angle = angle + Math.PI / 2;
         if (angle < 0) angle += 2 * Math.PI;
-        percent = angle / (2 * Math.PI);
-        
+        percent = Math.max(0, Math.min(1, angle / (2 * Math.PI)));
+
         const circle = currentDragContainer.querySelector('circle') as SVGCircleElement;
         if (circle) {
             circle.style.transition = 'none';
@@ -722,18 +1015,18 @@ function handleMediaDrag(e: MouseEvent | TouchEvent) {
         }
     } else {
         const rect = currentDragContainer.getBoundingClientRect();
-        const clientX = 'touches' in e ? e.touches[0].clientX : (e as MouseEvent).clientX;
+        if (rect.width <= 0) return;
         let x = clientX - rect.left;
         x = Math.max(0, Math.min(x, rect.width));
         percent = x / rect.width;
-        
+
         const progressBar = currentDragContainer.querySelector('.progress-bar') as HTMLElement;
         if (progressBar) {
             progressBar.style.transition = 'none';
             progressBar.style.width = `${percent * 100}%`;
         }
     }
-    
+
     seekMedia(currentDragContainer, percent);
 }
 
@@ -749,35 +1042,110 @@ function stopMediaDrag() {
     }
     isDraggingMedia = false;
     currentDragContainer = null;
-    // mediaDragMoved is reset in the click capture handler
 }
 
 function seekMedia(container: HTMLElement, percent: number) {
     if (!Number.isFinite(percent)) return;
     const clampedPercent = Math.max(0, Math.min(1, percent));
-    const audioContainer = container.closest('.audio-player-container');
+
+    // 1. Voice / Audio message seeking
+    const audioContainer = container.closest('.audio-player-container') as HTMLElement | null;
     if (audioContainer) {
-        const btn = audioContainer.querySelector('button[onclick^="toggleAudio"]') as HTMLElement;
-        const url = btn?.getAttribute('onclick')?.match(/'([^']+)'/)?.[1];
+        const btn = audioContainer.querySelector('button[onclick^="toggleAudio"]') as HTMLElement | null;
+        const url =
+            audioContainer.getAttribute('data-url') ||
+            btn?.getAttribute('onclick')?.match(/'([^']+)'/)?.[1] ||
+            '';
         if (url) {
-            const player = state.audioPlayers.get(url);
-            if (player) {
-                const dur = Number.isFinite(player.duration) && player.duration > 0
-                    ? player.duration
-                    : (player as any)._knownDuration;
-                if (Number.isFinite(dur) && dur > 0) {
-                    player.currentTime = clampedPercent * dur;
+            let player = state.audioPlayers.get(url);
+            if (!player) {
+                const initialSrc = getSyncMediaObjectUrl(url) || url;
+                player = new Audio(initialSrc);
+                player.preload = 'auto';
+                state.audioPlayers.set(url, player);
+                if (!initialSrc.startsWith('blob:')) {
+                    getOrFetchMediaObjectUrl(url).catch(() => {});
                 }
+            }
+            const dur = getEffectiveMediaDuration(player, audioContainer, url);
+            const timeDisplay = audioContainer.querySelector('.time-display') as HTMLElement | null;
+            if (dur > 0) {
+                const targetTime = clampedPercent * dur;
+                try {
+                    player.currentTime = targetTime;
+                } catch {}
+                if (timeDisplay) {
+                    timeDisplay.textContent = formatMediaTime(targetTime);
+                }
+            } else {
+                resolveTrueMediaDuration(url, player, audioContainer, (resolvedDur) => {
+                    if (player && resolvedDur > 0) {
+                        try {
+                            player.currentTime = clampedPercent * resolvedDur;
+                        } catch {}
+                    }
+                });
             }
         }
         return;
     }
-    
-    const videoContainer = container.closest('.chat-media-item-container') || container.closest('.video-circle-container');
+
+    // 2. Inline Video or Video Circle seeking
+    const videoContainer = (container.closest('.chat-media-item-container') ||
+        container.closest('.video-circle-container')) as HTMLElement | null;
     if (videoContainer) {
-        const video = videoContainer.querySelector('video');
-        if (video && Number.isFinite(video.duration) && video.duration > 0) {
-            video.currentTime = clampedPercent * video.duration;
+        const video = videoContainer.querySelector('video') as HTMLVideoElement | null;
+        if (!video) return;
+
+        if (!video.src && video.hasAttribute('data-src')) {
+            const raw = video.getAttribute('data-src')!;
+            video.setAttribute('data-url', raw);
+            video.src = getSyncMediaObjectUrl(raw) || raw;
+            video.removeAttribute('data-src');
+            video.load();
+        }
+
+        const rawUrl = video.getAttribute('data-url') || video.src;
+        const dur = getEffectiveMediaDuration(video, videoContainer, rawUrl);
+
+        if (dur > 0) {
+            const targetTime = clampedPercent * dur;
+            try {
+                video.currentTime = targetTime;
+            } catch {}
+
+            // Update visual displays immediately while dragging
+            const timeDisplay = videoContainer.querySelector('.video-time') as HTMLElement | null;
+            if (timeDisplay) {
+                timeDisplay.textContent = `${formatMediaTime(targetTime)} / ${formatMediaTime(dur)}`;
+            }
+            const badgeText = videoContainer.querySelector('.circle-time-text') as HTMLElement | null;
+            if (badgeText) {
+                badgeText.textContent = `${formatMediaTime(targetTime)} / ${formatMediaTime(dur)}`;
+            }
+            const ringCircle = videoContainer.querySelector('.video-progress-ring circle') as SVGCircleElement | null;
+            if (ringCircle) {
+                const circumference = 301.6;
+                ringCircle.style.strokeDashoffset = (circumference - clampedPercent * circumference).toString();
+            }
+            const scrubberBar = videoContainer.querySelector('.video-circle-scrubber .progress-bar') as HTMLElement | null;
+            if (scrubberBar) {
+                scrubberBar.style.width = `${clampedPercent * 100}%`;
+            }
+        }
+
+        // If the video isn't a local blob yet or metadata hasn't loaded, upgrade to local blob & apply pending seek
+        if (rawUrl && (!video.src.startsWith('blob:') || video.readyState < 1 || dur <= 0)) {
+            (video as any)._pendingSeekPercent = clampedPercent;
+            upgradeVideoToLocalBlob(video, rawUrl);
+            resolveTrueMediaDuration(rawUrl, video, videoContainer, (resolvedDur) => {
+                if (video && resolvedDur > 0) {
+                    try {
+                        video.currentTime = clampedPercent * resolvedDur;
+                    } catch {}
+                }
+            });
         }
     }
 }
+

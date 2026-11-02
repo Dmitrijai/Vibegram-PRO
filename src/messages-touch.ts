@@ -26,6 +26,20 @@ let lastTapTarget: string | null = null;
 let lastTouchStartTime = 0;
 
 (window as any).handleMessageTouchStart = (e: TouchEvent | MouseEvent, msgId: string) => {
+    const targetEl = e.target as HTMLElement | null;
+    if (
+        targetEl &&
+        (targetEl.closest('.media-progress-container') ||
+            targetEl.closest('.video-progress-ring') ||
+            targetEl.closest('.video-circle-scrubber') ||
+            targetEl.closest('.audio-player-container') ||
+            targetEl.closest('button') ||
+            targetEl.closest('a') ||
+            targetEl.closest('input'))
+    ) {
+        return;
+    }
+
     if (e.type === 'touchstart') {
         lastTouchStartTime = new Date().getTime();
     } else if (e.type === 'mousedown') {
