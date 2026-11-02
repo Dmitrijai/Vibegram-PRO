@@ -6,6 +6,8 @@ export interface GatewayNode {
     latencyMs: number | null;
     status: 'unknown' | 'online' | 'blocked' | 'testing';
     lastChecked: number;
+    lastSuccessAt?: number;
+    consecutiveFailures?: number;
     supportsWebSocket?: boolean;
 }
 
@@ -188,7 +190,7 @@ function optimizeCloudinaryPath(pathAfterDomain: string, addAutoQuality = true):
 export function getVideoPosterUrl(rawVideoUrl: string | null | undefined): string {
     if (!rawVideoUrl || typeof rawVideoUrl !== 'string') return '';
     const proxied = rewriteMediaUrl(rawVideoUrl, undefined, false);
-    const match = proxied.match(/^(https?:\/\/[^/]+\/cloudinary\/[^/]+\/video\/upload\/)(?:[^/]+\/)?(v\d+\/.+?)(\.[a-zA-Z0-9]+)?(\?.*)?$/);
+    const match = proxied.match(/^(https?:\/\/[^/]+(?:\/cloudinary)?\/[^/]+\/video\/upload\/)(?:[^/]+\/)?(v\d+\/.+?)(\.[a-zA-Z0-9]+)?(\?.*)?$/);
     if (match) {
         return `${match[1]}f_webp,so_0,w_320,c_limit,q_auto:low/${match[2]}.webp`;
     }
@@ -202,7 +204,7 @@ export function getVideoPosterUrl(rawVideoUrl: string | null | undefined): strin
 export function getOptimizedAudioForTranscriptionUrl(rawMediaUrl: string): string {
     if (!rawMediaUrl || typeof rawMediaUrl !== 'string') return rawMediaUrl;
     const proxied = rewriteMediaUrl(rawMediaUrl, undefined, false);
-    const match = proxied.match(/^(https?:\/\/[^/]+\/cloudinary\/[^/]+\/video\/upload\/)(?:[^/]+\/)?(v\d+\/.+?)(\.[a-zA-Z0-9]+)?(\?.*)?$/);
+    const match = proxied.match(/^(https?:\/\/[^/]+(?:\/cloudinary)?\/[^/]+\/video\/upload\/)(?:[^/]+\/)?(v\d+\/.+?)(\.[a-zA-Z0-9]+)?(\?.*)?$/);
     if (match) {
         return `${match[1]}f_mp3,br_32k,ac_1,ar_16000/${match[2]}.mp3`;
     }
@@ -210,26 +212,35 @@ export function getOptimizedAudioForTranscriptionUrl(rawMediaUrl: string): strin
 }
 
 /**
- * Rewrites any blocked media or AI URL (res.cloudinary.com, supabase.co/storage,
- * generativelanguage.googleapis.com, router.huggingface.co, image.pollinations.ai)
- * to route through the active working Edge Gateways.
+ * Rewrites media or AI URLs:
+ * - Cloudinary media (res.cloudinary.com or legacy /cloudinary/ proxy URLs) defaults to direct
+ *   optimized https://res.cloudinary.com/... so Vercel Edge Gateways are never flooded or reset by TSPU.
+ *   When targetGwUrl is explicitly passed (during fallback), routes via that Edge Gateway.
+ * - AI APIs (Gemini, HuggingFace, Pollinations) and Supabase Storage route via active working Edge Gateways.
  */
 export function rewriteMediaUrl(rawUrl: string | null | undefined, targetGwUrl?: string, addAutoQuality = true): string {
     if (!rawUrl || typeof rawUrl !== 'string') return rawUrl || '';
     const trimmed = rawUrl.trim();
     if (!trimmed.startsWith('http')) return trimmed;
 
-    const mediaGw = (targetGwUrl || getActiveMediaGatewayBaseUrl()).replace(/\/+$/, '');
+    const explicitProxyGw =
+        targetGwUrl && !targetGwUrl.includes('res.cloudinary.com') && !targetGwUrl.includes('.supabase.co')
+            ? targetGwUrl.replace(/\/+$/, '')
+            : '';
     const aiGw = (targetGwUrl || getActiveMediaGatewayBaseUrl()).replace(/\/+$/, '');
     const dbGw = (targetGwUrl || getActiveGatewayBaseUrl()).replace(/\/+$/, '');
 
-    // 1. Direct res.cloudinary.com URLs -> Active Media Edge Gateway
+    // 1. Direct res.cloudinary.com URLs
     if (trimmed.startsWith('https://res.cloudinary.com/')) {
-        const rest = optimizeCloudinaryPath(trimmed.substring('https://res.cloudinary.com'.length), addAutoQuality);
-        return `${mediaGw}/cloudinary${rest}`;
+        let rest = trimmed.substring('https://res.cloudinary.com'.length);
+        rest = rest
+            .replace(/\/video\/upload\/[^/]+\/v(\d+)\//, '/video/upload/v$1/')
+            .replace(/\/image\/upload\/[^/]+\/v(\d+)\//, '/image/upload/v$1/');
+        rest = optimizeCloudinaryPath(rest, addAutoQuality);
+        return explicitProxyGw ? `${explicitProxyGw}/cloudinary${rest}` : `https://res.cloudinary.com${rest}`;
     }
 
-    // 2. Already-proxied /cloudinary/ URLs when switching gateways or optimizing
+    // 2. Previously-proxied /cloudinary/ URLs -> normalize back to direct res.cloudinary.com unless explicitProxyGw is requested
     const existingCloudinaryIdx = trimmed.indexOf('/cloudinary/');
     if (existingCloudinaryIdx !== -1) {
         let rest = trimmed.substring(existingCloudinaryIdx + '/cloudinary'.length);
@@ -239,18 +250,18 @@ export function rewriteMediaUrl(rawUrl: string | null | undefined, targetGwUrl?:
         if (addAutoQuality) {
             rest = optimizeCloudinaryPath(rest, true);
         }
-        return `${mediaGw}/cloudinary${rest}`;
+        return explicitProxyGw ? `${explicitProxyGw}/cloudinary${rest}` : `https://res.cloudinary.com${rest}`;
     }
 
-    // 3. Direct api.cloudinary.com upload/destroy URLs -> Active Media Edge Gateway
+    // 3. Direct api.cloudinary.com upload/destroy URLs
     if (trimmed.startsWith('https://api.cloudinary.com/')) {
         const rest = trimmed.substring('https://api.cloudinary.com'.length);
-        return `${mediaGw}/cloudinary-api${rest}`;
+        return explicitProxyGw ? `${explicitProxyGw}/cloudinary-api${rest}` : `https://api.cloudinary.com${rest}`;
     }
     const existingCloudApiIdx = trimmed.indexOf('/cloudinary-api/');
     if (existingCloudApiIdx !== -1) {
         const rest = trimmed.substring(existingCloudApiIdx + '/cloudinary-api'.length);
-        return `${mediaGw}/cloudinary-api${rest}`;
+        return explicitProxyGw ? `${explicitProxyGw}/cloudinary-api${rest}` : `https://api.cloudinary.com${rest}`;
     }
 
     // 4. Google Gemini API URLs -> Active Edge Gateway
@@ -301,9 +312,9 @@ export function rewriteMediaUrl(rawUrl: string | null | undefined, targetGwUrl?:
 }
 
 /**
- * Rewrites all blocked storage and Cloudinary URLs inside raw JSON text
- * before JSON.parse() runs, so both network responses and localStorage/IndexedDB caches
- * immediately point to our working Edge Gateways.
+ * Rewrites all legacy/proxied storage and Cloudinary URLs inside raw JSON text
+ * before JSON.parse() runs, normalizing Cloudinary media to direct optimized https://res.cloudinary.com/...
+ * so Vercel gateways are never overloaded by concurrent image/video downloads.
  */
 export function rewriteLegacyStorageUrlsInJson(jsonText: string, activeGwUrl?: string): string {
     if (!jsonText) return jsonText;
@@ -312,7 +323,6 @@ export function rewriteLegacyStorageUrlsInJson(jsonText: string, activeGwUrl?: s
     if (!hasStorage && !hasCloudinary) return jsonText;
 
     const cleanDbGw = (activeGwUrl || getActiveGatewayBaseUrl()).replace(/\/+$/, '');
-    const cleanMediaGw = getActiveMediaGatewayBaseUrl();
     let result = jsonText;
 
     if (hasStorage) {
@@ -326,8 +336,11 @@ export function rewriteLegacyStorageUrlsInJson(jsonText: string, activeGwUrl?: s
         result = result.replace(
             /https?:\/\/res\.cloudinary\.com\/([^"'\s\\]+)/g,
             (_match, pathPart) => {
-                const optimized = optimizeCloudinaryPath('/' + pathPart, true);
-                return `${cleanMediaGw}/cloudinary${optimized}`;
+                const cleanPath = ('/' + pathPart)
+                    .replace(/\/video\/upload\/[^/]+\/v(\d+)\//, '/video/upload/v$1/')
+                    .replace(/\/image\/upload\/[^/]+\/v(\d+)\//, '/image/upload/v$1/');
+                const optimized = optimizeCloudinaryPath(cleanPath, true);
+                return `https://res.cloudinary.com${optimized}`;
             }
         );
         result = result.replace(
@@ -337,7 +350,7 @@ export function rewriteLegacyStorageUrlsInJson(jsonText: string, activeGwUrl?: s
                     .replace(/\/video\/upload\/[^/]+\/v(\d+)\//, '/video/upload/v$1/')
                     .replace(/\/image\/upload\/[^/]+\/v(\d+)\//, '/image/upload/v$1/');
                 const optimized = optimizeCloudinaryPath(cleanPath, true);
-                return `${cleanMediaGw}/cloudinary${optimized}`;
+                return `https://res.cloudinary.com${optimized}`;
             }
         );
     }
@@ -494,7 +507,7 @@ export function installMediaProxyInterceptor() {
     if (mediaInterceptorInstalled || typeof window === 'undefined') return;
     mediaInterceptorInstalled = true;
 
-    // 1. Intercept window.fetch for direct Cloudinary, Gemini AI, HuggingFace, and Pollinations requests
+    // 1. Intercept window.fetch for Cloudinary, Gemini AI, HuggingFace, and Pollinations requests
     const nativeFetch = window.fetch.bind(window);
     nativeWindowFetch = nativeFetch;
 
@@ -524,6 +537,19 @@ export function installMediaProxyInterceptor() {
                 rawUrl.startsWith('https://image.pollinations.ai/') ||
                 rawUrl.includes('/pollinations/');
 
+            // For Cloudinary media/API, try direct Cloudinary CDN first so Vercel gateways are not throttled
+            if (!isAiRequest) {
+                const directUrl = rewriteMediaUrl(rawUrl, undefined, false);
+                try {
+                    const directRes = await nativeFetch(directUrl, init);
+                    if (directRes.status < 500) {
+                        return directRes;
+                    }
+                } catch (err: any) {
+                    if (init?.signal?.aborted) throw err;
+                }
+            }
+
             const gateways = isAiRequest ? AI_GATEWAY_URLS : MEDIA_GATEWAY_URLS;
 
             let lastErr: any = null;
@@ -550,15 +576,14 @@ export function installMediaProxyInterceptor() {
 
     const needsMediaRewrite = (val: string) =>
         typeof val === 'string' &&
-        (val.includes('res.cloudinary.com/') ||
+        (val.includes('/cloudinary/') ||
+            val.includes('res.cloudinary.com/') ||
             val.includes('supa-proxy.onrender.com/') ||
             val.includes('vibegram.qd.je/') ||
             val.includes('vibegram.qzz.io/') ||
-            val.includes('vibegram-ai-gw.vercel.app/cloudinary/') ||
             val.includes('vibegram-media-cdn.vercel.app/') ||
             val.includes('vibegram-media-ru.vercel.app/') ||
-            val.includes('vibegram-net-proxy.vercel.app/') ||
-            (val.includes('/cloudinary/') && (val.endsWith('.mov') || val.includes('.mov?'))));
+            val.includes('vibegram-net-proxy.vercel.app/'));
 
     // 2. Intercept Element.prototype.setAttribute for src / data-src / style
     const origSetAttribute = Element.prototype.setAttribute;
@@ -605,39 +630,60 @@ export function installMediaProxyInterceptor() {
     patchSrcProperty(HTMLImageElement.prototype);
     patchSrcProperty(HTMLMediaElement.prototype);
 
-    // 4. MutationObserver to catch any innerHTML-inserted media or inline background-image styles
+    // 4. Global capture-phase media error listener so ANY <img>, <video>, or <audio> (even without inline onerror)
+    // automatically fails over across direct Cloudinary -> wsrv.nl -> online Edge Gateway -> IndexedDB Blob
+    window.addEventListener(
+        'error',
+        (event: ErrorEvent) => {
+            const target = event.target as HTMLElement | null;
+            if (!target || !(target instanceof HTMLElement)) return;
+            if (target.tagName !== 'IMG' && target.tagName !== 'VIDEO' && target.tagName !== 'AUDIO') return;
+            // If element already has an inline onerror attribute, let its handler run without double-firing
+            if (target.hasAttribute('onerror')) return;
+            const currentSrc = (target as HTMLImageElement | HTMLMediaElement).src || target.getAttribute('src') || '';
+            if (!currentSrc || !currentSrc.startsWith('http')) return;
+            if (typeof (window as any).handleMediaError === 'function') {
+                (window as any).handleMediaError(target, currentSrc);
+            }
+        },
+        true
+    );
+
+    // 5. MutationObserver to catch any innerHTML-inserted media or inline background-image styles
     const sanitizeNode = (node: Element) => {
         if (node.hasAttribute('data-direct-cdn')) return;
         if (node.tagName === 'IMG' || node.tagName === 'VIDEO' || node.tagName === 'AUDIO' || node.tagName === 'SOURCE') {
             const src = node.getAttribute('src');
             if (src && needsMediaRewrite(src)) {
-                origSetAttribute.call(node, 'src', rewriteMediaUrl(src));
+                const rewritten = rewriteMediaUrl(src);
+                if (rewritten !== src) origSetAttribute.call(node, 'src', rewritten);
             }
             const dataSrc = node.getAttribute('data-src');
             if (dataSrc && needsMediaRewrite(dataSrc)) {
-                origSetAttribute.call(node, 'data-src', rewriteMediaUrl(dataSrc));
+                const rewritten = rewriteMediaUrl(dataSrc);
+                if (rewritten !== dataSrc) origSetAttribute.call(node, 'data-src', rewritten);
             }
             const poster = node.getAttribute('poster');
             if (poster && needsMediaRewrite(poster)) {
-                origSetAttribute.call(node, 'poster', rewriteMediaUrl(poster));
+                const rewritten = rewriteMediaUrl(poster);
+                if (rewritten !== poster) origSetAttribute.call(node, 'poster', rewritten);
             }
         }
         const styleAttr = node.getAttribute('style');
         if (
             styleAttr &&
-            (styleAttr.includes('res.cloudinary.com/') ||
-                styleAttr.includes('vibegram-ai-gw.vercel.app/cloudinary') ||
+            (styleAttr.includes('/cloudinary/') ||
+                styleAttr.includes('res.cloudinary.com/') ||
                 styleAttr.includes('vibegram-media-cdn.vercel.app/') ||
                 styleAttr.includes('vibegram-media-ru.vercel.app/'))
         ) {
-            origSetAttribute.call(
-                node,
-                'style',
-                styleAttr.replace(
-                    /https?:\/\/(?:res\.cloudinary\.com|vibegram-ai-gw\.vercel\.app\/cloudinary|vibegram-media-cdn\.vercel\.app\/cloudinary|vibegram-media-ru\.vercel\.app\/cloudinary)\/[^'")\s]+/g,
-                    (m) => rewriteMediaUrl(m)
-                )
+            const updatedStyle = styleAttr.replace(
+                /https?:\/\/[^'")\s]+\/cloudinary\/[^'")\s]+|https?:\/\/res\.cloudinary\.com\/[^'")\s]+/g,
+                (m) => rewriteMediaUrl(m)
             );
+            if (updatedStyle !== styleAttr) {
+                origSetAttribute.call(node, 'style', updatedStyle);
+            }
         }
     };
 
@@ -670,8 +716,8 @@ export function installMediaProxyInterceptor() {
 const inflightMediaFetches = new Map<string, Promise<Blob>>();
 
 /**
- * Fetches a media file (video, audio, image, document) across working Edge Gateways
- * with automatic fallback to 48KB chunked HTTP Range requests if TSPU resets long streams.
+ * Fetches a media file (video, audio, image, document) starting with direct Cloudinary CDN / wsrv.nl,
+ * then falling back to verified online Edge Gateways and 48KB chunked HTTP Range requests if needed.
  */
 export async function fetchMediaBlobResilient(
     rawUrl: string,
@@ -691,15 +737,59 @@ export async function fetchMediaBlobResilient(
 
     const run = async (): Promise<Blob> => {
         const fetchFn = nativeWindowFetch || window.fetch.bind(window);
-        const gateways = [
-            getActiveMediaGatewayBaseUrl(),
-            ...MEDIA_GATEWAY_URLS.filter((g) => g !== getActiveMediaGatewayBaseUrl())
-        ];
-
         let lastErr: any = null;
 
-        // Pass 1: Standard full-body fetch across verified Edge Gateways
-        for (const gwUrl of gateways.slice(0, 3)) {
+        // Pass 1: Direct Cloudinary CDN first (avoids hitting Vercel gateways for binary media)
+        const directCloudinaryUrl = rewriteMediaUrl(rawUrl, undefined, addAutoQuality);
+        if (directCloudinaryUrl) {
+            const ctrl = new AbortController();
+            const onAbort = () => ctrl.abort();
+            signal?.addEventListener('abort', onAbort, { once: true });
+            const timer = setTimeout(() => ctrl.abort(), 7500);
+            try {
+                const res = await fetchFn(directCloudinaryUrl, { signal: ctrl.signal });
+                if (res.ok) {
+                    const buf = await res.arrayBuffer();
+                    clearTimeout(timer);
+                    if (buf.byteLength > 0) {
+                        const ct = res.headers.get('content-type') || 'application/octet-stream';
+                        return new Blob([buf], { type: ct });
+                    }
+                }
+                clearTimeout(timer);
+            } catch (err) {
+                clearTimeout(timer);
+                if (signal?.aborted) throw err;
+                lastErr = err;
+            } finally {
+                signal?.removeEventListener('abort', onAbort);
+            }
+        }
+
+        // Pass 1.5: For images/posters, fallback immediately to wsrv.nl global CDN
+        const isLikelyImage =
+            /\.(jpg|jpeg|png|webp|gif|avif)(\?|$)/i.test(rawUrl) || rawUrl.includes('/image/upload/');
+        if (isLikelyImage && directCloudinaryUrl.startsWith('https://res.cloudinary.com/')) {
+            try {
+                const wsrvUrl = `https://wsrv.nl/?url=${encodeURIComponent(directCloudinaryUrl)}&output=webp&q=80`;
+                const res = await fetchFn(wsrvUrl, { signal });
+                if (res.ok) {
+                    return await res.blob();
+                }
+            } catch (err) {
+                if (signal?.aborted) throw err;
+                lastErr = err;
+            }
+        }
+
+        const gateways = MEDIA_GATEWAY_URLS.filter((gwUrl) => {
+            const node = networkState.gateways.find((g) => g.url === gwUrl);
+            return !node || node.status !== 'blocked';
+        });
+        const candidateGateways = gateways.length > 0 ? gateways : MEDIA_GATEWAY_URLS;
+
+        // Pass 2: Standard full-body fetch across online Edge Gateways
+        for (const gwUrl of candidateGateways.slice(0, 2)) {
             const targetUrl = rewriteMediaUrl(rawUrl, gwUrl, addAutoQuality);
             const ctrl = new AbortController();
             const onAbort = () => ctrl.abort();
@@ -726,46 +816,8 @@ export async function fetchMediaBlobResilient(
             }
         }
 
-        // Pass 1.5: Direct Cloudinary CDN fallback (fast when res.cloudinary.com is reachable directly)
-        let directCloudinaryUrl = '';
-        if (rawUrl.startsWith('https://res.cloudinary.com/')) {
-            const rest = optimizeCloudinaryPath(rawUrl.substring('https://res.cloudinary.com'.length), addAutoQuality);
-            directCloudinaryUrl = `https://res.cloudinary.com${rest}`;
-        } else if (rawUrl.includes('/cloudinary/')) {
-            const idx = rawUrl.indexOf('/cloudinary/');
-            let rest = rawUrl.substring(idx + '/cloudinary'.length);
-            if (addAutoQuality) rest = optimizeCloudinaryPath(rest, true);
-            directCloudinaryUrl = `https://res.cloudinary.com${rest}`;
-        }
-
-        if (directCloudinaryUrl) {
-            const ctrl = new AbortController();
-            const onAbort = () => ctrl.abort();
-            signal?.addEventListener('abort', onAbort, { once: true });
-            const timer = setTimeout(() => ctrl.abort(), 7000);
-            try {
-                const res = await fetchFn(directCloudinaryUrl, { signal: ctrl.signal });
-                if (res.ok) {
-                    const buf = await res.arrayBuffer();
-                    clearTimeout(timer);
-                    if (buf.byteLength > 0) {
-                        const ct = res.headers.get('content-type') || 'application/octet-stream';
-                        return new Blob([buf], { type: ct });
-                    }
-                }
-                clearTimeout(timer);
-            } catch (err) {
-                clearTimeout(timer);
-                if (signal?.aborted) throw err;
-                lastErr = err;
-            } finally {
-                signal?.removeEventListener('abort', onAbort);
-            }
-        }
-
-        // Pass 2: Chunked HTTP Range Fetch (48KB slices) on active Edge Gateway
-        // Bypasses ISP TSPU stream caps that reset connections after 16-64KB on video/audio streams
-        for (const gwUrl of gateways.slice(0, 2)) {
+        // Pass 3: Chunked HTTP Range Fetch (48KB slices) on active Edge Gateway
+        for (const gwUrl of candidateGateways.slice(0, 2)) {
             const targetUrl = rewriteMediaUrl(rawUrl, gwUrl, addAutoQuality);
             try {
                 const chunks: ArrayBuffer[] = [];
@@ -821,22 +873,6 @@ export async function fetchMediaBlobResilient(
             } catch (err) {
                 if (signal?.aborted) throw err;
                 lastErr = err;
-            }
-        }
-
-        // Pass 3: For images/posters, fallback to wsrv.nl global CDN
-        const isLikelyImage =
-            /\.(jpg|jpeg|png|webp|gif|avif)(\?|$)/i.test(rawUrl) || rawUrl.includes('/image/upload/');
-        if (isLikelyImage) {
-            let directCloudUrl = rawUrl;
-            const cloudIdx = rawUrl.indexOf('/cloudinary/');
-            if (cloudIdx !== -1) {
-                directCloudUrl = 'https://res.cloudinary.com' + rawUrl.substring(cloudIdx + '/cloudinary'.length);
-            }
-            const wsrvUrl = `https://wsrv.nl/?url=${encodeURIComponent(directCloudUrl)}&output=webp&q=80`;
-            const res = await fetchFn(wsrvUrl, { signal });
-            if (res.ok) {
-                return await res.blob();
             }
         }
 
@@ -1152,6 +1188,13 @@ export function initNetworkManager(envSupabaseUrl: string, anonKey: string, back
     repairStoredAuthSession();
     rebuildGatewayList(configuredEnvUrl);
     installWakeRecoveryListeners();
+
+    // Run non-blocking background speed race on startup so gateway latencies and statuses are populated immediately
+    if (typeof window !== 'undefined') {
+        setTimeout(() => {
+            raceGateways(true).catch(() => {});
+        }, 120);
+    }
 }
 
 export function rebuildGatewayList(envUrl: string) {
@@ -1187,7 +1230,7 @@ export function rebuildGatewayList(envUrl: string) {
         });
     }
 
-    // 3. Primary Edge Gateway #1 (vibegram-edge-gw.vercel.app) — First by default so Direct Supabase reset never blocks initial load
+    // 3. Primary Edge Gateway #1 (vibegram-edge-gw.vercel.app)
     if (!list.some((g) => g.url === 'https://vibegram-edge-gw.vercel.app')) {
         list.push({
             id: 'edge-gw-1',
@@ -1283,6 +1326,8 @@ export function rebuildGatewayList(envUrl: string) {
             item.latencyMs = prev.latencyMs;
             item.status = prev.status;
             item.lastChecked = prev.lastChecked;
+            item.lastSuccessAt = prev.lastSuccessAt;
+            item.consecutiveFailures = prev.consecutiveFailures;
         }
     }
 
@@ -1309,6 +1354,8 @@ export function selectGatewayById(id: string) {
     const found = networkState.gateways.find((g) => g.id === id);
     if (!found) return;
     found.status = 'online';
+    found.consecutiveFailures = 0;
+    found.lastSuccessAt = Date.now();
     networkState.activeGatewayId = found.id;
     networkState.activeGatewayUrl = found.url;
     try {
@@ -1317,17 +1364,48 @@ export function selectGatewayById(id: string) {
     notifyNetworkState();
 }
 
+function markGatewaySuccess(gw: GatewayNode, elapsedMs: number) {
+    const now = Date.now();
+    gw.latencyMs = Math.max(1, elapsedMs);
+    gw.status = 'online';
+    gw.lastChecked = now;
+    gw.lastSuccessAt = now;
+    gw.consecutiveFailures = 0;
+    networkState.lastPingMs = gw.latencyMs;
+}
+
+function markGatewayFailure(gw: GatewayNode) {
+    const now = Date.now();
+    gw.lastChecked = now;
+    gw.consecutiveFailures = (gw.consecutiveFailures || 0) + 1;
+
+    // Never mark a gateway as 'blocked' if it succeeded within the last 25s or has an active WebSocket connection
+    const recentlySucceeded = gw.lastSuccessAt && now - gw.lastSuccessAt < 25000;
+    const hasActiveWs = gw.supportsWebSocket && networkState.realtimeConnected;
+    if (recentlySucceeded || hasActiveWs) {
+        gw.status = 'online';
+        return;
+    }
+
+    if ((gw.consecutiveFailures || 0) >= 2) {
+        gw.status = 'blocked';
+        gw.latencyMs = null;
+    }
+}
+
+let activeRacePromise: Promise<GatewayNode | null> | null = null;
+
 export async function raceGateways(forceSwitchToFastest = true): Promise<GatewayNode | null> {
     if (networkState.gateways.length === 0) return null;
-    const fetchFn = nativeWindowFetch || window.fetch.bind(window);
-    const probePath = '/rest/v1/profiles?select=id,username,display_name,avatar_url&limit=1';
+    if (activeRacePromise) return activeRacePromise;
 
-    await Promise.all(
-        networkState.gateways.map(async (gw) => {
-            gw.status = 'testing';
-            notifyNetworkState();
+    activeRacePromise = (async () => {
+        const fetchFn = nativeWindowFetch || window.fetch.bind(window);
+        const probePath = '/rest/v1/profiles?select=id&limit=1';
+
+        const probeOneGateway = async (gw: GatewayNode, timeoutMs: number): Promise<boolean> => {
             const ctrl = new AbortController();
-            const timer = setTimeout(() => ctrl.abort(), 6500);
+            const timer = setTimeout(() => ctrl.abort(), timeoutMs);
             const start = performance.now();
             try {
                 const headers: Record<string, string> = {};
@@ -1338,46 +1416,85 @@ export async function raceGateways(forceSwitchToFastest = true): Promise<Gateway
                 const res = await fetchFn(`${gw.url}${probePath}`, {
                     method: 'GET',
                     headers,
+                    cache: 'no-store',
                     signal: ctrl.signal
                 });
                 await res.arrayBuffer();
                 clearTimeout(timer);
                 if (!isGatewayErrorResponse(gw, res) && res.status < 500) {
-                    gw.latencyMs = Math.max(1, Math.round(performance.now() - start));
-                    gw.status = 'online';
-                } else {
-                    gw.latencyMs = null;
-                    gw.status = 'blocked';
+                    const elapsed = Math.max(1, Math.round(performance.now() - start));
+                    markGatewaySuccess(gw, elapsed);
+                    return true;
                 }
             } catch {
                 clearTimeout(timer);
-                gw.latencyMs = null;
-                gw.status = 'blocked';
-            } finally {
-                gw.lastChecked = Date.now();
             }
-        })
-    );
+            return false;
+        };
 
-    const onlineNodes = networkState.gateways
-        .filter((g) => g.status === 'online' && g.latencyMs !== null)
-        .sort((a, b) => (a.latencyMs || 9999) - (b.latencyMs || 9999));
+        await Promise.all(
+            networkState.gateways.map(async (gw) => {
+                const prevLatency = gw.latencyMs;
+                const prevSuccessAt = gw.lastSuccessAt || 0;
+                gw.status = 'testing';
+                notifyNetworkState();
 
-    if (onlineNodes.length > 0 && forceSwitchToFastest) {
-        const fastest = onlineNodes[0];
-        networkState.activeGatewayId = fastest.id;
-        networkState.activeGatewayUrl = fastest.url;
-        networkState.lastPingMs = fastest.latencyMs;
-        if (networkState.transportMode === 'offline' || networkState.transportMode === 'connecting') {
-            networkState.transportMode = networkState.realtimeConnected ? 'websocket' : 'http-turbo';
+                let ok = await probeOneGateway(gw, 9500);
+                if (!ok) {
+                    await new Promise((r) => setTimeout(r, 250));
+                    ok = await probeOneGateway(gw, 9500);
+                }
+
+                if (!ok) {
+                    const now = Date.now();
+                    // Preserve online state if WebSocket is actively connected on this gateway or a real query succeeded recently
+                    if ((gw.supportsWebSocket && networkState.realtimeConnected) || (prevSuccessAt > 0 && now - prevSuccessAt < 30000)) {
+                        gw.status = 'online';
+                        gw.latencyMs = prevLatency || networkState.lastPingMs || 220;
+                    } else {
+                        gw.latencyMs = null;
+                        gw.status = 'blocked';
+                    }
+                    gw.lastChecked = now;
+                }
+                notifyNetworkState();
+            })
+        );
+
+        const onlineNodes = networkState.gateways
+            .filter((g) => g.status === 'online' && g.latencyMs !== null)
+            .sort((a, b) => (a.latencyMs || 9999) - (b.latencyMs || 9999));
+
+        if (onlineNodes.length > 0 && forceSwitchToFastest) {
+            const fastest = onlineNodes[0];
+            networkState.activeGatewayId = fastest.id;
+            networkState.activeGatewayUrl = fastest.url;
+            networkState.lastPingMs = fastest.latencyMs;
+            if (networkState.transportMode === 'offline' || networkState.transportMode === 'connecting') {
+                networkState.transportMode = networkState.realtimeConnected ? 'websocket' : 'http-turbo';
+            }
+            try {
+                localStorage.setItem(LAST_WORKING_GATEWAY_KEY, fastest.url);
+            } catch {}
+        } else if (onlineNodes.length === 0) {
+            // Never leave all gateways red ('blocked') if the network had a momentary stall
+            const activeNode =
+                networkState.gateways.find((g) => g.id === networkState.activeGatewayId) || networkState.gateways[0];
+            if (activeNode) {
+                activeNode.status = networkState.lastPingMs ? 'online' : 'unknown';
+                if (networkState.lastPingMs && !activeNode.latencyMs) {
+                    activeNode.latencyMs = networkState.lastPingMs;
+                }
+            }
         }
-        try {
-            localStorage.setItem(LAST_WORKING_GATEWAY_KEY, fastest.url);
-        } catch {}
-    }
 
-    notifyNetworkState();
-    return onlineNodes[0] || networkState.gateways[0];
+        notifyNetworkState();
+        return onlineNodes[0] || networkState.gateways[0];
+    })().finally(() => {
+        activeRacePromise = null;
+    });
+
+    return activeRacePromise;
 }
 
 function extractSupabasePath(rawUrl: string): string | null {
@@ -1442,15 +1559,14 @@ async function fetchSingleAttempt(
         clearTimeout(timer);
 
         if (isGatewayErrorResponse(gw, response)) {
-            gw.status = 'blocked';
-            gw.latencyMs = null;
+            markGatewayFailure(gw);
             throw new Error(`Gateway ${gw.id} HTTP ${response.status}`);
         }
 
-        // Once headers arrive, give up to 12 seconds for downloading the response body
+        // Once headers arrive, give up to 14 seconds for downloading the response body
         timer = setTimeout(() => {
             ctrl.abort(new DOMException('Gateway body timeout', 'TimeoutError'));
-        }, 12000);
+        }, 14000);
 
         const bodyBuffer = await response.arrayBuffer();
         clearTimeout(timer);
@@ -1518,9 +1634,10 @@ function getBearerTokenFromInit(init: RequestInit): string | null {
 
 /**
  * Resilient Fetch Engine for Supabase:
- * - Routes Database/Auth queries across distinct ASNs (Vercel Edge + Cloudflare Direct Supabase)
+ * - Uses Happy Eyeballs (RFC 8305) staggered racing across distinct ASNs (Vercel Edge + Cloudflare Direct Supabase)
+ *   so if one provider is throttled or reset by TSPU, the other responds in <300ms instead of waiting 8+ seconds
  * - Automatically repairs and refreshes expired JWTs after 30+ minutes of idle/background sleep
- * - Never leaves all gateways permanently marked as 'blocked' on transient wake-from-sleep hiccups
+ * - Never overwrites an active/online gateway to 'blocked' on a single slow parallel request
  */
 export async function smartSupabaseFetch(
     input: RequestInfo | URL,
@@ -1544,6 +1661,8 @@ export async function smartSupabaseFetch(
 
     const isTokenRefresh = supabasePath.includes('/auth/v1/token') && supabasePath.includes('grant_type=refresh_token');
     const isRestOrStorage = supabasePath.startsWith('/rest/v1/') || supabasePath.startsWith('/storage/v1/');
+    const method = (init.method || 'GET').toUpperCase();
+    const isIdempotentGet = method === 'GET' || method === 'HEAD';
 
     // Proactively check if the attached user JWT is expired before hitting PostgREST
     let effectiveInit = init;
@@ -1566,6 +1685,7 @@ export async function smartSupabaseFetch(
     if (networkState.gateways.every((g) => g.status === 'blocked')) {
         networkState.gateways.forEach((g) => {
             g.status = 'unknown';
+            g.consecutiveFailures = 0;
         });
     }
 
@@ -1587,13 +1707,13 @@ export async function smartSupabaseFetch(
 
     let lastError: any = null;
 
-    const executeAttemptOnGateway = async (gw: GatewayNode, timeoutMs: number): Promise<Response> => {
-        const winner = await fetchSingleAttempt(gw, supabasePath, effectiveInit, timeoutMs);
-
-        winner.gw.latencyMs = winner.elapsed;
-        winner.gw.status = 'online';
-        winner.gw.lastChecked = Date.now();
-        networkState.lastPingMs = winner.elapsed;
+    const finalizeWinnerResponse = async (winner: {
+        gw: GatewayNode;
+        response: Response;
+        bodyBuffer: ArrayBuffer;
+        elapsed: number;
+    }): Promise<Response> => {
+        markGatewaySuccess(winner.gw, winner.elapsed);
 
         if (networkState.activeGatewayId !== winner.gw.id) {
             networkState.activeGatewayId = winner.gw.id;
@@ -1654,35 +1774,96 @@ export async function smartSupabaseFetch(
         });
     };
 
-    for (let i = 0; i < orderedCandidates.length; i++) {
-        const gw = orderedCandidates[i];
-        const attemptHeaderTimeoutMs = i === 0 ? 5500 : 7000;
+    const primaryGw = orderedCandidates[0];
+    const secondaryGw = orderedCandidates[1];
+    const primaryRecentlyVerified =
+        primaryGw &&
+        primaryGw.status === 'online' &&
+        primaryGw.lastSuccessAt &&
+        now - primaryGw.lastSuccessAt < 20000 &&
+        (primaryGw.latencyMs || 0) < 2500;
+
+    // Happy Eyeballs fast failover for GET requests when primary gateway is not freshly verified (<2.5s):
+    // Give primary 850ms head start; if it hasn't answered or resets, launch secondary (different ASN) in parallel
+    let startIndex = 0;
+    if (isIdempotentGet && primaryGw && secondaryGw && !primaryRecentlyVerified) {
+        startIndex = 2;
+        const ctrl1 = new AbortController();
+        const ctrl2 = new AbortController();
+        let staggerTimer: any = null;
 
         try {
-            return await executeAttemptOnGateway(gw, attemptHeaderTimeoutMs);
+            const p1 = fetchSingleAttempt(primaryGw, supabasePath, effectiveInit, 7500, ctrl1).catch((err) => {
+                markGatewayFailure(primaryGw);
+                throw err;
+            });
+
+            const p2 = new Promise<{ gw: GatewayNode; response: Response; bodyBuffer: ArrayBuffer; elapsed: number }>(
+                (resolve, reject) => {
+                    const launchSecond = () => {
+                        if (ctrl2.signal.aborted) return;
+                        fetchSingleAttempt(secondaryGw, supabasePath, effectiveInit, 7500, ctrl2)
+                            .then(resolve)
+                            .catch((err) => {
+                                markGatewayFailure(secondaryGw);
+                                reject(err);
+                            });
+                    };
+                    staggerTimer = setTimeout(launchSecond, 850);
+                    // Also launch second immediately if primary fails before 850ms
+                    p1.catch(() => {
+                        clearTimeout(staggerTimer);
+                        launchSecond();
+                    });
+                }
+            );
+
+            const winner = await Promise.any([p1, p2]);
+            clearTimeout(staggerTimer);
+            if (winner.gw.id === primaryGw.id) {
+                ctrl2.abort();
+            } else {
+                ctrl1.abort();
+            }
+            return await finalizeWinnerResponse(winner);
+        } catch (aggErr: any) {
+            clearTimeout(staggerTimer);
+            lastError = aggErr?.errors?.[0] || aggErr;
+            if (effectiveInit.signal?.aborted) {
+                throw lastError;
+            }
+        }
+    }
+
+    for (let i = startIndex; i < orderedCandidates.length; i++) {
+        const gw = orderedCandidates[i];
+        const attemptHeaderTimeoutMs = i === 0 ? 7000 : 8000;
+
+        try {
+            const winner = await fetchSingleAttempt(gw, supabasePath, effectiveInit, attemptHeaderTimeoutMs);
+            return await finalizeWinnerResponse(winner);
         } catch (err: any) {
             lastError = err;
             if (effectiveInit.signal?.aborted) {
                 throw err;
             }
-            gw.status = 'blocked';
-            gw.latencyMs = null;
-            gw.lastChecked = Date.now();
+            markGatewayFailure(gw);
         }
     }
 
     // Wake-from-sleep / transient network recovery pass:
-    // Wait 650ms for the OS network interface to finish waking up, clear blocked flags, and retry primary Edge + Direct
+    // Wait 600ms for the OS network interface to finish waking up and retry Direct + Primary Edge
     if (!effectiveInit.signal?.aborted) {
-        await new Promise((r) => setTimeout(r, 650));
-        const edgePrimary = networkState.gateways.find((g) => g.id === 'edge-gw-1') || networkState.gateways[0];
+        await new Promise((r) => setTimeout(r, 600));
         const directGw = networkState.gateways.find((g) => g.type === 'direct');
-        const recoveryTargets = Array.from(new Set([edgePrimary, directGw].filter(Boolean) as GatewayNode[]));
+        const edgePrimary = networkState.gateways.find((g) => g.id === 'edge-gw-1') || networkState.gateways[0];
+        const recoveryTargets = Array.from(new Set([directGw, edgePrimary].filter(Boolean) as GatewayNode[]));
 
         for (const gw of recoveryTargets) {
             if (effectiveInit.signal?.aborted) break;
             try {
-                return await executeAttemptOnGateway(gw, 8500);
+                const winner = await fetchSingleAttempt(gw, supabasePath, effectiveInit, 9500);
+                return await finalizeWinnerResponse(winner);
             } catch (err: any) {
                 lastError = err;
             }
@@ -1691,11 +1872,13 @@ export async function smartSupabaseFetch(
 
     // Never leave all gateways stuck in 'blocked' state if the device briefly lost connection
     if (networkState.gateways.every((g) => g.status === 'blocked')) {
-        const primaryEdge = networkState.gateways.find((g) => g.id === 'edge-gw-1') || networkState.gateways[0];
-        if (primaryEdge) {
-            primaryEdge.status = 'unknown';
-            networkState.activeGatewayId = primaryEdge.id;
-            networkState.activeGatewayUrl = primaryEdge.url;
+        const fallbackGw =
+            networkState.gateways.find((g) => g.id === networkState.activeGatewayId) ||
+            networkState.gateways.find((g) => g.id === 'edge-gw-1') ||
+            networkState.gateways[0];
+        if (fallbackGw) {
+            fallbackGw.status = networkState.lastPingMs ? 'online' : 'unknown';
+            fallbackGw.consecutiveFailures = 0;
         }
     }
 
@@ -1714,6 +1897,18 @@ export function setRealtimeConnectedState(connected: boolean) {
     networkState.realtimeConnected = connected;
     if (connected) {
         networkState.transportMode = 'websocket';
+        // When WebSocket is connected, mark the WebSocket-capable gateway (Direct Supabase / Same-Origin) as online
+        const wsGw = networkState.gateways.find(
+            (g) => g.supportsWebSocket && !g.url.includes('.vercel.app')
+        );
+        if (wsGw) {
+            wsGw.status = 'online';
+            wsGw.lastSuccessAt = Date.now();
+            wsGw.consecutiveFailures = 0;
+            if (wsGw.latencyMs === null) {
+                wsGw.latencyMs = networkState.lastPingMs || 150;
+            }
+        }
     } else if (networkState.transportMode !== 'offline') {
         networkState.transportMode = 'http-turbo';
     }

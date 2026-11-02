@@ -7,10 +7,55 @@ import {
     raceGateways,
     selectGatewayById,
     getCustomGatewayUrl,
-    setCustomGatewayUrl
+    setCustomGatewayUrl,
+    subscribeNetworkState,
+    rewriteMediaUrl
 } from './network';
 
 let bonusTimerInterval: any = null;
+let settingsNetworkUnsubscribe: (() => void) | null = null;
+
+function renderSettingsGatewaysHtml(): string {
+    return networkState.gateways.map((gw) => {
+        const isActive = gw.id === networkState.activeGatewayId;
+        const isBlocked = gw.status === 'blocked';
+        const isTesting = gw.status === 'testing';
+        const isOnline = gw.status === 'online' || (gw.latencyMs !== null && !isBlocked && !isTesting);
+        const statusDot = isTesting
+            ? 'bg-amber-400 animate-pulse'
+            : isOnline
+            ? 'bg-emerald-500'
+            : isBlocked
+            ? 'bg-red-500'
+            : 'bg-blue-400';
+        const pingText = isTesting
+            ? 'проверка...'
+            : isBlocked
+            ? 'недоступен'
+            : gw.latencyMs !== null
+            ? `${gw.latencyMs} мс`
+            : 'готов';
+        const pingColor = isTesting
+            ? 'text-amber-500'
+            : isBlocked
+            ? 'text-red-500'
+            : isOnline
+            ? 'text-emerald-600 dark:text-emerald-400 font-semibold'
+            : 'text-gray-600 dark:text-gray-300';
+        return `
+            <button onclick="window.selectNetworkGateway('${gw.id}')" class="w-full text-left p-2.5 rounded-xl border ${isActive ? 'border-blue-500 bg-blue-50/50 dark:bg-blue-900/20' : 'border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/40'} transition flex items-center justify-between gap-2">
+                <div class="flex items-center gap-2.5 min-w-0">
+                    <span class="w-2.5 h-2.5 rounded-full ${statusDot} shrink-0"></span>
+                    <div class="truncate">
+                        <div class="text-xs font-semibold text-gray-800 dark:text-gray-100 truncate">${escapeHtml(gw.name)}</div>
+                        <div class="text-[10px] text-gray-400 font-mono truncate">${escapeHtml(gw.url)}</div>
+                    </div>
+                </div>
+                <span class="text-xs font-mono tabular-nums shrink-0 ${pingColor}">${pingText}</span>
+            </button>
+        `;
+    }).join('');
+}
 
 export function openSettings(modeOrSkip: 'full' | 'profile' | boolean = 'full', skipPushStateArg = false) {
     let mode = 'full';
@@ -28,7 +73,7 @@ export function openSettings(modeOrSkip: 'full' | 'profile' | boolean = 'full', 
     }
     const modal = document.getElementById('modal-content')!;
     const nickname = state.currentProfile?.display_name || state.currentProfile?.username || 'User';
-    const avatarUrl = state.currentProfile?.avatar_url ? state.currentProfile?.avatar_url || '' : '';
+    const avatarUrl = state.currentProfile?.avatar_url ? rewriteMediaUrl(state.currentProfile.avatar_url) : '';
     const bio = state.currentProfile?.bio || '';
     const settings = state.currentProfile?.settings || { notifications: true, privacy: 'everyone', theme: 'light', textSize: 15, chatBg: '#ffffff' };
     const isDark = document.documentElement.classList.contains('dark');
@@ -339,32 +384,14 @@ export function openSettings(modeOrSkip: 'full' | 'profile' | boolean = 'full', 
                 </summary>
                 <div class="border-t border-gray-100 dark:border-gray-700 bg-white dark:bg-gray-800/80 p-4 space-y-3">
                     <div class="flex items-center justify-between text-xs text-gray-500 dark:text-gray-400">
-                        <span>Режим транспорта: <strong class="text-gray-800 dark:text-gray-200">${networkState.realtimeConnected ? 'WebSocket + HTTP/2' : 'HTTP/2 Turbo Delta'}</strong></span>
+                        <span>Режим транспорта: <strong id="settings-net-transport-mode" class="text-gray-800 dark:text-gray-200">${networkState.realtimeConnected ? 'WebSocket + HTTP/2' : 'HTTP/2 Turbo Delta'}</strong></span>
                         <button onclick="window.runNetworkSpeedTest(this)" class="text-blue-500 hover:text-blue-600 font-semibold flex items-center gap-1 transition-colors">
                             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
                             Проверить шлюзы
                         </button>
                     </div>
                     <div id="settings-gateways-list" class="space-y-2">
-                        ${networkState.gateways.map((gw) => {
-                            const isActive = gw.id === networkState.activeGatewayId;
-                            const isBlocked = gw.status === 'blocked';
-                            const isOnline = gw.status === 'online' || (gw.latencyMs !== null && !isBlocked);
-                            const statusDot = isOnline ? 'bg-emerald-500' : isBlocked ? 'bg-red-500' : 'bg-blue-400';
-                            const pingText = isBlocked ? 'недоступен' : gw.latencyMs !== null ? `${gw.latencyMs} мс` : 'готов';
-                            return `
-                                <button onclick="window.selectNetworkGateway('${gw.id}')" class="w-full text-left p-2.5 rounded-xl border ${isActive ? 'border-blue-500 bg-blue-50/50 dark:bg-blue-900/20' : 'border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/40'} transition flex items-center justify-between gap-2">
-                                    <div class="flex items-center gap-2.5 min-w-0">
-                                        <span class="w-2.5 h-2.5 rounded-full ${statusDot} shrink-0"></span>
-                                        <div class="truncate">
-                                            <div class="text-xs font-semibold text-gray-800 dark:text-gray-100 truncate">${escapeHtml(gw.name)}</div>
-                                            <div class="text-[10px] text-gray-400 font-mono truncate">${escapeHtml(gw.url)}</div>
-                                        </div>
-                                    </div>
-                                    <span class="text-xs font-mono tabular-nums shrink-0 ${isBlocked ? 'text-red-500' : isOnline ? 'text-emerald-600 dark:text-emerald-400 font-semibold' : 'text-gray-600 dark:text-gray-300'}">${pingText}</span>
-                                </button>
-                            `;
-                        }).join('')}
+                        ${renderSettingsGatewaysHtml()}
                     </div>
                     <div class="pt-2 border-t border-gray-100 dark:border-gray-700">
                         <label class="block text-[11px] font-medium text-gray-500 dark:text-gray-400 mb-1">Свой зеркальный шлюз (HF Space / Vercel / Worker)</label>
@@ -460,19 +487,55 @@ export function openSettings(modeOrSkip: 'full' | 'profile' | boolean = 'full', 
         }
     });
 
+    if (settingsNetworkUnsubscribe) {
+        settingsNetworkUnsubscribe();
+        settingsNetworkUnsubscribe = null;
+    }
+    settingsNetworkUnsubscribe = subscribeNetworkState(() => {
+        if (document.getElementById('modal-overlay')?.classList.contains('hidden')) {
+            if (settingsNetworkUnsubscribe) {
+                settingsNetworkUnsubscribe();
+                settingsNetworkUnsubscribe = null;
+            }
+            return;
+        }
+        const badgeEl = document.getElementById('settings-net-ping-badge');
+        if (badgeEl) {
+            badgeEl.textContent = networkState.lastPingMs ? `${networkState.lastPingMs} мс` : 'Активно';
+        }
+        const modeEl = document.getElementById('settings-net-transport-mode');
+        if (modeEl) {
+            modeEl.textContent = networkState.realtimeConnected ? 'WebSocket + HTTP/2' : 'HTTP/2 Turbo Delta';
+        }
+        const listEl = document.getElementById('settings-gateways-list');
+        if (listEl) {
+            listEl.innerHTML = renderSettingsGatewaysHtml();
+        }
+    });
+
+    // If all gateways are still untested or marked blocked, trigger a fresh probe automatically when Settings opens
+    const hasOnlineGw = networkState.gateways.some(g => g.status === 'online');
+    if (!hasOnlineGw) {
+        raceGateways(true);
+    }
+
     (window as any).runNetworkSpeedTest = async (btn?: HTMLElement) => {
         if (btn) {
             btn.innerHTML = `<span class="animate-spin inline-block mr-1">↻</span> Проверка...`;
         }
         await raceGateways(true);
+        if (btn) {
+            btn.innerHTML = `
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+                Проверить шлюзы
+            `;
+        }
         customToast(networkState.lastPingMs ? `Выбран быстрый шлюз (${networkState.lastPingMs} мс)` : 'Проверка шлюзов завершена');
-        openSettings(mode as any, true);
     };
 
     (window as any).selectNetworkGateway = (id: string) => {
         selectGatewayById(id);
         customToast('Шлюз переключен');
-        openSettings(mode as any, true);
     };
 
     (window as any).saveCustomNetworkGateway = () => {
@@ -480,7 +543,6 @@ export function openSettings(modeOrSkip: 'full' | 'profile' | boolean = 'full', 
         const val = input ? input.value.trim() : '';
         setCustomGatewayUrl(val);
         customToast(val ? 'Пользовательский шлюз сохранен' : 'Пользовательский шлюз сброшен');
-        openSettings(mode as any, true);
     };
 
     (window as any).contactTechSupport = async () => {
@@ -528,7 +590,7 @@ export async function uploadAvatar(e: any) {
         if (!croppedFile) return;
 
         customToast('Загрузка аватара...');
-        const url = await uploadToCloudinary(croppedFile, true);
+        const url = rewriteMediaUrl(await uploadToCloudinary(croppedFile, true));
         await supabase.from('profiles').update({ avatar_url: url }).eq('id', state.currentUser.id);
         state.currentProfile.avatar_url = url;
         openSettings(); // Refresh modal

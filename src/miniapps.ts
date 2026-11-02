@@ -656,9 +656,19 @@ const MINIAPP_STORAGE_POLYFILL = `<script>
 })();
 </script>`;
 
+function sanitizeMiniAppSvgPaths(html: string): string {
+  // Fix common malformed SVG path commands where a 'Z'/'z' is immediately followed by bare numbers without a command letter (e.g. "Z 5 10.45 20 11 20Z")
+  return html.replace(/(<path\b[^>]*?\bd\s*=\s*["'])([^"']+)(["'])/gi, (_full, prefix, dVal: string, suffix) => {
+    const cleaned = dVal
+      .replace(/([Zz])\s*(?=[-+]?\d)/g, '$1 M')
+      .replace(/NAN|undefined|null/gi, '0');
+    return prefix + cleaned + suffix;
+  });
+}
+
 function prepareMiniAppHtml(rawHtml: string, baseUrl?: string): string {
   if (!rawHtml) return "";
-  let html = rawHtml;
+  let html = sanitizeMiniAppSvgPaths(rawHtml);
   const baseTag = baseUrl ? `<base href="${baseUrl}">` : "";
   const injection = baseTag + MINIAPP_STORAGE_POLYFILL;
   if (/<head[^>]*>/i.test(html)) {
