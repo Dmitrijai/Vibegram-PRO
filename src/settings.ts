@@ -518,12 +518,17 @@ export function openSettings(modeOrSkip: 'full' | 'profile' | boolean = 'full', 
 }
 
 export async function uploadAvatar(e: any) {
-    const file = e.target.files[0];
+    const file = e.target?.files?.[0];
+    if (e.target) e.target.value = '';
     if (!file) return;
     
     try {
-        const { uploadToCloudinary } = await import('./utils');
-        const url = await uploadToCloudinary(file, true);
+        const { uploadToCloudinary, openAvatarCropperModal, customToast } = await import('./utils');
+        const croppedFile = await openAvatarCropperModal(file);
+        if (!croppedFile) return;
+
+        customToast('Загрузка аватара...');
+        const url = await uploadToCloudinary(croppedFile, true);
         await supabase.from('profiles').update({ avatar_url: url }).eq('id', state.currentUser.id);
         state.currentProfile.avatar_url = url;
         openSettings(); // Refresh modal
@@ -531,9 +536,9 @@ export async function uploadAvatar(e: any) {
         // Update main UI
         const myAvatar = document.getElementById('my-avatar');
         if(myAvatar) {
-            const nickname = state.currentProfile?.display_name || state.currentProfile?.username || 'U';
             myAvatar.innerHTML = `<img src="${url}" class="w-full h-full object-cover rounded-full"> <div class="absolute bottom-0 right-0 w-3 h-3 bg-green-500 border-2 border-white rounded-full z-10"></div>`;
         }
+        customToast('Аватар обновлён!');
     } catch(err) {
         console.error(err);
         customAlert('Ошибка загрузки аватара');

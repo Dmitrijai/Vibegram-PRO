@@ -1301,12 +1301,17 @@ export async function jumpToMessage(msgId: string) {
 }
 
 export async function uploadGroupAvatar(e: any) {
-  const file = e.target.files[0];
+  const file = e.target?.files?.[0];
+  if (e.target) e.target.value = "";
   if (!file) return;
 
   try {
-    const { uploadToCloudinary } = await import("./utils");
-    const url = await uploadToCloudinary(file, true);
+    const { uploadToCloudinary, openAvatarCropperModal, customToast } = await import("./utils");
+    const croppedFile = await openAvatarCropperModal(file);
+    if (!croppedFile) return;
+
+    customToast("Загрузка аватара...");
+    const url = await uploadToCloudinary(croppedFile, true);
     await supabase
       .from("chats")
       .update({ avatar_url: url })
@@ -1319,6 +1324,7 @@ export async function uploadGroupAvatar(e: any) {
 
     openChatInfo(); // Refresh modal
     loadChats();
+    customToast("Аватар обновлён!");
   } catch (err) {
     console.error(err);
     customAlert("Ошибка загрузки аватара");

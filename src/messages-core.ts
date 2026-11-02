@@ -37,39 +37,7 @@ export async function markMessagesAsRead(chatId: string) {
         }
     }
 
-    // In group chats, record per-user read receipts on up to 10 recent unread messages
-    if (state.activeChatIsGroup && state.activeChatType === 'group') {
-        const { data: unreadMsgs } = await supabase.from('messages')
-            .select('id, reactions')
-            .eq('chat_id', chatId)
-            .neq('sender_id', state.currentUser.id)
-            .eq('is_read', false)
-            .order('created_at', { ascending: false })
-            .limit(10);
-
-        if (unreadMsgs && unreadMsgs.length > 0) {
-            const msgsToUpdate = unreadMsgs.filter(m => {
-                const reads = m.reactions?.['__read__'] || [];
-                return !reads.includes(state.currentUser.id);
-            });
-
-            if (msgsToUpdate.length > 0) {
-                await Promise.all(msgsToUpdate.map(msg => {
-                    const newReactions = { ...(msg.reactions || {}) };
-                    if (!newReactions['__read__']) newReactions['__read__'] = [];
-                    if (!newReactions['__read__'].includes(state.currentUser.id)) {
-                        newReactions['__read__'].push(state.currentUser.id);
-                    }
-                    return supabase.from('messages').update({ 
-                        is_read: true,
-                        reactions: newReactions
-                    }).eq('id', msg.id);
-                }));
-            }
-        }
-    }
-
-    // Single fast batch update for all unread messages in the chat
+    // Single fast batch update for all unread messages in the chat first
     const { error } = await supabase
         .from('messages')
         .update({ is_read: true })
@@ -82,6 +50,39 @@ export async function markMessagesAsRead(chatId: string) {
             (window as any).logic.loadChats();
         }
         import('./supabase').then(s => s.broadcastUpdate(chatId, 'read'));
+    }
+
+    // In group chats, record per-user read receipts on up to 5 recent messages sequentially in background
+    if (state.activeChatIsGroup && state.activeChatType === 'group') {
+        (async () => {
+            try {
+                const { data: unreadMsgs } = await supabase.from('messages')
+                    .select('id, reactions')
+                    .eq('chat_id', chatId)
+                    .neq('sender_id', state.currentUser.id)
+                    .order('created_at', { ascending: false })
+                    .limit(5);
+
+                if (unreadMsgs && unreadMsgs.length > 0) {
+                    const msgsToUpdate = unreadMsgs.filter(m => {
+                        const reads = m.reactions?.['__read__'] || [];
+                        return !reads.includes(state.currentUser.id);
+                    });
+
+                    for (const msg of msgsToUpdate) {
+                        const newReactions = { ...(msg.reactions || {}) };
+                        if (!newReactions['__read__']) newReactions['__read__'] = [];
+                        if (!newReactions['__read__'].includes(state.currentUser.id)) {
+                            newReactions['__read__'].push(state.currentUser.id);
+                        }
+                        await supabase.from('messages').update({
+                            is_read: true,
+                            reactions: newReactions
+                        }).eq('id', msg.id);
+                    }
+                }
+            } catch {}
+        })();
     }
 }
 function renderContent(content: string) {
@@ -549,11 +550,6 @@ export function renderMessages(messages: any[], isInitialLoad = false) {
                             <div class="circle-mute-badge absolute bottom-2.5 left-1/2 -translate-x-1/2 bg-black/50 backdrop-blur-sm text-white text-[10px] font-medium px-2 py-0.5 rounded-full flex items-center gap-1 pointer-events-none z-20">
                                 <svg class="w-3 h-3 circle-mute-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2"></path></svg>
                                 <span class="circle-time-text tabular-nums">${durLabel}</span>
-                            </div>
-                            <div class="video-circle-scrubber media-progress-container absolute bottom-0 left-6 right-6 h-6 flex items-center z-30 cursor-pointer" onclick="event.stopPropagation()">
-                                <div class="w-full h-1.5 bg-white/35 rounded-full overflow-hidden backdrop-blur-sm shadow-sm">
-                                    <div class="h-full bg-blue-500 progress-bar rounded-full" style="width: 0%"></div>
-                                </div>
                             </div>
                         </div>
                         ${transcribeBtn}

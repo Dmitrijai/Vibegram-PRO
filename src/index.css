@@ -296,17 +296,12 @@ body { font-family: 'Inter', sans-serif; background-color: #f3f4f6; -webkit-tap-
 }
 
 .video-circle-container.uninteracted .video-progress-ring,
-.video-circle-container.uninteracted .video-overlay-icon,
-.video-circle-container.uninteracted .video-circle-scrubber {
+.video-circle-container.uninteracted .video-overlay-icon {
     display: none !important;
 }
 
 .video-circle-container:not(.uninteracted) .circle-mute-icon {
     display: none;
-}
-
-.video-circle-container:not(.uninteracted) .circle-mute-badge {
-    bottom: 22px;
 }
 
 .video-circle-container.paused .video-overlay-icon,

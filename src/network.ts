@@ -372,15 +372,14 @@ export class EdgeVirtualWebSocket {
     private listeners = new Map<string, Set<any>>();
 
     constructor(url: string, protocols?: string | string[]) {
-        this.url = this.rewriteRealtimeWsUrl(url);
-        const activeGwUrl = getActiveGatewayBaseUrl();
-        const activeNode = networkState.gateways.find((g) => g.url === activeGwUrl);
-        const isServerlessHttpOnly =
-            activeGwUrl.includes('.vercel.app') ||
-            activeGwUrl.includes('.netlify.app') ||
-            (activeNode && activeNode.status === 'blocked');
+        const wsGwNode =
+            networkState.gateways.find(
+                (g) => g.supportsWebSocket && g.status !== 'blocked' && !g.url.includes('.vercel.app') && !g.url.includes('.netlify.app')
+            ) || null;
 
-        if (isServerlessHttpOnly) {
+        this.url = this.rewriteRealtimeWsUrl(url, wsGwNode?.url);
+
+        if (!wsGwNode) {
             this.readyState = EdgeVirtualWebSocket.CLOSED;
             setRealtimeConnectedState(false);
             return;
@@ -426,10 +425,10 @@ export class EdgeVirtualWebSocket {
         }
     }
 
-    private rewriteRealtimeWsUrl(rawUrl: string): string {
+    private rewriteRealtimeWsUrl(rawUrl: string, targetBaseUrl?: string): string {
         try {
             const parsed = new URL(rawUrl);
-            const activeGw = getActiveGatewayBaseUrl();
+            const activeGw = (targetBaseUrl || getActiveGatewayBaseUrl()).replace(/\/+$/, '');
             const gwParsed = new URL(activeGw);
             const wsProto = gwParsed.protocol === 'https:' ? 'wss:' : 'ws:';
             return `${wsProto}//${gwParsed.host}${parsed.pathname}${parsed.search}`;
@@ -905,6 +904,219 @@ export function setCustomGatewayUrl(url: string) {
 let configuredEnvUrl = '';
 let configuredBackupUrl = '';
 let supabaseAnonKeyRef = '';
+let wakeListenersInstalled = false;
+let lastHiddenOrIdleAt = Date.now();
+let isRecoveringFromWake = false;
+
+export function getJwtExpSeconds(token: string | null | undefined): number {
+    if (!token || typeof token !== 'string' || !token.includes('.')) return 0;
+    try {
+        const parts = token.split('.');
+        if (parts.length < 2) return 0;
+        const payloadB64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+        const decoded = JSON.parse(atob(payloadB64));
+        if (decoded && typeof decoded.exp === 'number' && decoded.exp > 0) {
+            return decoded.exp;
+        }
+    } catch (e) {}
+    return 0;
+}
+
+export function repairStoredAuthSession(): { accessToken: string; refreshToken: string; realExp: number } | null {
+    try {
+        const raw = localStorage.getItem('sb-vibegram-auth-token');
+        if (!raw) return null;
+        const parsed = JSON.parse(raw);
+        if (!parsed || !parsed.access_token || !parsed.refresh_token) return null;
+        const realExp = getJwtExpSeconds(parsed.access_token);
+        if (realExp > 0) {
+            const nowSec = Math.floor(Date.now() / 1000);
+            if (!parsed.expires_at || parsed.expires_at > realExp) {
+                parsed.expires_at = realExp;
+                parsed.expires_in = Math.max(0, realExp - nowSec);
+                localStorage.setItem('sb-vibegram-auth-token', JSON.stringify(parsed));
+            }
+        }
+        return {
+            accessToken: parsed.access_token,
+            refreshToken: parsed.refresh_token,
+            realExp
+        };
+    } catch (e) {
+        return null;
+    }
+}
+
+let inflightDirectRefreshPromise: Promise<string | null> | null = null;
+
+export async function refreshAccessTokenDirect(): Promise<string | null> {
+    if (inflightDirectRefreshPromise) return inflightDirectRefreshPromise;
+
+    inflightDirectRefreshPromise = (async () => {
+        try {
+            const sessionInfo = repairStoredAuthSession();
+            if (!sessionInfo || !sessionInfo.refreshToken) return null;
+
+            const raw = localStorage.getItem('sb-vibegram-auth-token');
+            const parsed = raw ? JSON.parse(raw) : null;
+            const fetchFn = nativeWindowFetch || window.fetch.bind(window);
+            const refreshPath = '/auth/v1/token?grant_type=refresh_token';
+
+            const candidates =
+                networkState.gateways.length > 0
+                    ? [
+                          networkState.gateways.find((g) => g.id === networkState.activeGatewayId) || networkState.gateways[0],
+                          ...networkState.gateways.filter((g) => g.id !== networkState.activeGatewayId)
+                      ]
+                    : [];
+
+            for (const gw of candidates) {
+                if (!gw) continue;
+                const ctrl = new AbortController();
+                const timer = setTimeout(() => ctrl.abort(), 7000);
+                try {
+                    const headers: Record<string, string> = {
+                        'Content-Type': 'application/json;charset=UTF-8'
+                    };
+                    if (supabaseAnonKeyRef) {
+                        headers['apikey'] = supabaseAnonKeyRef;
+                        headers['Authorization'] = `Bearer ${supabaseAnonKeyRef}`;
+                    }
+                    const res = await fetchFn(`${gw.url}${refreshPath}`, {
+                        method: 'POST',
+                        headers,
+                        body: JSON.stringify({ refresh_token: sessionInfo.refreshToken }),
+                        signal: ctrl.signal
+                    });
+                    clearTimeout(timer);
+
+                    if (res.ok) {
+                        const data = await res.json();
+                        if (data && data.access_token && data.refresh_token) {
+                            const realExp = getJwtExpSeconds(data.access_token);
+                            const nowSec = Math.floor(Date.now() / 1000);
+                            const updatedSession = {
+                                ...(parsed || {}),
+                                ...data,
+                                expires_at: realExp > 0 ? realExp : data.expires_at || nowSec + (data.expires_in || 3600),
+                                expires_in: realExp > 0 ? Math.max(60, realExp - nowSec) : data.expires_in || 3600
+                            };
+                            localStorage.setItem('sb-vibegram-auth-token', JSON.stringify(updatedSession));
+                            gw.status = 'online';
+                            networkState.activeGatewayId = gw.id;
+                            networkState.activeGatewayUrl = gw.url;
+                            notifyNetworkState();
+                            return data.access_token as string;
+                        }
+                    } else if (res.status === 400 || res.status === 401) {
+                        // Check if another tab already refreshed the token in localStorage
+                        const latest = repairStoredAuthSession();
+                        if (latest && latest.accessToken !== sessionInfo.accessToken && latest.realExp > Math.floor(Date.now() / 1000) + 30) {
+                            return latest.accessToken;
+                        }
+                    }
+                } catch {
+                    clearTimeout(timer);
+                }
+            }
+            return null;
+        } catch {
+            return null;
+        } finally {
+            inflightDirectRefreshPromise = null;
+        }
+    })();
+
+    return inflightDirectRefreshPromise;
+}
+
+function installWakeRecoveryListeners() {
+    if (wakeListenersInstalled || typeof window === 'undefined') return;
+    wakeListenersInstalled = true;
+
+    const handleWakeOrOnline = async (forceProbe = false) => {
+        if (isRecoveringFromWake) return;
+        const now = Date.now();
+        const idleMs = now - lastHiddenOrIdleAt;
+        const anyBlocked = networkState.gateways.some((g) => g.status === 'blocked');
+        const allBlocked = networkState.gateways.length > 0 && networkState.gateways.every((g) => g.status === 'blocked');
+        const sessionInfo = repairStoredAuthSession();
+        const nowSec = Math.floor(now / 1000);
+        const tokenNeedsRefresh = sessionInfo && sessionInfo.realExp > 0 && sessionInfo.realExp <= nowSec + 300;
+
+        if (!forceProbe && idleMs < 15000 && !anyBlocked && !tokenNeedsRefresh && networkState.transportMode !== 'offline') {
+            return;
+        }
+
+        isRecoveringFromWake = true;
+        try {
+            // Clear stale blocked flags so gateways are immediately usable on wake
+            if (anyBlocked || allBlocked || networkState.transportMode === 'offline') {
+                networkState.gateways.forEach((g) => {
+                    if (g.status === 'blocked') {
+                        g.status = 'unknown';
+                    }
+                });
+                if (networkState.transportMode === 'offline') {
+                    networkState.transportMode = networkState.realtimeConnected ? 'websocket' : 'http-turbo';
+                }
+                notifyNetworkState();
+            }
+
+            if (tokenNeedsRefresh) {
+                await refreshAccessTokenDirect();
+            }
+
+            await raceGateways(true);
+
+            // Trigger immediate UI/data sync after waking up
+            const logicRef = (window as any).logic;
+            if (logicRef) {
+                if (typeof logicRef.loadChats === 'function') {
+                    logicRef.loadChats();
+                }
+                if (typeof logicRef.pollActiveChatDelta === 'function') {
+                    logicRef.pollActiveChatDelta();
+                }
+            }
+        } catch (e) {
+            // Silent recovery
+        } finally {
+            lastHiddenOrIdleAt = Date.now();
+            isRecoveringFromWake = false;
+        }
+    };
+
+    document.addEventListener('visibilitychange', () => {
+        if (document.hidden) {
+            lastHiddenOrIdleAt = Date.now();
+        } else {
+            handleWakeOrOnline(false);
+        }
+    });
+
+    window.addEventListener('focus', () => {
+        handleWakeOrOnline(false);
+    });
+
+    window.addEventListener('online', () => {
+        handleWakeOrOnline(true);
+    });
+
+    // Periodic 45s health & token check while the tab stays open for 30+ minutes
+    setInterval(() => {
+        if (typeof document !== 'undefined' && document.hidden) return;
+        const sessionInfo = repairStoredAuthSession();
+        const nowSec = Math.floor(Date.now() / 1000);
+        if (sessionInfo && sessionInfo.realExp > 0 && sessionInfo.realExp <= nowSec + 240) {
+            refreshAccessTokenDirect();
+        }
+        const allBlocked = networkState.gateways.length > 0 && networkState.gateways.every((g) => g.status === 'blocked');
+        if (allBlocked || networkState.transportMode === 'offline') {
+            handleWakeOrOnline(true);
+        }
+    }, 45000);
+}
 
 export function initNetworkManager(envSupabaseUrl: string, anonKey: string, backupSupabaseUrl = '') {
     installMediaProxyInterceptor();
@@ -937,7 +1149,9 @@ export function initNetworkManager(envSupabaseUrl: string, anonKey: string, back
         }
     } catch (e) {}
 
+    repairStoredAuthSession();
     rebuildGatewayList(configuredEnvUrl);
+    installWakeRecoveryListeners();
 }
 
 export function rebuildGatewayList(envUrl: string) {
@@ -973,21 +1187,7 @@ export function rebuildGatewayList(envUrl: string) {
         });
     }
 
-    // 3. Direct Supabase Endpoint (Cloudflare ASN — ~220ms latency + native WebSockets, independent of Vercel)
-    if (!list.some((g) => g.url === directUrl)) {
-        list.push({
-            id: 'direct-supabase',
-            name: 'Прямое соединение Supabase',
-            url: directUrl,
-            type: 'direct',
-            latencyMs: null,
-            status: 'unknown',
-            lastChecked: 0,
-            supportsWebSocket: true
-        });
-    }
-
-    // 4. Primary Edge Gateway #1 (vibegram-edge-gw.vercel.app)
+    // 3. Primary Edge Gateway #1 (vibegram-edge-gw.vercel.app) — First by default so Direct Supabase reset never blocks initial load
     if (!list.some((g) => g.url === 'https://vibegram-edge-gw.vercel.app')) {
         list.push({
             id: 'edge-gw-1',
@@ -998,6 +1198,20 @@ export function rebuildGatewayList(envUrl: string) {
             status: 'unknown',
             lastChecked: 0,
             supportsWebSocket: false
+        });
+    }
+
+    // 4. Direct Supabase Endpoint (Cloudflare ASN — native WebSockets + independent ASN fallback)
+    if (!list.some((g) => g.url === directUrl)) {
+        list.push({
+            id: 'direct-supabase',
+            name: 'Прямое соединение Supabase',
+            url: directUrl,
+            type: 'direct',
+            latencyMs: null,
+            status: 'unknown',
+            lastChecked: 0,
+            supportsWebSocket: true
         });
     }
 
@@ -1081,7 +1295,7 @@ export function rebuildGatewayList(envUrl: string) {
 
     const byLastWorking =
         lastWorkingUrl && !isDeadGatewayUrl(lastWorkingUrl)
-            ? list.find((g) => g.url === lastWorkingUrl)
+            ? list.find((g) => g.url === lastWorkingUrl && g.status !== 'blocked')
             : undefined;
     const chosen = (customUrl ? list.find((g) => g.id === 'custom') : undefined) || byLastWorking || list[0];
 
@@ -1094,6 +1308,7 @@ export function rebuildGatewayList(envUrl: string) {
 export function selectGatewayById(id: string) {
     const found = networkState.gateways.find((g) => g.id === id);
     if (!found) return;
+    found.status = 'online';
     networkState.activeGatewayId = found.id;
     networkState.activeGatewayUrl = found.url;
     try {
@@ -1105,14 +1320,14 @@ export function selectGatewayById(id: string) {
 export async function raceGateways(forceSwitchToFastest = true): Promise<GatewayNode | null> {
     if (networkState.gateways.length === 0) return null;
     const fetchFn = nativeWindowFetch || window.fetch.bind(window);
-    const probePath = '/rest/v1/profiles?select=id,username,display_name,avatar_url&limit=5';
+    const probePath = '/rest/v1/profiles?select=id,username,display_name,avatar_url&limit=1';
 
     await Promise.all(
         networkState.gateways.map(async (gw) => {
             gw.status = 'testing';
             notifyNetworkState();
             const ctrl = new AbortController();
-            const timer = setTimeout(() => ctrl.abort(), 5500);
+            const timer = setTimeout(() => ctrl.abort(), 6500);
             const start = performance.now();
             try {
                 const headers: Record<string, string> = {};
@@ -1153,6 +1368,9 @@ export async function raceGateways(forceSwitchToFastest = true): Promise<Gateway
         networkState.activeGatewayId = fastest.id;
         networkState.activeGatewayUrl = fastest.url;
         networkState.lastPingMs = fastest.latencyMs;
+        if (networkState.transportMode === 'offline' || networkState.transportMode === 'connecting') {
+            networkState.transportMode = networkState.realtimeConnected ? 'websocket' : 'http-turbo';
+        }
         try {
             localStorage.setItem(LAST_WORKING_GATEWAY_KEY, fastest.url);
         } catch {}
@@ -1256,10 +1474,18 @@ function createGraceRefreshResponse(): Response | null {
         const parsed = JSON.parse(raw);
         if (!parsed || !parsed.access_token || !parsed.refresh_token || !parsed.user) return null;
 
+        const nowSec = Math.floor(Date.now() / 1000);
+        const realExp = getJwtExpSeconds(parsed.access_token);
+        // Never return a fake 200 OK if the JWT is already expired or expiring within 15 seconds
+        if (realExp > 0 && realExp <= nowSec + 15) {
+            return null;
+        }
+
+        const safeExp = realExp > 0 ? realExp : nowSec + 60;
         const graceSession = {
             ...parsed,
-            expires_in: 3600,
-            expires_at: Math.floor(Date.now() / 1000) + 3600
+            expires_in: Math.max(15, safeExp - nowSec),
+            expires_at: safeExp
         };
         return new Response(JSON.stringify(graceSession), {
             status: 200,
@@ -1270,13 +1496,37 @@ function createGraceRefreshResponse(): Response | null {
     }
 }
 
+function updateAuthorizationHeaderInInit(init: RequestInit, newAccessToken: string): RequestInit {
+    const headers = new Headers(init.headers || {});
+    headers.set('Authorization', `Bearer ${newAccessToken}`);
+    return {
+        ...init,
+        headers
+    };
+}
+
+function getBearerTokenFromInit(init: RequestInit): string | null {
+    try {
+        const headers = new Headers(init.headers || {});
+        const auth = headers.get('Authorization') || headers.get('authorization');
+        if (auth && auth.startsWith('Bearer ')) {
+            return auth.substring(7).trim();
+        }
+    } catch {}
+    return null;
+}
+
 /**
  * Resilient Fetch Engine for Supabase:
- * - Routes Database/Auth queries across distinct ASNs (Cloudflare Direct Supabase + Vercel Edge)
- * - If a `.vercel.app` node resets/blocks, immediately switches to `direct-supabase` (and vice versa)
- *   without wasting time trying other `.vercel.app` nodes on the same blocked subnet first.
+ * - Routes Database/Auth queries across distinct ASNs (Vercel Edge + Cloudflare Direct Supabase)
+ * - Automatically repairs and refreshes expired JWTs after 30+ minutes of idle/background sleep
+ * - Never leaves all gateways permanently marked as 'blocked' on transient wake-from-sleep hiccups
  */
-export async function smartSupabaseFetch(input: RequestInfo | URL, init: RequestInit = {}): Promise<Response> {
+export async function smartSupabaseFetch(
+    input: RequestInfo | URL,
+    init: RequestInit = {},
+    isRetryAfter401 = false
+): Promise<Response> {
     const rawUrl = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
     const supabasePath = extractSupabasePath(rawUrl);
 
@@ -1293,18 +1543,42 @@ export async function smartSupabaseFetch(input: RequestInfo | URL, init: Request
     }
 
     const isTokenRefresh = supabasePath.includes('/auth/v1/token') && supabasePath.includes('grant_type=refresh_token');
+    const isRestOrStorage = supabasePath.startsWith('/rest/v1/') || supabasePath.startsWith('/storage/v1/');
+
+    // Proactively check if the attached user JWT is expired before hitting PostgREST
+    let effectiveInit = init;
+    if (isRestOrStorage && !isRetryAfter401) {
+        const bearer = getBearerTokenFromInit(effectiveInit);
+        if (bearer && bearer !== supabaseAnonKeyRef) {
+            const expSec = getJwtExpSeconds(bearer);
+            const nowSec = Math.floor(Date.now() / 1000);
+            if (expSec > 0 && expSec <= nowSec + 10) {
+                const refreshedToken = await refreshAccessTokenDirect();
+                if (refreshedToken) {
+                    effectiveInit = updateAuthorizationHeaderInInit(effectiveInit, refreshedToken);
+                }
+            }
+        }
+    }
+
     const now = Date.now();
+    // If all gateways were previously marked blocked, clear their blocked status so we don't get stuck
+    if (networkState.gateways.every((g) => g.status === 'blocked')) {
+        networkState.gateways.forEach((g) => {
+            g.status = 'unknown';
+        });
+    }
 
     const currentActive = networkState.gateways.find((g) => g.id === networkState.activeGatewayId) || networkState.gateways[0];
     const otherGateways = networkState.gateways.filter((g) => g.id !== currentActive.id);
 
-    // Ensure distinct provider family is placed second so if Vercel is blocked, Direct Supabase is tried immediately next (and vice versa)
+    // Ensure distinct provider family is placed second so if Vercel is blocked, Direct Supabase is tried next (and vice versa)
     const isActiveVercel = currentActive.url.includes('.vercel.app');
     const orderedCandidates = [currentActive, ...otherGateways].sort((a, b) => {
         if (a.id === currentActive.id) return -1;
         if (b.id === currentActive.id) return 1;
-        const aRecentlyBlocked = a.status === 'blocked' && now - a.lastChecked < 20000 ? 1 : 0;
-        const bRecentlyBlocked = b.status === 'blocked' && now - b.lastChecked < 20000 ? 1 : 0;
+        const aRecentlyBlocked = a.status === 'blocked' && now - a.lastChecked < 12000 ? 1 : 0;
+        const bRecentlyBlocked = b.status === 'blocked' && now - b.lastChecked < 12000 ? 1 : 0;
         if (aRecentlyBlocked !== bRecentlyBlocked) return aRecentlyBlocked - bRecentlyBlocked;
         const aDiffProvider = a.url.includes('.vercel.app') !== isActiveVercel ? 0 : 1;
         const bDiffProvider = b.url.includes('.vercel.app') !== isActiveVercel ? 0 : 1;
@@ -1312,111 +1586,117 @@ export async function smartSupabaseFetch(input: RequestInfo | URL, init: Request
     });
 
     let lastError: any = null;
-    let vercelSubnetFailedInThisRequest = false;
 
-    for (let i = 0; i < orderedCandidates.length; i++) {
-        const gw = orderedCandidates[i];
-        // If one .vercel.app node already failed with a connection reset in this call and Direct Supabase hasn't been tried yet, skip redundant .vercel.app nodes
-        if (
-            vercelSubnetFailedInThisRequest &&
-            gw.url.includes('.vercel.app') &&
-            orderedCandidates.slice(i + 1).some((c) => !c.url.includes('.vercel.app'))
-        ) {
-            continue;
+    const executeAttemptOnGateway = async (gw: GatewayNode, timeoutMs: number): Promise<Response> => {
+        const winner = await fetchSingleAttempt(gw, supabasePath, effectiveInit, timeoutMs);
+
+        winner.gw.latencyMs = winner.elapsed;
+        winner.gw.status = 'online';
+        winner.gw.lastChecked = Date.now();
+        networkState.lastPingMs = winner.elapsed;
+
+        if (networkState.activeGatewayId !== winner.gw.id) {
+            networkState.activeGatewayId = winner.gw.id;
+            networkState.activeGatewayUrl = winner.gw.url;
+            try {
+                localStorage.setItem(LAST_WORKING_GATEWAY_KEY, winner.gw.url);
+            } catch (e) {}
         }
 
-        const attemptHeaderTimeoutMs = i === 0 ? 4500 : 6000;
+        if (networkState.transportMode === 'offline' || networkState.transportMode === 'connecting') {
+            networkState.transportMode = networkState.realtimeConnected ? 'websocket' : 'http-turbo';
+        }
+        notifyNetworkState();
 
-        try {
-            const winner = await fetchSingleAttempt(gw, supabasePath, init, attemptHeaderTimeoutMs);
+        const status = winner.response.status;
 
-            winner.gw.latencyMs = winner.elapsed;
-            winner.gw.status = 'online';
-            winner.gw.lastChecked = Date.now();
-            networkState.lastPingMs = winner.elapsed;
-
-            if (networkState.activeGatewayId !== winner.gw.id) {
-                networkState.activeGatewayId = winner.gw.id;
-                networkState.activeGatewayUrl = winner.gw.url;
-                try {
-                    localStorage.setItem(LAST_WORKING_GATEWAY_KEY, winner.gw.url);
-                } catch (e) {}
+        // If PostgREST returned 401 (JWT expired after 30+ min idle), refresh token once and transparently retry
+        if (status === 401 && isRestOrStorage && !isRetryAfter401) {
+            const refreshedToken = await refreshAccessTokenDirect();
+            if (refreshedToken) {
+                const retryInit = updateAuthorizationHeaderInInit(effectiveInit, refreshedToken);
+                return smartSupabaseFetch(input, retryInit, true);
             }
+        }
 
-            if (networkState.transportMode === 'offline' || networkState.transportMode === 'connecting') {
-                networkState.transportMode = networkState.realtimeConnected ? 'websocket' : 'http-turbo';
-            }
-            notifyNetworkState();
+        const isNullBodyStatus = status === 204 || status === 205 || status === 304;
+        const safeHeaders = new Headers(winner.response.headers);
+        safeHeaders.delete('content-encoding');
+        safeHeaders.delete('content-length');
 
-            const status = winner.response.status;
-            const isNullBodyStatus = status === 204 || status === 205 || status === 304;
-            const safeHeaders = new Headers(winner.response.headers);
-            safeHeaders.delete('content-encoding');
-            safeHeaders.delete('content-length');
-
-            if (isNullBodyStatus || winner.bodyBuffer.byteLength === 0) {
-                return new Response(null, {
-                    status,
-                    statusText: winner.response.statusText,
-                    headers: safeHeaders
-                });
-            }
-
-            const contentType = safeHeaders.get('content-type') || '';
-            if (supabasePath.startsWith('/rest/v1/') && contentType.includes('application/json')) {
-                try {
-                    const rawText = new TextDecoder('utf-8').decode(winner.bodyBuffer);
-                    const rewrittenText = rewriteLegacyStorageUrlsInJson(rawText, winner.gw.url);
-                    return new Response(rewrittenText, {
-                        status,
-                        statusText: winner.response.statusText,
-                        headers: safeHeaders
-                    });
-                } catch (e) {
-                    // Fallback to fresh Response from bodyBuffer below
-                }
-            }
-
-            return new Response(winner.bodyBuffer, {
+        if (isNullBodyStatus || winner.bodyBuffer.byteLength === 0) {
+            return new Response(null, {
                 status,
                 statusText: winner.response.statusText,
                 headers: safeHeaders
             });
+        }
+
+        const contentType = safeHeaders.get('content-type') || '';
+        if (supabasePath.startsWith('/rest/v1/') && contentType.includes('application/json')) {
+            try {
+                const rawText = new TextDecoder('utf-8').decode(winner.bodyBuffer);
+                const rewrittenText = rewriteLegacyStorageUrlsInJson(rawText, winner.gw.url);
+                return new Response(rewrittenText, {
+                    status,
+                    statusText: winner.response.statusText,
+                    headers: safeHeaders
+                });
+            } catch (e) {
+                // Fallback to fresh Response from bodyBuffer below
+            }
+        }
+
+        return new Response(winner.bodyBuffer, {
+            status,
+            statusText: winner.response.statusText,
+            headers: safeHeaders
+        });
+    };
+
+    for (let i = 0; i < orderedCandidates.length; i++) {
+        const gw = orderedCandidates[i];
+        const attemptHeaderTimeoutMs = i === 0 ? 5500 : 7000;
+
+        try {
+            return await executeAttemptOnGateway(gw, attemptHeaderTimeoutMs);
         } catch (err: any) {
             lastError = err;
-            if (init.signal?.aborted) {
+            if (effectiveInit.signal?.aborted) {
                 throw err;
             }
             gw.status = 'blocked';
             gw.latencyMs = null;
             gw.lastChecked = Date.now();
-            if (gw.url.includes('.vercel.app')) {
-                vercelSubnetFailedInThisRequest = true;
+        }
+    }
+
+    // Wake-from-sleep / transient network recovery pass:
+    // Wait 650ms for the OS network interface to finish waking up, clear blocked flags, and retry primary Edge + Direct
+    if (!effectiveInit.signal?.aborted) {
+        await new Promise((r) => setTimeout(r, 650));
+        const edgePrimary = networkState.gateways.find((g) => g.id === 'edge-gw-1') || networkState.gateways[0];
+        const directGw = networkState.gateways.find((g) => g.type === 'direct');
+        const recoveryTargets = Array.from(new Set([edgePrimary, directGw].filter(Boolean) as GatewayNode[]));
+
+        for (const gw of recoveryTargets) {
+            if (effectiveInit.signal?.aborted) break;
+            try {
+                return await executeAttemptOnGateway(gw, 8500);
+            } catch (err: any) {
+                lastError = err;
             }
         }
     }
 
-    // Final safety retry on Direct Supabase with an 8s timeout in case of a brief Wi-Fi/ISP hiccup
-    const directGw = networkState.gateways.find((g) => g.type === 'direct');
-    if (directGw && !init.signal?.aborted) {
-        try {
-            const winner = await fetchSingleAttempt(directGw, supabasePath, init, 8000);
-            winner.gw.latencyMs = winner.elapsed;
-            winner.gw.status = 'online';
-            winner.gw.lastChecked = Date.now();
-            networkState.lastPingMs = winner.elapsed;
-            networkState.activeGatewayId = winner.gw.id;
-            networkState.activeGatewayUrl = winner.gw.url;
-            notifyNetworkState();
-            const safeHeaders = new Headers(winner.response.headers);
-            safeHeaders.delete('content-encoding');
-            safeHeaders.delete('content-length');
-            return new Response(winner.bodyBuffer, {
-                status: winner.response.status,
-                statusText: winner.response.statusText,
-                headers: safeHeaders
-            });
-        } catch {}
+    // Never leave all gateways stuck in 'blocked' state if the device briefly lost connection
+    if (networkState.gateways.every((g) => g.status === 'blocked')) {
+        const primaryEdge = networkState.gateways.find((g) => g.id === 'edge-gw-1') || networkState.gateways[0];
+        if (primaryEdge) {
+            primaryEdge.status = 'unknown';
+            networkState.activeGatewayId = primaryEdge.id;
+            networkState.activeGatewayUrl = primaryEdge.url;
+        }
     }
 
     if (isTokenRefresh) {
@@ -1426,7 +1706,6 @@ export async function smartSupabaseFetch(input: RequestInfo | URL, init: Request
         }
     }
 
-    networkState.transportMode = 'offline';
     notifyNetworkState();
     throw lastError || new Error('Failed to fetch from gateways');
 }

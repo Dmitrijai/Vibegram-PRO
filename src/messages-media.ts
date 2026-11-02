@@ -721,8 +721,7 @@ export function updateVideoProgress(video: HTMLVideoElement) {
     }
 
     const ring = container.querySelector('.video-progress-ring');
-    const scrubberBar = container.querySelector('.video-circle-scrubber .progress-bar') as HTMLElement | null;
-    if (isDraggingMedia && (currentDragContainer === ring || currentDragContainer === container.querySelector('.video-circle-scrubber'))) {
+    if (isDraggingMedia && currentDragContainer === ring) {
         return;
     }
 
@@ -733,9 +732,6 @@ export function updateVideoProgress(video: HTMLVideoElement) {
         if (Number.isFinite(offset)) {
             circle.style.strokeDashoffset = offset.toString();
         }
-    }
-    if (scrubberBar) {
-        scrubberBar.style.width = `${percent * 100}%`;
     }
 }
 
@@ -1127,10 +1123,6 @@ function seekMedia(container: HTMLElement, percent: number) {
             if (ringCircle) {
                 const circumference = 301.6;
                 ringCircle.style.strokeDashoffset = (circumference - clampedPercent * circumference).toString();
-            }
-            const scrubberBar = videoContainer.querySelector('.video-circle-scrubber .progress-bar') as HTMLElement | null;
-            if (scrubberBar) {
-                scrubberBar.style.width = `${clampedPercent * 100}%`;
             }
         }
 

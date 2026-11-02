@@ -48,7 +48,7 @@ if (!SUPABASE_URL || !SUPABASE_KEY) {
     console.error('Ключи Supabase не настроены. Добавьте SUPABASE_URL и SUPABASE_ANON_KEY в GitHub Secrets.');
 }
 
-// Migrate legacy auth token key if present so switching gateways never logs out existing users
+// Migrate legacy auth token key if present and repair any stale expires_at
 try {
     const unifiedKey = 'sb-vibegram-auth-token';
     if (!localStorage.getItem(unifiedKey)) {
@@ -63,15 +63,38 @@ try {
             }
         }
     }
+    const rawSession = localStorage.getItem(unifiedKey);
+    if (rawSession) {
+        const parsed = JSON.parse(rawSession);
+        const token = parsed?.access_token;
+        if (typeof token === 'string' && token.includes('.')) {
+            const payloadB64 = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+            const payload = JSON.parse(atob(payloadB64));
+            if (payload && typeof payload.exp === 'number' && payload.exp > 0) {
+                if (!parsed.expires_at || parsed.expires_at > payload.exp) {
+                    parsed.expires_at = payload.exp;
+                    parsed.expires_in = Math.max(0, payload.exp - Math.floor(Date.now() / 1000));
+                    localStorage.setItem(unifiedKey, JSON.stringify(parsed));
+                }
+            }
+        }
+    }
 } catch (e) {}
 
 initNetworkManager(SUPABASE_URL, SUPABASE_KEY, rawBackupUrl);
 
-// Lock-free queue per auth key to prevent navigator.locks 5000ms steal AbortError on slow mobile DPI connections
+// Lock-free queue per auth key with 8s timeout to prevent deadlocks when waking from background/sleep
 const authLocks = new Map<string, Promise<any>>();
 async function safeAuthLock<R>(name: string, _acquireTimeout: number, fn: () => Promise<R>): Promise<R> {
     const prev = authLocks.get(name) || Promise.resolve();
-    const next = prev.catch(() => {}).then(() => fn());
+    const runWithTimeout = () =>
+        Promise.race<R>([
+            fn(),
+            new Promise<R>((_, reject) =>
+                setTimeout(() => reject(new Error('Auth lock operation timeout')), 8000)
+            )
+        ]);
+    const next = prev.catch(() => {}).then(runWithTimeout);
     authLocks.set(name, next);
     try {
         return await next;
@@ -86,6 +109,8 @@ export const supabase = createClient(SUPABASE_URL || PRIMARY_WORKER_URL, SUPABAS
     auth: {
         flowType: 'implicit',
         storageKey: 'sb-vibegram-auth-token',
+        autoRefreshToken: true,
+        persistSession: true,
         lock: safeAuthLock
     },
     realtime: {

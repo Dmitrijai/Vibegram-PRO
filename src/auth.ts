@@ -406,7 +406,9 @@ export async function verifyRecoveryCode() {
 
 function finalizeAppSetup(isFromCache = false) {
             const alreadySetup = hasFinalizedAppSetup;
-            hasFinalizedAppSetup = true;
+            if (!isFromCache) {
+                hasFinalizedAppSetup = true;
+            }
             const initialSearchCheck = sessionStorage.getItem('initial_search') || window.location.search;
             const isStandalone = new URLSearchParams(initialSearchCheck).get('miniapp');
             

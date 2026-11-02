@@ -1058,3 +1058,328 @@ export async function uploadToCloudinary(file: File | Blob, isAvatar = false, ab
         el.outerHTML = `<div class="${aspectCls} w-full bg-gray-100 dark:bg-gray-800 rounded-xl flex flex-col items-center justify-center text-gray-500 dark:text-gray-300 text-xs p-4 text-center border border-gray-200 dark:border-gray-700 cursor-pointer hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors" onclick="event.stopPropagation(); window.downloadMedia('${safeUrl}', 'media_file')"><svg class="w-8 h-8 mb-2 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>${errorText}</div>`;
     }
 };
+
+/**
+ * Interactive Telegram-style Avatar Cropper Modal:
+ * Supports mouse drag, touch pan, pinch-to-zoom, mouse wheel zoom, zoom slider, and 90° rotation.
+ * Outputs a crisp 512x512 square image File ready for upload.
+ */
+export function openAvatarCropperModal(file: File): Promise<File | null> {
+    return new Promise((resolve) => {
+        if (!file || !file.type.startsWith('image/')) {
+            resolve(file);
+            return;
+        }
+
+        const objectUrl = URL.createObjectURL(file);
+        const img = new Image();
+
+        img.onload = () => {
+            if (img.naturalWidth <= 0 || img.naturalHeight <= 0) {
+                URL.revokeObjectURL(objectUrl);
+                resolve(file);
+                return;
+            }
+
+            const existing = document.getElementById('avatar-cropper-modal');
+            if (existing) existing.remove();
+
+            const modal = document.createElement('div');
+            modal.id = 'avatar-cropper-modal';
+            modal.className =
+                'fixed inset-0 z-[10000] bg-black/80 backdrop-blur-md flex items-center justify-center p-4 select-none animate-fade-in';
+
+            modal.innerHTML = `
+                <div class="bg-white dark:bg-gray-900 rounded-3xl shadow-2xl border border-gray-200 dark:border-gray-800 w-full max-w-[360px] overflow-hidden flex flex-col">
+                    <div class="px-5 py-4 flex items-center justify-between border-b border-gray-100 dark:border-gray-800">
+                        <h3 class="font-bold text-base text-gray-900 dark:text-white">Настройка аватара</h3>
+                        <button type="button" id="avatar-crop-cancel-top" class="w-8 h-8 rounded-full flex items-center justify-center text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                        </button>
+                    </div>
+                    <div class="p-5 flex flex-col items-center">
+                        <div id="avatar-crop-viewport" class="relative w-[270px] h-[270px] rounded-2xl overflow-hidden bg-gray-950 cursor-grab active:cursor-grabbing touch-none shadow-inner">
+                            <canvas id="avatar-crop-canvas" width="540" height="540" class="w-full h-full block pointer-events-none"></canvas>
+                        </div>
+                        <p class="text-[11px] text-gray-400 dark:text-gray-500 mt-2.5 text-center">Перемещайте фото и изменяйте масштаб</p>
+                        <div class="w-full mt-3 flex items-center gap-2.5 px-1">
+                            <button type="button" id="avatar-crop-zoom-out" class="w-7 h-7 rounded-full flex items-center justify-center text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors shrink-0" title="Уменьшить">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 12H4"/></svg>
+                            </button>
+                            <input id="avatar-crop-slider" type="range" min="1" max="4" step="0.01" value="1" class="flex-1 accent-blue-500 h-1.5 bg-gray-200 dark:bg-gray-700 rounded-lg cursor-pointer">
+                            <button type="button" id="avatar-crop-zoom-in" class="w-7 h-7 rounded-full flex items-center justify-center text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors shrink-0" title="Увеличить">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+                            </button>
+                            <button type="button" id="avatar-crop-rotate" class="w-8 h-8 rounded-full flex items-center justify-center text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors shrink-0 ml-0.5" title="Повернуть на 90°">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="px-5 py-3.5 bg-gray-50 dark:bg-gray-800/50 border-t border-gray-100 dark:border-gray-800 flex items-center justify-end gap-2.5">
+                        <button type="button" id="avatar-crop-cancel" class="px-4 py-2 rounded-xl text-sm font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-200/70 dark:hover:bg-gray-700/60 transition-colors">
+                            Отмена
+                        </button>
+                        <button type="button" id="avatar-crop-save" class="px-5 py-2 rounded-xl text-sm font-semibold bg-blue-500 hover:bg-blue-600 active:scale-95 text-white shadow-md shadow-blue-500/20 transition-all flex items-center gap-1.5">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"/></svg>
+                            Готово
+                        </button>
+                    </div>
+                </div>
+            `;
+
+            document.body.appendChild(modal);
+
+            const viewport = modal.querySelector('#avatar-crop-viewport') as HTMLElement;
+            const canvas = modal.querySelector('#avatar-crop-canvas') as HTMLCanvasElement;
+            const ctx = canvas.getContext('2d')!;
+            const slider = modal.querySelector('#avatar-crop-slider') as HTMLInputElement;
+
+            const C = 540; // Internal canvas size
+            const R = 224; // Circle radius (diameter 448 inside 540 canvas)
+            const D = R * 2;
+
+            let zoom = 1;
+            let offsetX = 0;
+            let offsetY = 0;
+            let rotationQuarterTurns = 0; // 0, 1, 2, 3
+
+            const getEffectiveDimensions = () => {
+                const swapped = rotationQuarterTurns % 2 === 1;
+                return {
+                    w: swapped ? img.naturalHeight : img.naturalWidth,
+                    h: swapped ? img.naturalWidth : img.naturalHeight
+                };
+            };
+
+            const clampOffsets = () => {
+                const { w, h } = getEffectiveDimensions();
+                const minScale = Math.max(D / w, D / h);
+                const scale = minScale * zoom;
+                const drawW = w * scale;
+                const drawH = h * scale;
+                const maxOffX = Math.max(0, (drawW - D) / 2);
+                const maxOffY = Math.max(0, (drawH - D) / 2);
+                offsetX = Math.max(-maxOffX, Math.min(maxOffX, offsetX));
+                offsetY = Math.max(-maxOffY, Math.min(maxOffY, offsetY));
+            };
+
+            const renderPreview = () => {
+                clampOffsets();
+                ctx.clearRect(0, 0, C, C);
+                ctx.fillStyle = '#090d16';
+                ctx.fillRect(0, 0, C, C);
+
+                const { w, h } = getEffectiveDimensions();
+                const minScale = Math.max(D / w, D / h);
+                const scale = minScale * zoom;
+
+                ctx.save();
+                ctx.translate(C / 2 + offsetX, C / 2 + offsetY);
+                ctx.rotate((rotationQuarterTurns * Math.PI) / 2);
+                ctx.scale(scale, scale);
+                ctx.drawImage(img, -img.naturalWidth / 2, -img.naturalHeight / 2);
+                ctx.restore();
+
+                // Darkened overlay outside the circular cutout (even-odd fill rule)
+                ctx.save();
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.58)';
+                ctx.beginPath();
+                ctx.rect(0, 0, C, C);
+                ctx.arc(C / 2, C / 2, R, 0, Math.PI * 2, true);
+                ctx.fill('evenodd');
+
+                // Subtle 3x3 rule-of-thirds grid & crisp circular border
+                ctx.strokeStyle = 'rgba(255, 255, 255, 0.85)';
+                ctx.lineWidth = 3;
+                ctx.beginPath();
+                ctx.arc(C / 2, C / 2, R, 0, Math.PI * 2);
+                ctx.stroke();
+                ctx.restore();
+            };
+
+            const setZoom = (newZoom: number) => {
+                const clamped = Math.max(1, Math.min(4, newZoom));
+                const ratio = clamped / zoom;
+                offsetX *= ratio;
+                offsetY *= ratio;
+                zoom = clamped;
+                slider.value = String(zoom);
+                renderPreview();
+            };
+
+            slider.addEventListener('input', () => {
+                setZoom(parseFloat(slider.value) || 1);
+            });
+
+            modal.querySelector('#avatar-crop-zoom-in')?.addEventListener('click', () => {
+                setZoom(zoom + 0.25);
+            });
+            modal.querySelector('#avatar-crop-zoom-out')?.addEventListener('click', () => {
+                setZoom(zoom - 0.25);
+            });
+            modal.querySelector('#avatar-crop-rotate')?.addEventListener('click', () => {
+                rotationQuarterTurns = (rotationQuarterTurns + 1) % 4;
+                const prevX = offsetX;
+                offsetX = -offsetY;
+                offsetY = prevX;
+                renderPreview();
+            });
+
+            // Mouse drag & wheel
+            let isDragging = false;
+            let lastX = 0;
+            let lastY = 0;
+            let pinchStartDist = 0;
+            let pinchStartZoom = 1;
+
+            const onMouseDown = (e: MouseEvent) => {
+                isDragging = true;
+                lastX = e.clientX;
+                lastY = e.clientY;
+            };
+            const onMouseMove = (e: MouseEvent) => {
+                if (!isDragging) return;
+                const rect = viewport.getBoundingClientRect();
+                const factor = rect.width > 0 ? C / rect.width : 2;
+                offsetX += (e.clientX - lastX) * factor;
+                offsetY += (e.clientY - lastY) * factor;
+                lastX = e.clientX;
+                lastY = e.clientY;
+                renderPreview();
+            };
+            const onMouseUp = () => {
+                isDragging = false;
+            };
+
+            viewport.addEventListener('mousedown', onMouseDown);
+            window.addEventListener('mousemove', onMouseMove);
+            window.addEventListener('mouseup', onMouseUp);
+
+            viewport.addEventListener(
+                'wheel',
+                (e: WheelEvent) => {
+                    e.preventDefault();
+                    const delta = e.deltaY < 0 ? 0.14 : -0.14;
+                    setZoom(zoom + delta);
+                },
+                { passive: false }
+            );
+
+            // Touch pan & two-finger pinch zoom
+            viewport.addEventListener(
+                'touchstart',
+                (e: TouchEvent) => {
+                    if (e.touches.length === 1) {
+                        isDragging = true;
+                        lastX = e.touches[0].clientX;
+                        lastY = e.touches[0].clientY;
+                    } else if (e.touches.length === 2) {
+                        isDragging = false;
+                        const dx = e.touches[0].clientX - e.touches[1].clientX;
+                        const dy = e.touches[0].clientY - e.touches[1].clientY;
+                        pinchStartDist = Math.hypot(dx, dy);
+                        pinchStartZoom = zoom;
+                    }
+                },
+                { passive: true }
+            );
+
+            viewport.addEventListener(
+                'touchmove',
+                (e: TouchEvent) => {
+                    if (e.cancelable) e.preventDefault();
+                    if (e.touches.length === 1 && isDragging) {
+                        const rect = viewport.getBoundingClientRect();
+                        const factor = rect.width > 0 ? C / rect.width : 2;
+                        offsetX += (e.touches[0].clientX - lastX) * factor;
+                        offsetY += (e.touches[0].clientY - lastY) * factor;
+                        lastX = e.touches[0].clientX;
+                        lastY = e.touches[0].clientY;
+                        renderPreview();
+                    } else if (e.touches.length === 2 && pinchStartDist > 0) {
+                        const dx = e.touches[0].clientX - e.touches[1].clientX;
+                        const dy = e.touches[0].clientY - e.touches[1].clientY;
+                        const dist = Math.hypot(dx, dy);
+                        setZoom(pinchStartZoom * (dist / pinchStartDist));
+                    }
+                },
+                { passive: false }
+            );
+
+            viewport.addEventListener('touchend', (e: TouchEvent) => {
+                if (e.touches.length === 1) {
+                    isDragging = true;
+                    lastX = e.touches[0].clientX;
+                    lastY = e.touches[0].clientY;
+                } else {
+                    isDragging = false;
+                }
+            });
+
+            const cleanupAndClose = (result: File | null) => {
+                window.removeEventListener('mousemove', onMouseMove);
+                window.removeEventListener('mouseup', onMouseUp);
+                URL.revokeObjectURL(objectUrl);
+                modal.remove();
+                resolve(result);
+            };
+
+            modal.querySelector('#avatar-crop-cancel')?.addEventListener('click', () => cleanupAndClose(null));
+            modal.querySelector('#avatar-crop-cancel-top')?.addEventListener('click', () => cleanupAndClose(null));
+
+            modal.querySelector('#avatar-crop-save')?.addEventListener('click', () => {
+                try {
+                    const outSize = 512;
+                    const outCanvas = document.createElement('canvas');
+                    outCanvas.width = outSize;
+                    outCanvas.height = outSize;
+                    const outCtx = outCanvas.getContext('2d')!;
+
+                    const { w, h } = getEffectiveDimensions();
+                    const minScale = Math.max(D / w, D / h);
+                    const scale = minScale * zoom;
+                    const exportFactor = outSize / D;
+
+                    outCtx.fillStyle = '#090d16';
+                    outCtx.fillRect(0, 0, outSize, outSize);
+
+                    outCtx.save();
+                    outCtx.translate(outSize / 2 + offsetX * exportFactor, outSize / 2 + offsetY * exportFactor);
+                    outCtx.rotate((rotationQuarterTurns * Math.PI) / 2);
+                    outCtx.scale(scale * exportFactor, scale * exportFactor);
+                    outCtx.drawImage(img, -img.naturalWidth / 2, -img.naturalHeight / 2);
+                    outCtx.restore();
+
+                    outCanvas.toBlob(
+                        (blob) => {
+                            if (!blob) {
+                                cleanupAndClose(file);
+                                return;
+                            }
+                            const baseName = (file.name || 'avatar').replace(/\.[^/.]+$/, '');
+                            const croppedFile = new File([blob], `${baseName}_avatar.jpg`, {
+                                type: blob.type || 'image/jpeg',
+                                lastModified: Date.now()
+                            });
+                            cleanupAndClose(croppedFile);
+                        },
+                        'image/jpeg',
+                        0.92
+                    );
+                } catch {
+                    cleanupAndClose(file);
+                }
+            });
+
+            renderPreview();
+        };
+
+        img.onerror = () => {
+            URL.revokeObjectURL(objectUrl);
+            resolve(file);
+        };
+
+        img.src = objectUrl;
+    });
+}
+(window as any).openAvatarCropperModal = openAvatarCropperModal;
