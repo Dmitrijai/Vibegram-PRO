@@ -973,21 +973,7 @@ export function rebuildGatewayList(envUrl: string) {
         });
     }
 
-    // 3. Primary Edge Gateway #1 (vibegram-edge-gw.vercel.app)
-    if (!list.some((g) => g.url === 'https://vibegram-edge-gw.vercel.app')) {
-        list.push({
-            id: 'edge-gw-1',
-            name: 'Основной Edge-шлюз #1 (EU/RU)',
-            url: 'https://vibegram-edge-gw.vercel.app',
-            type: 'edge-proxy',
-            latencyMs: null,
-            status: 'unknown',
-            lastChecked: 0,
-            supportsWebSocket: false
-        });
-    }
-
-    // 4. Direct Supabase Endpoint (Cloudflare ASN — distinct IP/provider from Vercel so if Vercel is throttled, Cloudflare succeeds immediately)
+    // 3. Direct Supabase Endpoint (Cloudflare ASN — ~220ms latency + native WebSockets, independent of Vercel)
     if (!list.some((g) => g.url === directUrl)) {
         list.push({
             id: 'direct-supabase',
@@ -998,6 +984,20 @@ export function rebuildGatewayList(envUrl: string) {
             status: 'unknown',
             lastChecked: 0,
             supportsWebSocket: true
+        });
+    }
+
+    // 4. Primary Edge Gateway #1 (vibegram-edge-gw.vercel.app)
+    if (!list.some((g) => g.url === 'https://vibegram-edge-gw.vercel.app')) {
+        list.push({
+            id: 'edge-gw-1',
+            name: 'Основной Edge-шлюз #1 (EU/RU)',
+            url: 'https://vibegram-edge-gw.vercel.app',
+            type: 'edge-proxy',
+            latencyMs: null,
+            status: 'unknown',
+            lastChecked: 0,
+            supportsWebSocket: false
         });
     }
 
@@ -1031,7 +1031,7 @@ export function rebuildGatewayList(envUrl: string) {
 
     // 7. Dedicated Edge Gateway from SUPABASE_URL env/secret (if distinct)
     if (envUrl && !isDeadGatewayUrl(envUrl) && envUrl !== directUrl && !envUrl.includes('.supabase.co') && !list.some((g) => g.url === envUrl)) {
-        list.unshift({
+        list.push({
             id: 'env-edge',
             name: 'Выделенный Edge-шлюз (Secret)',
             url: envUrl,
@@ -1105,14 +1105,14 @@ export function selectGatewayById(id: string) {
 export async function raceGateways(forceSwitchToFastest = true): Promise<GatewayNode | null> {
     if (networkState.gateways.length === 0) return null;
     const fetchFn = nativeWindowFetch || window.fetch.bind(window);
-    const probePath = '/rest/v1/profiles?select=id,username,display_name,avatar_url&limit=10';
+    const probePath = '/rest/v1/profiles?select=id,username,display_name,avatar_url&limit=5';
 
     await Promise.all(
         networkState.gateways.map(async (gw) => {
             gw.status = 'testing';
             notifyNetworkState();
             const ctrl = new AbortController();
-            const timer = setTimeout(() => ctrl.abort(), 5000);
+            const timer = setTimeout(() => ctrl.abort(), 5500);
             const start = performance.now();
             try {
                 const headers: Record<string, string> = {};
@@ -1125,17 +1125,18 @@ export async function raceGateways(forceSwitchToFastest = true): Promise<Gateway
                     headers,
                     signal: ctrl.signal
                 });
-                // Read full body during probe to detect mid-stream TCP RST
                 await res.arrayBuffer();
                 clearTimeout(timer);
                 if (!isGatewayErrorResponse(gw, res) && res.status < 500) {
                     gw.latencyMs = Math.max(1, Math.round(performance.now() - start));
                     gw.status = 'online';
                 } else {
+                    gw.latencyMs = null;
                     gw.status = 'blocked';
                 }
             } catch {
                 clearTimeout(timer);
+                gw.latencyMs = null;
                 gw.status = 'blocked';
             } finally {
                 gw.lastChecked = Date.now();
@@ -1145,24 +1146,16 @@ export async function raceGateways(forceSwitchToFastest = true): Promise<Gateway
 
     const onlineNodes = networkState.gateways
         .filter((g) => g.status === 'online' && g.latencyMs !== null)
-        .sort((a, b) => {
-            // Always prefer anti-block Edge Gateways over direct-supabase because RKN TSPU
-            // allows small probes to direct-supabase and then resets (>16KB) chat queries mid-stream!
-            if (a.type === 'direct' && b.type !== 'direct') return 1;
-            if (a.type !== 'direct' && b.type === 'direct') return -1;
-            return (a.latencyMs || 9999) - (b.latencyMs || 9999);
-        });
+        .sort((a, b) => (a.latencyMs || 9999) - (b.latencyMs || 9999));
 
     if (onlineNodes.length > 0 && forceSwitchToFastest) {
         const fastest = onlineNodes[0];
         networkState.activeGatewayId = fastest.id;
         networkState.activeGatewayUrl = fastest.url;
         networkState.lastPingMs = fastest.latencyMs;
-        if (fastest.type !== 'direct') {
-            try {
-                localStorage.setItem(LAST_WORKING_GATEWAY_KEY, fastest.url);
-            } catch {}
-        }
+        try {
+            localStorage.setItem(LAST_WORKING_GATEWAY_KEY, fastest.url);
+        } catch {}
     }
 
     notifyNetworkState();
@@ -1202,7 +1195,7 @@ async function fetchSingleAttempt(
     gw: GatewayNode,
     supabasePath: string,
     init: RequestInit,
-    timeoutMs: number,
+    headerTimeoutMs: number,
     attemptController?: AbortController
 ): Promise<{ gw: GatewayNode; response: Response; bodyBuffer: ArrayBuffer; elapsed: number }> {
     const targetUrl = `${gw.url}${supabasePath}`;
@@ -1217,9 +1210,9 @@ async function fetchSingleAttempt(
         init.signal.addEventListener('abort', onCallerAbort, { once: true });
     }
 
-    const timer = setTimeout(() => {
-        ctrl.abort(new DOMException('Gateway timeout', 'TimeoutError'));
-    }, timeoutMs);
+    let timer: any = setTimeout(() => {
+        ctrl.abort(new DOMException('Gateway connection timeout', 'TimeoutError'));
+    }, headerTimeoutMs);
 
     const start = performance.now();
     try {
@@ -1228,16 +1221,19 @@ async function fetchSingleAttempt(
             signal: ctrl.signal
         });
 
+        clearTimeout(timer);
+
         if (isGatewayErrorResponse(gw, response)) {
-            clearTimeout(timer);
             gw.status = 'blocked';
+            gw.latencyMs = null;
             throw new Error(`Gateway ${gw.id} HTTP ${response.status}`);
         }
 
-        // CRITICAL: Read the entire response body BEFORE clearing timer or declaring success!
-        // In Russia, RKN TSPU often lets HTTP 200 OK headers pass and injects TCP RST (ERR_CONNECTION_RESET)
-        // mid-body on payloads >16KB. Reading arrayBuffer() here catches mid-stream resets so smartSupabaseFetch
-        // immediately fails over to the next Edge Gateway and never returns a locked/broken Response stream!
+        // Once headers arrive, give up to 12 seconds for downloading the response body
+        timer = setTimeout(() => {
+            ctrl.abort(new DOMException('Gateway body timeout', 'TimeoutError'));
+        }, 12000);
+
         const bodyBuffer = await response.arrayBuffer();
         clearTimeout(timer);
 
@@ -1276,11 +1272,9 @@ function createGraceRefreshResponse(): Response | null {
 
 /**
  * Resilient Fetch Engine for Supabase:
- * - Routes Database/Auth queries across distinct ASNs (Vercel Edge + Cloudflare Direct Supabase)
- *   without opening duplicate parallel sockets to the same IP.
- * - Immediately deprioritizes any gateway that failed in the last 25 seconds so requests never stall on a dead node.
- * - Reads the full response body buffer per attempt so mid-stream TCP resets (ERR_CONNECTION_RESET 200 OK)
- *   are caught and transparently retried on the alternate provider.
+ * - Routes Database/Auth queries across distinct ASNs (Cloudflare Direct Supabase + Vercel Edge)
+ * - If a `.vercel.app` node resets/blocks, immediately switches to `direct-supabase` (and vice versa)
+ *   without wasting time trying other `.vercel.app` nodes on the same blocked subnet first.
  */
 export async function smartSupabaseFetch(input: RequestInfo | URL, init: RequestInit = {}): Promise<Response> {
     const rawUrl = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
@@ -1290,29 +1284,51 @@ export async function smartSupabaseFetch(input: RequestInfo | URL, init: Request
         return window.fetch(input, init);
     }
 
+    // Suppress non-essential HTTP broadcast fallback spam when WebSocket is disconnected
+    if (supabasePath.includes('/realtime/v1/api/broadcast')) {
+        return new Response(JSON.stringify({ status: 'ok' }), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' }
+        });
+    }
+
     const isTokenRefresh = supabasePath.includes('/auth/v1/token') && supabasePath.includes('grant_type=refresh_token');
     const now = Date.now();
 
     const currentActive = networkState.gateways.find((g) => g.id === networkState.activeGatewayId) || networkState.gateways[0];
     const otherGateways = networkState.gateways.filter((g) => g.id !== currentActive.id);
 
-    // Put healthy gateways ahead of gateways that failed within the last 25 seconds
+    // Ensure distinct provider family is placed second so if Vercel is blocked, Direct Supabase is tried immediately next (and vice versa)
+    const isActiveVercel = currentActive.url.includes('.vercel.app');
     const orderedCandidates = [currentActive, ...otherGateways].sort((a, b) => {
-        const aRecentlyBlocked = a.status === 'blocked' && now - a.lastChecked < 25000 ? 1 : 0;
-        const bRecentlyBlocked = b.status === 'blocked' && now - b.lastChecked < 25000 ? 1 : 0;
+        if (a.id === currentActive.id) return -1;
+        if (b.id === currentActive.id) return 1;
+        const aRecentlyBlocked = a.status === 'blocked' && now - a.lastChecked < 20000 ? 1 : 0;
+        const bRecentlyBlocked = b.status === 'blocked' && now - b.lastChecked < 20000 ? 1 : 0;
         if (aRecentlyBlocked !== bRecentlyBlocked) return aRecentlyBlocked - bRecentlyBlocked;
-        return 0;
+        const aDiffProvider = a.url.includes('.vercel.app') !== isActiveVercel ? 0 : 1;
+        const bDiffProvider = b.url.includes('.vercel.app') !== isActiveVercel ? 0 : 1;
+        return aDiffProvider - bDiffProvider;
     });
 
     let lastError: any = null;
+    let vercelSubnetFailedInThisRequest = false;
 
     for (let i = 0; i < orderedCandidates.length; i++) {
         const gw = orderedCandidates[i];
-        // Fast 4.0s timeout on initial candidates so stalled OPTIONS preflights fail over immediately
-        const attemptTimeoutMs = i === 0 ? 4000 : 5500;
+        // If one .vercel.app node already failed with a connection reset in this call and Direct Supabase hasn't been tried yet, skip redundant .vercel.app nodes
+        if (
+            vercelSubnetFailedInThisRequest &&
+            gw.url.includes('.vercel.app') &&
+            orderedCandidates.slice(i + 1).some((c) => !c.url.includes('.vercel.app'))
+        ) {
+            continue;
+        }
+
+        const attemptHeaderTimeoutMs = i === 0 ? 4500 : 6000;
 
         try {
-            const winner = await fetchSingleAttempt(gw, supabasePath, init, attemptTimeoutMs);
+            const winner = await fetchSingleAttempt(gw, supabasePath, init, attemptHeaderTimeoutMs);
 
             winner.gw.latencyMs = winner.elapsed;
             winner.gw.status = 'online';
@@ -1372,8 +1388,35 @@ export async function smartSupabaseFetch(input: RequestInfo | URL, init: Request
                 throw err;
             }
             gw.status = 'blocked';
+            gw.latencyMs = null;
             gw.lastChecked = Date.now();
+            if (gw.url.includes('.vercel.app')) {
+                vercelSubnetFailedInThisRequest = true;
+            }
         }
+    }
+
+    // Final safety retry on Direct Supabase with an 8s timeout in case of a brief Wi-Fi/ISP hiccup
+    const directGw = networkState.gateways.find((g) => g.type === 'direct');
+    if (directGw && !init.signal?.aborted) {
+        try {
+            const winner = await fetchSingleAttempt(directGw, supabasePath, init, 8000);
+            winner.gw.latencyMs = winner.elapsed;
+            winner.gw.status = 'online';
+            winner.gw.lastChecked = Date.now();
+            networkState.lastPingMs = winner.elapsed;
+            networkState.activeGatewayId = winner.gw.id;
+            networkState.activeGatewayUrl = winner.gw.url;
+            notifyNetworkState();
+            const safeHeaders = new Headers(winner.response.headers);
+            safeHeaders.delete('content-encoding');
+            safeHeaders.delete('content-length');
+            return new Response(winner.bodyBuffer, {
+                status: winner.response.status,
+                statusText: winner.response.statusText,
+                headers: safeHeaders
+            });
+        } catch {}
     }
 
     if (isTokenRefresh) {

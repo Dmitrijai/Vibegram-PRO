@@ -835,12 +835,19 @@ export async function uploadToCloudinary(file: File | Blob, isAvatar = false, ab
                 return fd;
             };
             
-            const { getActiveMediaGatewayBaseUrl, MEDIA_GATEWAY_URLS, rewriteMediaUrl } = await import('./network');
-            const activeGw = getActiveMediaGatewayBaseUrl();
-            const candidateGateways = Array.from(new Set([activeGw, ...MEDIA_GATEWAY_URLS])).filter(Boolean);
+            const { MEDIA_GATEWAY_URLS, networkState, rewriteMediaUrl } = await import('./network');
+            const onlineGateways = MEDIA_GATEWAY_URLS.filter((gwUrl) => {
+                const node = networkState.gateways.find((g) => g.url === gwUrl);
+                return !node || node.status !== 'blocked';
+            });
 
-            const uploadViaGateway = async (gw: string) => {
-                const res = await fetch(`${gw.replace(/\/$/, '')}/cloudinary-api/v1_1/${cloudName}/auto/upload`, {
+            const uploadEndpoints = [
+                `https://api.cloudinary.com/v1_1/${cloudName}/auto/upload`,
+                ...onlineGateways.map((gw) => `${gw.replace(/\/$/, '')}/cloudinary-api/v1_1/${cloudName}/auto/upload`)
+            ];
+
+            const uploadViaEndpoint = async (endpointUrl: string) => {
+                const res = await fetch(endpointUrl, {
                     method: 'POST',
                     body: buildFormData(),
                     signal: abortSignal
@@ -850,27 +857,26 @@ export async function uploadToCloudinary(file: File | Blob, isAvatar = false, ab
             };
 
             let data: any = null;
-            // For small files (< 2.5MB: photos, avatars, voice notes, video circles), race the top 2 gateways in parallel for fastest upload!
-            if (optimizedFile.size < 2.5 * 1024 * 1024 && candidateGateways.length >= 2) {
+            if (optimizedFile.size < 2.5 * 1024 * 1024 && uploadEndpoints.length >= 2) {
                 try {
-                    data = await Promise.any(candidateGateways.slice(0, 2).map(gw => uploadViaGateway(gw)));
+                    data = await Promise.any(uploadEndpoints.slice(0, 2).map((ep) => uploadViaEndpoint(ep)));
                 } catch {
-                    // Fallback to remaining gateways below
+                    // Fallback to sequential loop below
                 }
             }
 
             if (!data) {
                 let lastGwErr: any = null;
-                for (const gw of candidateGateways) {
+                for (const ep of uploadEndpoints) {
                     try {
-                        data = await uploadViaGateway(gw);
+                        data = await uploadViaEndpoint(ep);
                         break;
                     } catch (e: any) {
                         if (e?.name === 'AbortError') throw e;
                         lastGwErr = e;
                     }
                 }
-                if (!data) throw lastGwErr || new Error('All Cloudinary upload gateways failed');
+                if (!data) throw lastGwErr || new Error('All Cloudinary upload endpoints failed');
             }
 
             let url = data.secure_url;
@@ -890,7 +896,7 @@ export async function uploadToCloudinary(file: File | Blob, isAvatar = false, ab
         }
     }
     
-    // Fallback to Supabase Storage through Edge Gateway if Cloudinary is unavailable
+    // Fallback to Supabase Storage through active working gateway if Cloudinary is unavailable
     try {
         let bucket = 'vibegram_media';
         if (targetBucket) {
@@ -930,19 +936,56 @@ export async function uploadToCloudinary(file: File | Blob, isAvatar = false, ab
 (window as any).handleMediaError = function(el: HTMLElement, url: string) {
     if (!el || !url) return;
     let retries = parseInt(el.getAttribute('data-retries') || '0', 10);
-    if (retries < 4) {
+    if (retries < 3) {
         el.setAttribute('data-retries', (retries + 1).toString());
         const isVideo = el.tagName === 'VIDEO' || url.includes('/video/upload/');
 
-        // Step 1: Try alternate working Edge Gateway first (vibegram-edge-gw / vibegram-ru-node)
+        let rawCloudinaryUrl = url;
+        const cloudIdx = url.indexOf('/cloudinary/');
+        if (cloudIdx !== -1) {
+            rawCloudinaryUrl = 'https://res.cloudinary.com' + url.substring(cloudIdx + '/cloudinary'.length);
+        }
+
+        // Step 1 (retry 0): For images, immediately fail over to wsrv.nl global CDN; for videos, ensure direct res.cloudinary.com or blob
         if (retries === 0) {
-            import('./network').then(({ rewriteMediaUrl }) => {
-                const currentSrc = (el as HTMLMediaElement | HTMLImageElement).src || url;
-                const nextGw = currentSrc.includes('vibegram-edge-gw.vercel.app')
-                    ? 'https://vibegram-ru-node.vercel.app'
-                    : 'https://vibegram-edge-gw.vercel.app';
-                const fallbackUrl = rewriteMediaUrl(url, nextGw, true);
+            if (!isVideo && el.tagName === 'IMG' && rawCloudinaryUrl.includes('res.cloudinary.com/')) {
+                el.setAttribute('data-direct-cdn', 'true');
+                (el as HTMLImageElement).src = `https://wsrv.nl/?url=${encodeURIComponent(rawCloudinaryUrl)}&output=webp&q=80`;
+                return;
+            }
+            if (el.tagName === 'VIDEO' && rawCloudinaryUrl.startsWith('https://res.cloudinary.com/') && (el as HTMLVideoElement).src !== rawCloudinaryUrl) {
+                const vid = el as HTMLVideoElement;
+                const savedTime = vid.currentTime || 0;
+                const wasPlaying = !vid.paused;
+                vid.setAttribute('data-direct-cdn', 'true');
+                vid.src = rawCloudinaryUrl;
+                vid.load();
+                if (savedTime > 0) {
+                    vid.addEventListener('loadedmetadata', () => {
+                        try { vid.currentTime = savedTime; } catch {}
+                    }, { once: true });
+                }
+                if (wasPlaying || vid.hasAttribute('data-autoplay')) {
+                    vid.play().catch(() => {});
+                }
+                return;
+            }
+        }
+
+        // Step 2 (retry 1): Try online Edge Gateway if available
+        if (retries === 1) {
+            import('./network').then(({ rewriteMediaUrl, networkState, MEDIA_GATEWAY_URLS }) => {
+                const onlineGw = MEDIA_GATEWAY_URLS.find((gwUrl) => {
+                    const node = networkState.gateways.find((g) => g.url === gwUrl);
+                    return node && node.status === 'online';
+                });
+                if (!onlineGw) {
+                    (window as any).handleMediaError(el, url);
+                    return;
+                }
+                const fallbackUrl = rewriteMediaUrl(url, onlineGw, true);
                 const bustUrl = fallbackUrl + (fallbackUrl.includes('?') ? '&' : '?') + 'retry=1';
+                el.setAttribute('data-direct-cdn', 'true');
                 if (el.tagName === 'IMG') {
                     (el as HTMLImageElement).src = bustUrl;
                 } else if (el.tagName === 'VIDEO') {
@@ -964,36 +1007,7 @@ export async function uploadToCloudinary(file: File | Blob, isAvatar = false, ab
             return;
         }
 
-        // Step 2: For images on retry 1, use wsrv.nl global WebP proxy; for videos, try direct res.cloudinary.com CDN
-        if (retries === 1) {
-            let rawCloudinaryUrl = url;
-            const cloudIdx = url.indexOf('/cloudinary/');
-            if (cloudIdx !== -1) {
-                rawCloudinaryUrl = 'https://res.cloudinary.com' + url.substring(cloudIdx + '/cloudinary'.length);
-            }
-            if (!isVideo && el.tagName === 'IMG') {
-                (el as HTMLImageElement).src = `https://wsrv.nl/?url=${encodeURIComponent(rawCloudinaryUrl)}&output=webp&q=80`;
-                return;
-            } else if (el.tagName === 'VIDEO' && rawCloudinaryUrl.startsWith('https://res.cloudinary.com/')) {
-                const vid = el as HTMLVideoElement;
-                const savedTime = vid.currentTime || 0;
-                const wasPlaying = !vid.paused;
-                vid.setAttribute('data-direct-cdn', 'true');
-                vid.src = rawCloudinaryUrl;
-                vid.load();
-                if (savedTime > 0) {
-                    vid.addEventListener('loadedmetadata', () => {
-                        try { vid.currentTime = savedTime; } catch {}
-                    }, { once: true });
-                }
-                if (wasPlaying || vid.hasAttribute('data-autoplay')) {
-                    vid.play().catch(() => {});
-                }
-                return;
-            }
-        }
-
-        // Step 3: Resilient Chunked Range / Blob Fetch + IndexedDB Cache
+        // Step 3 (retry 2): Resilient Chunked Range / Blob Fetch + IndexedDB Cache
         getOrFetchMediaObjectUrl(url)
             .then((blobObjUrl) => {
                 if (!blobObjUrl) return;
@@ -1017,10 +1031,16 @@ export async function uploadToCloudinary(file: File | Blob, isAvatar = false, ab
                 }
             })
             .catch(() => {
-                el.setAttribute('data-retries', '4');
+                el.setAttribute('data-retries', '3');
                 (window as any).handleMediaError(el, url);
             });
     } else {
+        // Check if this is an avatar image inside a small circular container
+        if (el.tagName === 'IMG' && (el.classList.contains('rounded-full') || el.closest('#chats-list, #chat-header-avatar, #my-avatar'))) {
+            el.style.display = 'none';
+            return;
+        }
+
         const isVideo = el.tagName === 'VIDEO';
         const errorText = isVideo ? 'Нажмите, чтобы загрузить видео' : 'Нажмите, чтобы загрузить медиа';
         const aspectClsMatcher = Array.from(el.classList).find(c => c.startsWith('aspect-'));

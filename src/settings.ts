@@ -348,8 +348,10 @@ export function openSettings(modeOrSkip: 'full' | 'profile' | boolean = 'full', 
                     <div id="settings-gateways-list" class="space-y-2">
                         ${networkState.gateways.map((gw) => {
                             const isActive = gw.id === networkState.activeGatewayId;
-                            const statusDot = gw.status === 'online' ? 'bg-emerald-500' : gw.status === 'blocked' ? 'bg-red-500' : 'bg-blue-400';
-                            const pingText = gw.latencyMs !== null ? `${gw.latencyMs} мс` : gw.status === 'blocked' ? 'недоступен' : 'готов';
+                            const isBlocked = gw.status === 'blocked';
+                            const isOnline = gw.status === 'online' || (gw.latencyMs !== null && !isBlocked);
+                            const statusDot = isOnline ? 'bg-emerald-500' : isBlocked ? 'bg-red-500' : 'bg-blue-400';
+                            const pingText = isBlocked ? 'недоступен' : gw.latencyMs !== null ? `${gw.latencyMs} мс` : 'готов';
                             return `
                                 <button onclick="window.selectNetworkGateway('${gw.id}')" class="w-full text-left p-2.5 rounded-xl border ${isActive ? 'border-blue-500 bg-blue-50/50 dark:bg-blue-900/20' : 'border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/40'} transition flex items-center justify-between gap-2">
                                     <div class="flex items-center gap-2.5 min-w-0">
@@ -359,7 +361,7 @@ export function openSettings(modeOrSkip: 'full' | 'profile' | boolean = 'full', 
                                             <div class="text-[10px] text-gray-400 font-mono truncate">${escapeHtml(gw.url)}</div>
                                         </div>
                                     </div>
-                                    <span class="text-xs font-mono tabular-nums shrink-0 ${gw.status === 'blocked' ? 'text-red-500' : 'text-gray-600 dark:text-gray-300'}">${pingText}</span>
+                                    <span class="text-xs font-mono tabular-nums shrink-0 ${isBlocked ? 'text-red-500' : isOnline ? 'text-emerald-600 dark:text-emerald-400 font-semibold' : 'text-gray-600 dark:text-gray-300'}">${pingText}</span>
                                 </button>
                             `;
                         }).join('')}

@@ -10,7 +10,7 @@ import {
   getCachedActiveChatMeta,
   getDraft
 } from "./cache";
-import { setSyncingState, networkState } from "./network";
+import { setSyncingState, networkState, rewriteMediaUrl } from "./network";
 
 export let cachedSavedMessagesChat: any = null;
 let loadChatsInFlightPromise: Promise<void> | null = null;
@@ -471,8 +471,9 @@ export function renderChatsDataToDOM(chats: any[], isFromCache = false) {
       if (isSavedMessages) {
         avatarHtml = `<div class="w-full h-full bg-gradient-to-br from-blue-400 to-indigo-500 rounded-full flex items-center justify-center text-white font-bold text-lg shadow-sm">И</div>`;
       } else {
-        avatarHtml = avatarUrl
-          ? `<div class="w-full h-full rounded-full" style="background-image: url('${avatarUrl}'); background-size: cover; background-position: center;"></div>`
+        const cleanAvatarUrl = avatarUrl ? rewriteMediaUrl(avatarUrl) : "";
+        avatarHtml = cleanAvatarUrl
+          ? `<div class="w-full h-full bg-gradient-to-br ${isGroup ? "from-emerald-400 to-teal-500" : "from-blue-400 to-indigo-500"} rounded-full flex items-center justify-center text-white font-bold text-lg shadow-sm relative overflow-hidden">${firstLetter}<img src="${cleanAvatarUrl}" onerror="window.handleMediaError(this, '${cleanAvatarUrl}')" class="w-full h-full object-cover rounded-full absolute inset-0" loading="lazy" alt=""></div>`
           : `<div class="w-full h-full bg-gradient-to-br ${isGroup ? "from-emerald-400 to-teal-500" : "from-blue-400 to-indigo-500"} rounded-full flex items-center justify-center text-white font-bold text-lg shadow-sm">${firstLetter}</div>`;
       }
 
@@ -1217,7 +1218,8 @@ export async function openChat(
     avatar.innerHTML = `<div class="w-full h-full bg-gradient-to-br from-blue-400 to-indigo-500 rounded-full flex items-center justify-center text-white font-bold text-lg shadow-sm">И</div>`;
     avatar.className = `w-10 h-10 mr-3 shadow-sm relative rounded-full shrink-0 flex items-center justify-center text-white`;
   } else if (avatarUrl) {
-    avatar.innerHTML = `<div class="w-full h-full rounded-full shadow-sm relative shrink-0" style="background-image: url('${avatarUrl}'); background-size: cover; background-position: center;"></div>`;
+    const cleanHeaderAvatar = rewriteMediaUrl(avatarUrl);
+    avatar.innerHTML = `<div class="w-full h-full bg-gradient-to-br ${isGroup ? "from-emerald-400 to-teal-500" : "from-blue-400 to-indigo-500"} rounded-full shadow-sm relative shrink-0 overflow-hidden flex items-center justify-center text-white font-bold">${firstLetter}<img src="${cleanHeaderAvatar}" onerror="window.handleMediaError(this, '${cleanHeaderAvatar}')" class="w-full h-full object-cover rounded-full absolute inset-0" alt=""></div>`;
     avatar.className = `w-10 h-10 mr-3 shadow-sm relative rounded-full shrink-0 flex items-center justify-center text-white`;
   } else {
     avatar.innerHTML = `<div class="w-full h-full rounded-full overflow-hidden relative flex items-center justify-center shadow-sm">${firstLetter}</div>`;
