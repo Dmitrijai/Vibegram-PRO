@@ -886,12 +886,8 @@ export function initNetworkManager(envSupabaseUrl: string, anonKey: string, back
 
     try {
         const lastWorking = localStorage.getItem(LAST_WORKING_GATEWAY_KEY) || '';
-        if (isDeadGatewayUrl(lastWorking) || lastWorking.includes('.supabase.co')) {
+        if (isDeadGatewayUrl(lastWorking)) {
             localStorage.removeItem(LAST_WORKING_GATEWAY_KEY);
-        }
-        const prefId = localStorage.getItem(PREFERRED_GATEWAY_KEY) || '';
-        if (prefId === 'direct-supabase') {
-            localStorage.removeItem(PREFERRED_GATEWAY_KEY);
         }
     } catch (e) {}
 
@@ -945,7 +941,21 @@ export function rebuildGatewayList(envUrl: string) {
         });
     }
 
-    // 4. Secondary Edge Gateway #2 (vibegram-ru-node.vercel.app)
+    // 4. Direct Supabase Endpoint (Cloudflare ASN — distinct IP/provider from Vercel so if Vercel is throttled, Cloudflare succeeds immediately)
+    if (!list.some((g) => g.url === directUrl)) {
+        list.push({
+            id: 'direct-supabase',
+            name: 'Прямое соединение Supabase',
+            url: directUrl,
+            type: 'direct',
+            latencyMs: null,
+            status: 'unknown',
+            lastChecked: 0,
+            supportsWebSocket: true
+        });
+    }
+
+    // 5. Secondary Edge Gateway #2 (vibegram-ru-node.vercel.app)
     if (!list.some((g) => g.url === 'https://vibegram-ru-node.vercel.app')) {
         list.push({
             id: 'edge-gw-2',
@@ -959,7 +969,7 @@ export function rebuildGatewayList(envUrl: string) {
         });
     }
 
-    // 5. Tertiary Edge Gateway #3 (vibegram-ai-gw.vercel.app)
+    // 6. Tertiary Edge Gateway #3 (vibegram-ai-gw.vercel.app)
     if (!list.some((g) => g.url === 'https://vibegram-ai-gw.vercel.app')) {
         list.push({
             id: 'edge-gw-3',
@@ -973,7 +983,7 @@ export function rebuildGatewayList(envUrl: string) {
         });
     }
 
-    // 6. Dedicated Edge Gateway from SUPABASE_URL env/secret (if distinct)
+    // 7. Dedicated Edge Gateway from SUPABASE_URL env/secret (if distinct)
     if (envUrl && !isDeadGatewayUrl(envUrl) && envUrl !== directUrl && !envUrl.includes('.supabase.co') && !list.some((g) => g.url === envUrl)) {
         list.unshift({
             id: 'env-edge',
@@ -987,7 +997,7 @@ export function rebuildGatewayList(envUrl: string) {
         });
     }
 
-    // 7. Backup Edge Gateway from SUPABASE_BACKUP_URL env/secret
+    // 8. Backup Edge Gateway from SUPABASE_BACKUP_URL env/secret
     if (
         configuredBackupUrl &&
         !isDeadGatewayUrl(configuredBackupUrl) &&
@@ -1007,20 +1017,6 @@ export function rebuildGatewayList(envUrl: string) {
         });
     }
 
-    // 8. Direct Supabase Endpoint (Emergency last-resort fallback ONLY if all Edge Gateways fail)
-    if (!list.some((g) => g.url === directUrl)) {
-        list.push({
-            id: 'direct-supabase',
-            name: 'Прямое соединение Supabase',
-            url: directUrl,
-            type: 'direct',
-            latencyMs: null,
-            status: 'unknown',
-            lastChecked: 0,
-            supportsWebSocket: true
-        });
-    }
-
     for (const item of list) {
         const prev = networkState.gateways.find((p) => p.url === item.url);
         if (prev) {
@@ -1037,12 +1033,11 @@ export function rebuildGatewayList(envUrl: string) {
         lastWorkingUrl = localStorage.getItem(LAST_WORKING_GATEWAY_KEY) || '';
     } catch (e) {}
 
-    // Never auto-boot on direct-supabase because RKN TSPU resets large payloads mid-stream (ERR_CONNECTION_RESET 200 OK)
     const byLastWorking =
-        lastWorkingUrl && lastWorkingUrl !== directUrl && !lastWorkingUrl.includes('.supabase.co') && !isDeadGatewayUrl(lastWorkingUrl)
+        lastWorkingUrl && !isDeadGatewayUrl(lastWorkingUrl)
             ? list.find((g) => g.url === lastWorkingUrl)
             : undefined;
-    const chosen = (customUrl ? list.find((g) => g.id === 'custom') : undefined) || byLastWorking || list.find((g) => g.type !== 'direct') || list[0];
+    const chosen = (customUrl ? list.find((g) => g.id === 'custom') : undefined) || byLastWorking || list[0];
 
     if (chosen) {
         networkState.activeGatewayId = chosen.id;
@@ -1055,11 +1050,9 @@ export function selectGatewayById(id: string) {
     if (!found) return;
     networkState.activeGatewayId = found.id;
     networkState.activeGatewayUrl = found.url;
-    if (found.type !== 'direct') {
-        try {
-            localStorage.setItem(LAST_WORKING_GATEWAY_KEY, found.url);
-        } catch (e) {}
-    }
+    try {
+        localStorage.setItem(LAST_WORKING_GATEWAY_KEY, found.url);
+    } catch (e) {}
     notifyNetworkState();
 }
 
@@ -1237,10 +1230,11 @@ function createGraceRefreshResponse(): Response | null {
 
 /**
  * Resilient Fetch Engine for Supabase:
- * - Routes Database/Auth queries through our multi-node Anti-Block Gateways with automatic failover.
- * - Launches a hedged backup socket on the next Edge Gateway after 1.5s if the primary socket stalls.
- * - Reads the full response body buffer per attempt so mid-stream TSPU TCP resets (ERR_CONNECTION_RESET 200 OK)
- *   are caught and transparently retried on the next Edge Gateway without ever locking the Response stream.
+ * - Routes Database/Auth queries across distinct ASNs (Vercel Edge + Cloudflare Direct Supabase)
+ *   without opening duplicate parallel sockets to the same IP.
+ * - Immediately deprioritizes any gateway that failed in the last 25 seconds so requests never stall on a dead node.
+ * - Reads the full response body buffer per attempt so mid-stream TCP resets (ERR_CONNECTION_RESET 200 OK)
+ *   are caught and transparently retried on the alternate provider.
  */
 export async function smartSupabaseFetch(input: RequestInfo | URL, init: RequestInit = {}): Promise<Response> {
     const rawUrl = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
@@ -1250,91 +1244,36 @@ export async function smartSupabaseFetch(input: RequestInfo | URL, init: Request
         return window.fetch(input, init);
     }
 
-    const method = (init.method || 'GET').toUpperCase();
     const isTokenRefresh = supabasePath.includes('/auth/v1/token') && supabasePath.includes('grant_type=refresh_token');
-    const isHedgeable = method === 'GET' || method === 'HEAD' || method === 'OPTIONS';
+    const now = Date.now();
 
-    // Always place anti-block Edge Gateways ahead of direct-supabase
-    const currentActive = networkState.gateways.find((g) => g.id === networkState.activeGatewayId);
-    const activeGw =
-        currentActive && currentActive.type !== 'direct'
-            ? currentActive
-            : networkState.gateways.find((g) => g.type !== 'direct') || networkState.gateways[0];
-    const otherGateways = networkState.gateways
-        .filter((g) => g.id !== activeGw.id)
-        .sort((a, b) => {
-            if (a.type === 'direct' && b.type !== 'direct') return 1;
-            if (a.type !== 'direct' && b.type === 'direct') return -1;
-            return 0;
-        });
+    const currentActive = networkState.gateways.find((g) => g.id === networkState.activeGatewayId) || networkState.gateways[0];
+    const otherGateways = networkState.gateways.filter((g) => g.id !== currentActive.id);
 
-    const sequence: GatewayNode[] = [activeGw, ...otherGateways];
+    // Put healthy gateways ahead of gateways that failed within the last 25 seconds
+    const orderedCandidates = [currentActive, ...otherGateways].sort((a, b) => {
+        const aRecentlyBlocked = a.status === 'blocked' && now - a.lastChecked < 25000 ? 1 : 0;
+        const bRecentlyBlocked = b.status === 'blocked' && now - b.lastChecked < 25000 ? 1 : 0;
+        if (aRecentlyBlocked !== bRecentlyBlocked) return aRecentlyBlocked - bRecentlyBlocked;
+        return 0;
+    });
+
     let lastError: any = null;
 
-    for (let i = 0; i < sequence.length; i++) {
-        const gw = sequence[i];
-        const nextGw = sequence[(i + 1) % sequence.length];
+    for (let i = 0; i < orderedCandidates.length; i++) {
+        const gw = orderedCandidates[i];
+        // Fast 4.0s timeout on initial candidates so stalled OPTIONS preflights fail over immediately
+        const attemptTimeoutMs = i === 0 ? 4000 : 5500;
 
         try {
-            let winner: { gw: GatewayNode; response: Response; bodyBuffer: ArrayBuffer; elapsed: number };
-
-            if (isHedgeable && nextGw && nextGw.id !== gw.id && nextGw.type !== 'direct') {
-                const ctrl1 = new AbortController();
-                const ctrl2 = new AbortController();
-                let hedgeStarted = false;
-
-                winner = await new Promise((resolve, reject) => {
-                    let settled = false;
-                    let pendingCount = 1;
-                    let hedgeTimer: any = null;
-
-                    const onSuccess = (res: { gw: GatewayNode; response: Response; bodyBuffer: ArrayBuffer; elapsed: number }, which: 1 | 2) => {
-                        if (settled) {
-                            if (which === 1) ctrl1.abort();
-                            else ctrl2.abort();
-                            return;
-                        }
-                        settled = true;
-                        if (hedgeTimer) clearTimeout(hedgeTimer);
-                        if (which === 1 && hedgeStarted) {
-                            ctrl2.abort();
-                        } else if (which === 2) {
-                            ctrl1.abort();
-                        }
-                        resolve(res);
-                    };
-
-                    const onError = (err: any) => {
-                        pendingCount--;
-                        if (!settled && pendingCount <= 0) {
-                            if (hedgeTimer) clearTimeout(hedgeTimer);
-                            reject(err);
-                        }
-                    };
-
-                    fetchSingleAttempt(gw, supabasePath, init, 10000, ctrl1)
-                        .then((res) => onSuccess(res, 1))
-                        .catch(onError);
-
-                    hedgeTimer = setTimeout(() => {
-                        if (settled || init.signal?.aborted) return;
-                        hedgeStarted = true;
-                        pendingCount++;
-                        fetchSingleAttempt(nextGw, supabasePath, init, 10000, ctrl2)
-                            .then((res) => onSuccess(res, 2))
-                            .catch(onError);
-                    }, 1500);
-                });
-            } else {
-                winner = await fetchSingleAttempt(gw, supabasePath, init, 10000);
-            }
+            const winner = await fetchSingleAttempt(gw, supabasePath, init, attemptTimeoutMs);
 
             winner.gw.latencyMs = winner.elapsed;
             winner.gw.status = 'online';
             winner.gw.lastChecked = Date.now();
             networkState.lastPingMs = winner.elapsed;
 
-            if (networkState.activeGatewayId !== winner.gw.id && winner.gw.type !== 'direct') {
+            if (networkState.activeGatewayId !== winner.gw.id) {
                 networkState.activeGatewayId = winner.gw.id;
                 networkState.activeGatewayUrl = winner.gw.url;
                 try {

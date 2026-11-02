@@ -272,7 +272,6 @@ if (!idToken && !hashError) {
     // Hydrate UI in 0ms from local snapshot if user was previously logged in
     if (logic.hydrateFromCacheOnBoot()) {
         setupRealtime();
-        logic.loadChats();
     }
 }
 
@@ -345,17 +344,17 @@ function startHybridRealtimeSync() {
         });
     }, 1600);
 
-    // Chat list sync: runs every 4.8s when WebSocket is blocked by TSPU
+    // Chat list sync: runs every 9s when WebSocket is blocked by TSPU
     hybridChatsTimer = setInterval(() => {
         if (document.hidden || !state.currentUser?.id) return;
         import('./network').then(({ networkState }) => {
-            if (!networkState.realtimeConnected) {
+            if (!networkState.realtimeConnected && !networkState.isSyncing) {
                 if ((window as any).logic?.loadChats) {
-                    (window as any).logic.loadChats(1);
+                    (window as any).logic.loadChats(0);
                 }
             }
         });
-    }, 4800);
+    }, 9000);
 }
 
 function stopHybridRealtimeSync() {

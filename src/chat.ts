@@ -13,7 +13,39 @@ import {
 import { setSyncingState, networkState } from "./network";
 
 export let cachedSavedMessagesChat: any = null;
-let isLoadChatsInFlight = false;
+let loadChatsInFlightPromise: Promise<void> | null = null;
+
+function processPendingJoinRequestsFromChats(chats: any[]) {
+  if (!state.currentUser?.id || !Array.isArray(chats)) return;
+  const pendingMembers: any[] = [];
+  for (const chat of chats) {
+    if (chat.type !== "group" && chat.type !== "channel") continue;
+    const members = Array.isArray(chat.chat_members) ? chat.chat_members : [];
+    const myMember = members.find((m: any) => m.user_id === state.currentUser.id);
+    if (!myMember || (myMember.role !== "creator" && myMember.role !== "admin")) continue;
+    for (const m of members) {
+      if (m.role === "pending") {
+        pendingMembers.push({
+          ...m,
+          chat_id: chat.id,
+          chats: { title: chat.title || "Группа" }
+        });
+      }
+    }
+  }
+  import("./group")
+    .then((m) => {
+      if (pendingMembers.length > 0) {
+        if (!(window as any).hasDismissedGlobalPendingModal && m.showGlobalPendingModal) {
+          m.showGlobalPendingModal(pendingMembers);
+        }
+      } else {
+        const modal = document.getElementById("global-pending-modal");
+        if (modal) modal.remove();
+      }
+    })
+    .catch(() => {});
+}
 
 export function renderCachedChatsImmediately(): boolean {
   const list = document.getElementById("chats-list");
@@ -52,184 +84,190 @@ export function restoreActiveChatFromCache(): boolean {
   return true;
 }
 
-export async function loadChats(retriesLeft = 2) {
+export async function loadChats(retriesLeft = 1): Promise<void> {
   if (!state.currentUser?.id) return;
-  if (isLoadChatsInFlight && retriesLeft === 2) return;
-  isLoadChatsInFlight = true;
+  if (loadChatsInFlightPromise) {
+    return loadChatsInFlightPromise;
+  }
 
-  // Render cached snapshot in 0ms if sidebar is currently empty
-  renderCachedChatsImmediately();
-  setSyncingState(true);
+  const runLoad = async (remainingRetries: number): Promise<void> => {
+    // Render cached snapshot in 0ms if sidebar is currently empty
+    renderCachedChatsImmediately();
+    setSyncingState(true);
 
-  try {
-    import("./group")
-      .then((m) => {
-        if (m.checkGlobalPendingRequests) m.checkGlobalPendingRequests();
-      })
-      .catch((err) =>
-        console.error("Error loading group for pending checks:", err),
-      );
+    try {
+      const { data: members, error: membersError } = await supabase
+        .from("chat_members")
+        .select("chat_id")
+        .eq("user_id", state.currentUser.id)
+        .neq("role", "pending");
+      if (membersError) throw membersError;
 
-    const { data: members, error: membersError } = await supabase
-      .from("chat_members")
-      .select("chat_id")
-      .eq("user_id", state.currentUser.id)
-      .neq("role", "pending");
-    if (membersError) throw membersError;
-
-    let chatIds = members ? members.map((m) => m.chat_id) : [];
-    if (state.currentProfile?.settings?.is_tech_support) {
-      const { data: supportChats } = await supabase
-        .from("chats")
-        .select("id")
-        .eq("description", "TECH_SUPPORT_CHAT");
-      if (supportChats) {
-        chatIds = [...new Set([...chatIds, ...supportChats.map((c) => c.id)])];
+      let chatIds = members ? members.map((m) => m.chat_id) : [];
+      if (state.currentProfile?.settings?.is_tech_support) {
+        const { data: supportChats } = await supabase
+          .from("chats")
+          .select("id")
+          .eq("description", "TECH_SUPPORT_CHAT");
+        if (supportChats) {
+          chatIds = [...new Set([...chatIds, ...supportChats.map((c) => c.id)])];
+        }
       }
-    }
 
-    const list = document.getElementById("chats-list")!;
+      const list = document.getElementById("chats-list")!;
 
-    if (chatIds.length === 0) {
-      list.innerHTML = `<div class="text-center text-gray-400 mt-20 p-6"><span class="text-sm">У вас пока нет чатов.<br>Найдите друзей через поиск выше.</span></div>`;
-      return;
-    }
+      if (chatIds.length === 0) {
+        list.innerHTML = `<div class="text-center text-gray-400 mt-20 p-6"><span class="text-sm">У вас пока нет чатов.<br>Найдите друзей через поиск выше.</span></div>`;
+        return;
+      }
 
-    const { data: chats, error: chatsError } = await supabase
-      .from("chats")
-      .select(
-        `id, created_at, type, title, avatar_url, description, is_public, is_verified, chat_members(user_id, role, profiles(id, username, display_name, last_seen, is_online, avatar_url, bio, settings, is_premium, premium_until)), messages(content, message_type, media, created_at, is_read, sender_id)`,
-      )
-      .in("id", chatIds)
-      .order("created_at", { referencedTable: "messages", ascending: false })
-      .limit(5, { referencedTable: "messages" });
-    if (chatsError) throw chatsError;
-    if (!chats) return;
+      // Fetch chats in lightweight chunks of 6 so each response stays <7KB and never trips RKN TSPU's 16KB TCP stream cap
+      const CHUNK_SIZE = 6;
+      const chats: any[] = [];
+      for (let i = 0; i < chatIds.length; i += CHUNK_SIZE) {
+        const chunkIds = chatIds.slice(i, i + CHUNK_SIZE);
+        const { data: chunkChats, error: chatsError } = await supabase
+          .from("chats")
+          .select(
+            `id, created_at, type, title, avatar_url, description, is_public, is_verified, chat_members(user_id, role, profiles(id, username, display_name, last_seen, is_online, avatar_url, settings, is_premium, premium_until)), messages(content, message_type, media, created_at, is_read, sender_id)`,
+          )
+          .in("id", chunkIds)
+          .order("created_at", { referencedTable: "messages", ascending: false })
+          .limit(2, { referencedTable: "messages" });
+        if (chatsError) throw chatsError;
+        if (chunkChats && chunkChats.length > 0) {
+          chats.push(...chunkChats);
+        }
+      }
 
-    chats.forEach((chat: any) => {
-      if (chat.messages) {
-        chat.messages.sort(
-          (m1: any, m2: any) =>
-            new Date(m1.created_at).getTime() -
-            new Date(m2.created_at).getTime(),
+      processPendingJoinRequestsFromChats(chats);
+
+      chats.forEach((chat: any) => {
+        if (chat.messages) {
+          chat.messages.sort(
+            (m1: any, m2: any) =>
+              new Date(m1.created_at).getTime() -
+              new Date(m2.created_at).getTime(),
+          );
+        }
+      });
+
+      chats.sort((a: any, b: any) => {
+        const dA = a.messages?.length
+          ? new Date(a.messages[a.messages.length - 1].created_at).getTime()
+          : new Date(a.created_at || 0).getTime();
+        const dB = b.messages?.length
+          ? new Date(b.messages[b.messages.length - 1].created_at).getTime()
+          : new Date(b.created_at || 0).getTime();
+        if (dB === dA) return a.id.localeCompare(b.id);
+        return (dB || 0) - (dA || 0);
+      });
+
+      // Find designated Saved Messages
+      let savedMessagesIdx = chats.findIndex(
+        (c: any) => c.description === "SAVED_MESSAGES" && c.type === "private",
+      );
+      if (savedMessagesIdx === -1) {
+        // fallback for older accounts
+        savedMessagesIdx = chats.findIndex(
+          (c: any) =>
+            c.type === "private" &&
+            (!c.chat_members ||
+              c.chat_members.filter(
+                (m: any) => m.user_id !== state.currentUser.id,
+              ).length === 0),
         );
       }
-    });
 
-    chats.sort((a: any, b: any) => {
-      const dA = a.messages?.length
-        ? new Date(a.messages[a.messages.length - 1].created_at).getTime()
-        : new Date(a.created_at || 0).getTime();
-      const dB = b.messages?.length
-        ? new Date(b.messages[b.messages.length - 1].created_at).getTime()
-        : new Date(b.created_at || 0).getTime();
-      if (dB === dA) return a.id.localeCompare(b.id);
-      return (dB || 0) - (dA || 0);
-    });
-
-    // Find designated Saved Messages
-    let savedMessagesIdx = chats.findIndex(
-      (c: any) => c.description === "SAVED_MESSAGES" && c.type === "private",
-    );
-    if (savedMessagesIdx === -1) {
-      // fallback for older accounts
-      savedMessagesIdx = chats.findIndex(
-        (c: any) =>
-          c.type === "private" &&
-          (!c.chat_members ||
-            c.chat_members.filter(
-              (m: any) => m.user_id !== state.currentUser.id,
-            ).length === 0),
-      );
-    }
-
-    let savedMessagesChat = null;
-    if (savedMessagesIdx !== -1) {
-      savedMessagesChat = chats.splice(savedMessagesIdx, 1)[0];
-      // Lock this chat explicitly as Saved Messages to prevent future duplicates shifting
-      if (savedMessagesChat.description !== "SAVED_MESSAGES") {
-        savedMessagesChat.description = "SAVED_MESSAGES";
-        supabase
-          .from("chats")
-          .update({ description: "SAVED_MESSAGES", title: "Избранное" })
-          .eq("id", savedMessagesChat.id)
-          .then();
+      let savedMessagesChat = null;
+      if (savedMessagesIdx !== -1) {
+        savedMessagesChat = chats.splice(savedMessagesIdx, 1)[0];
+        if (savedMessagesChat.description !== "SAVED_MESSAGES") {
+          savedMessagesChat.description = "SAVED_MESSAGES";
+          supabase
+            .from("chats")
+            .update({ description: "SAVED_MESSAGES", title: "Избранное" })
+            .eq("id", savedMessagesChat.id)
+            .then();
+        }
       }
-    }
 
-    const showSavedMessages =
-      state.currentProfile?.settings?.show_saved_messages !== false;
+      const showSavedMessages =
+        state.currentProfile?.settings?.show_saved_messages !== false;
 
-    const activeChatIsSavedMessages =
-      !state.activeChatIsGroup &&
-      state.activeChatMembers?.length > 0 &&
-      state.activeChatMembers.every(
-        (m: any) => m.user_id === state.currentUser?.id,
-      );
-    const isSavedActive =
-      state.activeChatId === "new_saved_messages" ||
-      (savedMessagesChat && savedMessagesChat.id === state.activeChatId) ||
-      activeChatIsSavedMessages;
+      const activeChatIsSavedMessages =
+        !state.activeChatIsGroup &&
+        state.activeChatMembers?.length > 0 &&
+        state.activeChatMembers.every(
+          (m: any) => m.user_id === state.currentUser?.id,
+        );
+      const isSavedActive =
+        state.activeChatId === "new_saved_messages" ||
+        (savedMessagesChat && savedMessagesChat.id === state.activeChatId) ||
+        activeChatIsSavedMessages;
 
-    if (showSavedMessages || isSavedActive) {
-      if (!savedMessagesChat) {
-        // Mock one
-        savedMessagesChat = {
-          id:
-            isSavedActive &&
-            state.activeChatId &&
-            state.activeChatId !== "new_saved_messages"
-              ? state.activeChatId
-              : "new_saved_messages",
-          created_at: new Date().toISOString(),
-          type: "private",
-          title: "Избранное",
-          description: "SAVED_MESSAGES",
-          avatar_url: null,
-          is_public: false,
-          chat_members: [
-            {
-              user_id: state.currentUser.id,
-              role: "admin",
-              profiles: state.currentProfile,
-            },
-          ],
-          messages: [],
-        };
+      if (showSavedMessages || isSavedActive) {
+        if (!savedMessagesChat) {
+          savedMessagesChat = {
+            id:
+              isSavedActive &&
+              state.activeChatId &&
+              state.activeChatId !== "new_saved_messages"
+                ? state.activeChatId
+                : "new_saved_messages",
+            created_at: new Date().toISOString(),
+            type: "private",
+            title: "Избранное",
+            description: "SAVED_MESSAGES",
+            avatar_url: null,
+            is_public: false,
+            chat_members: [
+              {
+                user_id: state.currentUser.id,
+                role: "admin",
+                profiles: state.currentProfile,
+              },
+            ],
+            messages: [],
+          };
+        }
+        chats.unshift(savedMessagesChat);
       }
-      chats.unshift(savedMessagesChat);
-    }
 
-    cachedSavedMessagesChat = savedMessagesChat;
-    saveCachedChats(chats);
-    renderChatsDataToDOM(chats, false);
-  } catch (error: any) {
-    const isNetworkGlitch =
-      error?.message === "Failed to fetch" ||
-      error?.message?.includes("Failed to fetch") ||
-      error?.name === "TimeoutError" ||
-      error?.name === "AbortError";
+      cachedSavedMessagesChat = savedMessagesChat;
+      saveCachedChats(chats);
+      renderChatsDataToDOM(chats, false);
+    } catch (error: any) {
+      const isNetworkGlitch =
+        error?.message === "Failed to fetch" ||
+        error?.message?.includes("Failed to fetch") ||
+        error?.name === "TimeoutError" ||
+        error?.name === "AbortError";
 
-    if (isNetworkGlitch && retriesLeft > 0) {
-      await new Promise((r) => setTimeout(r, 800));
-      return loadChats(retriesLeft - 1);
-    }
-
-    console.warn("Network delay loading chats:", error.message || error);
-    const list = document.getElementById("chats-list")!;
-    // Only show error placeholder if we have no cached chats rendered at all
-    if (!list.children.length) {
-      const cached = getCachedChats();
-      if (cached && cached.length > 0) {
-        renderChatsDataToDOM(cached, true);
-      } else {
-        list.innerHTML = `<div class="text-center text-gray-400 mt-16 p-6"><div class="w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-3"></div><div class="text-xs">Загрузка чатов...</div></div>`;
+      if (isNetworkGlitch && remainingRetries > 0) {
+        await new Promise((r) => setTimeout(r, 800));
+        return runLoad(remainingRetries - 1);
       }
+
+      console.warn("Network delay loading chats:", error.message || error);
+      const list = document.getElementById("chats-list")!;
+      if (!list.children.length) {
+        const cached = getCachedChats();
+        if (cached && cached.length > 0) {
+          renderChatsDataToDOM(cached, true);
+        } else {
+          list.innerHTML = `<div class="text-center text-gray-400 mt-16 p-6"><div class="w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-3"></div><div class="text-xs">Загрузка чатов...</div></div>`;
+        }
+      }
+    } finally {
+      setSyncingState(false);
     }
-  } finally {
-    isLoadChatsInFlight = false;
-    setSyncingState(false);
-  }
+  };
+
+  loadChatsInFlightPromise = runLoad(retriesLeft).finally(() => {
+    loadChatsInFlightPromise = null;
+  });
+  return loadChatsInFlightPromise;
 }
 
 export function renderChatsDataToDOM(chats: any[], isFromCache = false) {

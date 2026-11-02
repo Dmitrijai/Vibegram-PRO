@@ -7,7 +7,6 @@ const MSGS_INDEX_KEY = 'vibegram_cache_msgs_index_v1';
 const ACTIVE_CHAT_KEY = 'vibegram_active_chat_meta_v1';
 const DRAFTS_KEY = 'vibegram_drafts_v1';
 const SCROLL_POS_KEY = 'vibegram_scroll_pos_v1';
-const SHORTS_CACHE_KEY = 'vibegram_cache_shorts_v1';
 
 const MAX_LOCALSTORAGE_CHATS_MESSAGES = 25;
 const MAX_LOCALSTORAGE_MESSAGES_PER_CHAT = 50;
@@ -27,7 +26,6 @@ let memoryChats: any[] | null = null;
 let memoryBootstrap: { user: any; profile: any; updatedAt: number } | null = null;
 let memoryDrafts: Record<string, string> | null = null;
 let memoryScrollPos: Record<string, number> | null = null;
-let memoryShorts: any[] | null = null;
 
 let dbPromise: Promise<IDBDatabase | null> | null = null;
 
@@ -118,14 +116,15 @@ export async function initPersistentCache(): Promise<void> {
             }
         };
 
-        const shortsReq = kvStore.get(SHORTS_CACHE_KEY);
-        shortsReq.onsuccess = () => {
-            if (Array.isArray(shortsReq.result) && shortsReq.result.length > 0 && !memoryShorts) {
-                try {
-                    memoryShorts = JSON.parse(rewriteLegacyStorageUrlsInJson(JSON.stringify(shortsReq.result)));
-                } catch {}
-            }
-        };
+        // Ensure any legacy Shorts cache is purged from local storage and IndexedDB
+        try {
+            localStorage.removeItem('vibegram_cache_shorts_v1');
+            localStorage.removeItem('vibegram_cache_v3_shorts');
+        } catch {}
+        try {
+            const writeTx = db.transaction(STORE_KV, 'readwrite');
+            writeTx.objectStore(STORE_KV).delete('vibegram_cache_shorts_v1');
+        } catch {}
 
         const keysReq = msgStore.getAllKeys();
         keysReq.onsuccess = () => {
@@ -486,44 +485,19 @@ export function getScrollPosition(chatId: string): number | null {
     return typeof val === 'number' ? val : null;
 }
 
-export function saveCachedShorts(shorts: any[]) {
-    if (!Array.isArray(shorts) || shorts.length === 0) return;
-    const slice = shorts.slice(0, 30);
-    memoryShorts = slice;
-    try {
-        localStorage.setItem(SHORTS_CACHE_KEY, JSON.stringify(slice.slice(0, 15)));
-    } catch {}
-    idbSet(STORE_KV, SHORTS_CACHE_KEY, slice);
-}
-
-export function getCachedShorts(): any[] | null {
-    if (memoryShorts && memoryShorts.length > 0) return memoryShorts;
-    try {
-        const raw = localStorage.getItem(SHORTS_CACHE_KEY);
-        if (!raw) return null;
-        const parsed = JSON.parse(rewriteLegacyStorageUrlsInJson(raw));
-        if (Array.isArray(parsed) && parsed.length > 0) {
-            memoryShorts = parsed;
-            return parsed;
-        }
-    } catch {}
-    return null;
-}
-
 export function clearAllVibegramCache() {
     memoryMessages.clear();
     memoryChats = null;
     memoryBootstrap = null;
     memoryDrafts = null;
     memoryScrollPos = null;
-    memoryShorts = null;
     try {
         localStorage.removeItem(BOOTSTRAP_KEY);
         localStorage.removeItem(CHATS_KEY);
         localStorage.removeItem(ACTIVE_CHAT_KEY);
         localStorage.removeItem(DRAFTS_KEY);
         localStorage.removeItem(SCROLL_POS_KEY);
-        localStorage.removeItem(SHORTS_CACHE_KEY);
+        localStorage.removeItem('vibegram_cache_shorts_v1');
         const rawIdx = localStorage.getItem(MSGS_INDEX_KEY);
         if (rawIdx) {
             const index: string[] = JSON.parse(rawIdx);

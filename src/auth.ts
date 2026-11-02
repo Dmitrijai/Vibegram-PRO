@@ -172,10 +172,12 @@ export async function checkUser(authEvent?: string, sessionUser?: any) {
             }
 
             state.currentUser = user;
-            let { data } = await supabase.from('profiles').select('*').eq('id', user.id).maybeSingle();
+            let { data, error: profileError } = await supabase.from('profiles').select('*').eq('id', user.id).maybeSingle();
             
-            // Fallback if trigger failed to create profile
-            if (!data) {
+            if (profileError && state.currentProfile?.id === user.id) {
+                data = state.currentProfile;
+            } else if (!profileError && !data) {
+                // Fallback if trigger failed to create profile
                 const nickname = user.user_metadata?.full_name || user.user_metadata?.name || user.user_metadata?.nickname || 'User';
                 let username = 'user_' + user.id.substring(0, 8);
                 if (user.user_metadata?.email) {

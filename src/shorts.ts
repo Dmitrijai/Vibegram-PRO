@@ -1,7 +1,5 @@
 import { supabase, state } from "./supabase";
 import { rewriteMediaUrl, getVideoPosterUrl } from "./network";
-import { saveCachedShorts, getCachedShorts, getSyncMediaObjectUrl } from "./cache";
-import { getOrFetchMediaObjectUrl } from "./utils";
 
 let shortsList: any[] = [];
 let currentShortIdForComments: string | null = null;
@@ -738,19 +736,9 @@ async function fetchShortsBatch(
       }
     }
 
-    if (!authorFilterId && newBatch.length > 0) {
-      saveCachedShorts(newBatch);
-    }
-
     return newBatch;
   } catch (e) {
     console.error(e);
-    if (!authorFilterId) {
-      const cached = getCachedShorts();
-      if (cached && cached.length > 0) {
-        return cached.filter((s) => !loadedShortIds.has(s.id));
-      }
-    }
     return [];
   }
 }
@@ -889,10 +877,9 @@ function appendShortsFromQueue(count: number) {
 
         const isPreloaded = i < 2;
         const posterUrl = getVideoPosterUrl(short.video_url);
-        const resolvedVideoSrc = getSyncMediaObjectUrl(short.video_url) || short.video_url;
         const shortHTML = `
             <div class="short-video-wrapper w-full h-full snap-start relative bg-black flex items-center justify-center overflow-hidden" data-index="${index}" data-id="${short.id}">
-                <video ${isPreloaded ? `src="${resolvedVideoSrc}"` : ""} data-src="${short.video_url}" ${posterUrl ? `poster="${posterUrl}"` : ""} preload="${index === 0 ? "auto" : "metadata"}" loop playsinline onerror="window.handleMediaError(this, '${short.video_url}')" class="max-w-full max-h-full object-contain cursor-pointer" onclick="window.togglePlayShort(this)"></video>
+                <video ${isPreloaded ? `src="${short.video_url}"` : ""} data-src="${short.video_url}" ${posterUrl ? `poster="${posterUrl}"` : ""} preload="${index === 0 ? "auto" : "metadata"}" loop playsinline onerror="window.handleMediaError(this, '${short.video_url}')" class="max-w-full max-h-full object-contain cursor-pointer" onclick="window.togglePlayShort(this)"></video>
                 
                 <div class="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/20 pointer-events-none"></div>
                 
@@ -1023,7 +1010,7 @@ function setupShortsObserver() {
                   vidElement.load();
                 }
               } else if (!vidElement.src && vidElement.dataset.src) {
-                vidElement.src = getSyncMediaObjectUrl(vidElement.dataset.src) || vidElement.dataset.src;
+                vidElement.src = vidElement.dataset.src;
                 vidElement.load();
               }
             });
@@ -1034,10 +1021,6 @@ function setupShortsObserver() {
           }
 
           if (video) {
-            const rawUrl = video.dataset.src || video.src;
-            if (rawUrl && !video.src.startsWith("blob:")) {
-              getOrFetchMediaObjectUrl(rawUrl).catch(() => {});
-            }
             video.play().catch(() => {
               // Browser blocked unmuted autoplay: fallback to muted autoplay immediately
               video.muted = true;
