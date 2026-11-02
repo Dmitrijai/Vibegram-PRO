@@ -13,7 +13,7 @@ permissions:
 
 concurrency:
   group: "pages"
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   deploy:
@@ -28,13 +28,14 @@ jobs:
       - name: Установка Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 24
+          node-version: 20
           cache: 'npm'
-        env:
-          FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
       - name: Установка зависимостей
-        run: npm install
+        run: npm install --no-audit --no-fund
+
+      - name: Очистка временных файлов перед сборкой
+        run: rm -rf public/assets/aistudio
 
       - name: Сборка проекта (Build)
         run: npm run build
@@ -59,3 +60,6 @@ jobs:
       - name: Публикация в GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
+        with:
+          timeout: 600000
+
