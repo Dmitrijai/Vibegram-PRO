@@ -707,8 +707,12 @@ export function initNetworkManager(envSupabaseUrl: string, anonKey: string, back
 
     try {
         const lastWorking = localStorage.getItem(LAST_WORKING_GATEWAY_KEY) || '';
-        if (isDeadGatewayUrl(lastWorking)) {
+        if (isDeadGatewayUrl(lastWorking) || lastWorking.includes('.supabase.co')) {
             localStorage.removeItem(LAST_WORKING_GATEWAY_KEY);
+        }
+        const prefId = localStorage.getItem(PREFERRED_GATEWAY_KEY) || '';
+        if (prefId === 'direct-supabase') {
+            localStorage.removeItem(PREFERRED_GATEWAY_KEY);
         }
     } catch (e) {}
 
@@ -721,7 +725,7 @@ export function rebuildGatewayList(envUrl: string) {
     const directUrl = extractSupabaseUrlFromAnonKey(supabaseAnonKeyRef);
 
     // 1. User's Custom Gateway (if set in Settings or via ?gw=...)
-    if (customUrl) {
+    if (customUrl && !customUrl.includes('.supabase.co')) {
         list.push({
             id: 'custom',
             name: 'Пользовательский шлюз (Mirror)',
@@ -791,7 +795,7 @@ export function rebuildGatewayList(envUrl: string) {
     }
 
     // 6. Dedicated Edge Gateway from SUPABASE_URL env/secret (if distinct)
-    if (envUrl && !isDeadGatewayUrl(envUrl) && envUrl !== directUrl && !list.some((g) => g.url === envUrl)) {
+    if (envUrl && !isDeadGatewayUrl(envUrl) && envUrl !== directUrl && !envUrl.includes('.supabase.co') && !list.some((g) => g.url === envUrl)) {
         list.unshift({
             id: 'env-edge',
             name: 'Выделенный Edge-шлюз (Secret)',
@@ -809,6 +813,7 @@ export function rebuildGatewayList(envUrl: string) {
         configuredBackupUrl &&
         !isDeadGatewayUrl(configuredBackupUrl) &&
         configuredBackupUrl !== directUrl &&
+        !configuredBackupUrl.includes('.supabase.co') &&
         !list.some((g) => g.url === configuredBackupUrl)
     ) {
         list.push({
@@ -823,7 +828,7 @@ export function rebuildGatewayList(envUrl: string) {
         });
     }
 
-    // 8. Direct Supabase Endpoint (Fallback when direct route is open)
+    // 8. Direct Supabase Endpoint (Emergency last-resort fallback ONLY if all Edge Gateways fail)
     if (!list.some((g) => g.url === directUrl)) {
         list.push({
             id: 'direct-supabase',
@@ -853,11 +858,12 @@ export function rebuildGatewayList(envUrl: string) {
         lastWorkingUrl = localStorage.getItem(LAST_WORKING_GATEWAY_KEY) || '';
     } catch (e) {}
 
+    // Never auto-boot on direct-supabase because RKN TSPU resets large payloads mid-stream (ERR_CONNECTION_RESET 200 OK)
     const byLastWorking =
-        lastWorkingUrl && lastWorkingUrl !== directUrl && !isDeadGatewayUrl(lastWorkingUrl)
+        lastWorkingUrl && lastWorkingUrl !== directUrl && !lastWorkingUrl.includes('.supabase.co') && !isDeadGatewayUrl(lastWorkingUrl)
             ? list.find((g) => g.url === lastWorkingUrl)
             : undefined;
-    const chosen = (customUrl ? list.find((g) => g.id === 'custom') : undefined) || byLastWorking || list[0];
+    const chosen = (customUrl ? list.find((g) => g.id === 'custom') : undefined) || byLastWorking || list.find((g) => g.type !== 'direct') || list[0];
 
     if (chosen) {
         networkState.activeGatewayId = chosen.id;
@@ -870,16 +876,18 @@ export function selectGatewayById(id: string) {
     if (!found) return;
     networkState.activeGatewayId = found.id;
     networkState.activeGatewayUrl = found.url;
-    try {
-        localStorage.setItem(LAST_WORKING_GATEWAY_KEY, found.url);
-    } catch (e) {}
+    if (found.type !== 'direct') {
+        try {
+            localStorage.setItem(LAST_WORKING_GATEWAY_KEY, found.url);
+        } catch (e) {}
+    }
     notifyNetworkState();
 }
 
 export async function raceGateways(forceSwitchToFastest = true): Promise<GatewayNode | null> {
     if (networkState.gateways.length === 0) return null;
     const fetchFn = nativeWindowFetch || window.fetch.bind(window);
-    const probePath = '/rest/v1/profiles?select=id&limit=1';
+    const probePath = '/rest/v1/profiles?select=id,username,display_name,avatar_url&limit=10';
 
     await Promise.all(
         networkState.gateways.map(async (gw) => {
@@ -899,6 +907,8 @@ export async function raceGateways(forceSwitchToFastest = true): Promise<Gateway
                     headers,
                     signal: ctrl.signal
                 });
+                // Read full body during probe to detect mid-stream TCP RST
+                await res.arrayBuffer();
                 clearTimeout(timer);
                 if (!isGatewayErrorResponse(gw, res) && res.status < 500) {
                     gw.latencyMs = Math.max(1, Math.round(performance.now() - start));
@@ -917,16 +927,24 @@ export async function raceGateways(forceSwitchToFastest = true): Promise<Gateway
 
     const onlineNodes = networkState.gateways
         .filter((g) => g.status === 'online' && g.latencyMs !== null)
-        .sort((a, b) => (a.latencyMs || 9999) - (b.latencyMs || 9999));
+        .sort((a, b) => {
+            // Always prefer anti-block Edge Gateways over direct-supabase because RKN TSPU
+            // allows small probes to direct-supabase and then resets (>16KB) chat queries mid-stream!
+            if (a.type === 'direct' && b.type !== 'direct') return 1;
+            if (a.type !== 'direct' && b.type === 'direct') return -1;
+            return (a.latencyMs || 9999) - (b.latencyMs || 9999);
+        });
 
     if (onlineNodes.length > 0 && forceSwitchToFastest) {
         const fastest = onlineNodes[0];
         networkState.activeGatewayId = fastest.id;
         networkState.activeGatewayUrl = fastest.url;
         networkState.lastPingMs = fastest.latencyMs;
-        try {
-            localStorage.setItem(LAST_WORKING_GATEWAY_KEY, fastest.url);
-        } catch {}
+        if (fastest.type !== 'direct') {
+            try {
+                localStorage.setItem(LAST_WORKING_GATEWAY_KEY, fastest.url);
+            } catch {}
+        }
     }
 
     notifyNetworkState();
@@ -968,7 +986,7 @@ async function fetchSingleAttempt(
     init: RequestInit,
     timeoutMs: number,
     attemptController?: AbortController
-): Promise<{ gw: GatewayNode; response: Response; elapsed: number }> {
+): Promise<{ gw: GatewayNode; response: Response; bodyBuffer: ArrayBuffer; elapsed: number }> {
     const targetUrl = `${gw.url}${supabasePath}`;
     const ctrl = attemptController || new AbortController();
     const fetchFn = nativeWindowFetch || window.fetch.bind(window);
@@ -991,15 +1009,22 @@ async function fetchSingleAttempt(
             ...init,
             signal: ctrl.signal
         });
-        clearTimeout(timer);
 
         if (isGatewayErrorResponse(gw, response)) {
+            clearTimeout(timer);
             gw.status = 'blocked';
             throw new Error(`Gateway ${gw.id} HTTP ${response.status}`);
         }
 
+        // CRITICAL: Read the entire response body BEFORE clearing timer or declaring success!
+        // In Russia, RKN TSPU often lets HTTP 200 OK headers pass and injects TCP RST (ERR_CONNECTION_RESET)
+        // mid-body on payloads >16KB. Reading arrayBuffer() here catches mid-stream resets so smartSupabaseFetch
+        // immediately fails over to the next Edge Gateway and never returns a locked/broken Response stream!
+        const bodyBuffer = await response.arrayBuffer();
+        clearTimeout(timer);
+
         const elapsed = Math.max(1, Math.round(performance.now() - start));
-        return { gw, response, elapsed };
+        return { gw, response, bodyBuffer, elapsed };
     } catch (err) {
         clearTimeout(timer);
         throw err;
@@ -1034,8 +1059,9 @@ function createGraceRefreshResponse(): Response | null {
 /**
  * Resilient Fetch Engine for Supabase:
  * - Routes Database/Auth queries through our multi-node Anti-Block Gateways with automatic failover.
- * - Launches a hedged backup socket on the next Gateway after 2.8s if the primary socket stalls.
- * - Uses 12s per-attempt timeout so queued browser sockets never self-abort prematurely.
+ * - Launches a hedged backup socket on the next Edge Gateway after 1.5s if the primary socket stalls.
+ * - Reads the full response body buffer per attempt so mid-stream TSPU TCP resets (ERR_CONNECTION_RESET 200 OK)
+ *   are caught and transparently retried on the next Edge Gateway without ever locking the Response stream.
  */
 export async function smartSupabaseFetch(input: RequestInfo | URL, init: RequestInit = {}): Promise<Response> {
     const rawUrl = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
@@ -1049,8 +1075,19 @@ export async function smartSupabaseFetch(input: RequestInfo | URL, init: Request
     const isTokenRefresh = supabasePath.includes('/auth/v1/token') && supabasePath.includes('grant_type=refresh_token');
     const isHedgeable = method === 'GET' || method === 'HEAD' || method === 'OPTIONS';
 
-    const activeGw = networkState.gateways.find((g) => g.id === networkState.activeGatewayId) || networkState.gateways[0];
-    const otherGateways = networkState.gateways.filter((g) => g.id !== activeGw.id);
+    // Always place anti-block Edge Gateways ahead of direct-supabase
+    const currentActive = networkState.gateways.find((g) => g.id === networkState.activeGatewayId);
+    const activeGw =
+        currentActive && currentActive.type !== 'direct'
+            ? currentActive
+            : networkState.gateways.find((g) => g.type !== 'direct') || networkState.gateways[0];
+    const otherGateways = networkState.gateways
+        .filter((g) => g.id !== activeGw.id)
+        .sort((a, b) => {
+            if (a.type === 'direct' && b.type !== 'direct') return 1;
+            if (a.type !== 'direct' && b.type === 'direct') return -1;
+            return 0;
+        });
 
     const sequence: GatewayNode[] = [activeGw, ...otherGateways];
     let lastError: any = null;
@@ -1060,9 +1097,9 @@ export async function smartSupabaseFetch(input: RequestInfo | URL, init: Request
         const nextGw = sequence[(i + 1) % sequence.length];
 
         try {
-            let winner: { gw: GatewayNode; response: Response; elapsed: number };
+            let winner: { gw: GatewayNode; response: Response; bodyBuffer: ArrayBuffer; elapsed: number };
 
-            if (isHedgeable && nextGw && nextGw.id !== gw.id) {
+            if (isHedgeable && nextGw && nextGw.id !== gw.id && nextGw.type !== 'direct') {
                 const ctrl1 = new AbortController();
                 const ctrl2 = new AbortController();
                 let hedgeStarted = false;
@@ -1072,7 +1109,7 @@ export async function smartSupabaseFetch(input: RequestInfo | URL, init: Request
                     let pendingCount = 1;
                     let hedgeTimer: any = null;
 
-                    const onSuccess = (res: { gw: GatewayNode; response: Response; elapsed: number }, which: 1 | 2) => {
+                    const onSuccess = (res: { gw: GatewayNode; response: Response; bodyBuffer: ArrayBuffer; elapsed: number }, which: 1 | 2) => {
                         if (settled) {
                             if (which === 1) ctrl1.abort();
                             else ctrl2.abort();
@@ -1096,7 +1133,7 @@ export async function smartSupabaseFetch(input: RequestInfo | URL, init: Request
                         }
                     };
 
-                    fetchSingleAttempt(gw, supabasePath, init, 12000, ctrl1)
+                    fetchSingleAttempt(gw, supabasePath, init, 10000, ctrl1)
                         .then((res) => onSuccess(res, 1))
                         .catch(onError);
 
@@ -1104,13 +1141,13 @@ export async function smartSupabaseFetch(input: RequestInfo | URL, init: Request
                         if (settled || init.signal?.aborted) return;
                         hedgeStarted = true;
                         pendingCount++;
-                        fetchSingleAttempt(nextGw, supabasePath, init, 12000, ctrl2)
+                        fetchSingleAttempt(nextGw, supabasePath, init, 10000, ctrl2)
                             .then((res) => onSuccess(res, 2))
                             .catch(onError);
-                    }, 2800);
+                    }, 1500);
                 });
             } else {
-                winner = await fetchSingleAttempt(gw, supabasePath, init, 12000);
+                winner = await fetchSingleAttempt(gw, supabasePath, init, 10000);
             }
 
             winner.gw.latencyMs = winner.elapsed;
@@ -1118,7 +1155,7 @@ export async function smartSupabaseFetch(input: RequestInfo | URL, init: Request
             winner.gw.lastChecked = Date.now();
             networkState.lastPingMs = winner.elapsed;
 
-            if (networkState.activeGatewayId !== winner.gw.id) {
+            if (networkState.activeGatewayId !== winner.gw.id && winner.gw.type !== 'direct') {
                 networkState.activeGatewayId = winner.gw.id;
                 networkState.activeGatewayUrl = winner.gw.url;
                 try {
@@ -1131,24 +1168,40 @@ export async function smartSupabaseFetch(input: RequestInfo | URL, init: Request
             }
             notifyNetworkState();
 
-            if (
-                supabasePath.startsWith('/rest/v1/') &&
-                (winner.response.headers.get('content-type') || '').includes('application/json')
-            ) {
+            const status = winner.response.status;
+            const isNullBodyStatus = status === 204 || status === 205 || status === 304;
+            const safeHeaders = new Headers(winner.response.headers);
+            safeHeaders.delete('content-encoding');
+            safeHeaders.delete('content-length');
+
+            if (isNullBodyStatus || winner.bodyBuffer.byteLength === 0) {
+                return new Response(null, {
+                    status,
+                    statusText: winner.response.statusText,
+                    headers: safeHeaders
+                });
+            }
+
+            const contentType = safeHeaders.get('content-type') || '';
+            if (supabasePath.startsWith('/rest/v1/') && contentType.includes('application/json')) {
                 try {
-                    const rawText = await winner.response.text();
+                    const rawText = new TextDecoder('utf-8').decode(winner.bodyBuffer);
                     const rewrittenText = rewriteLegacyStorageUrlsInJson(rawText, winner.gw.url);
                     return new Response(rewrittenText, {
-                        status: winner.response.status,
+                        status,
                         statusText: winner.response.statusText,
-                        headers: winner.response.headers
+                        headers: safeHeaders
                     });
                 } catch (e) {
-                    return winner.response;
+                    // Fallback to fresh Response from bodyBuffer below
                 }
             }
 
-            return winner.response;
+            return new Response(winner.bodyBuffer, {
+                status,
+                statusText: winner.response.statusText,
+                headers: safeHeaders
+            });
         } catch (err: any) {
             lastError = err;
             if (init.signal?.aborted) {
