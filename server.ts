@@ -477,6 +477,115 @@ async function startServer() {
     }
   });
 
+  // Server-side Audio/Video Transcription endpoint (downloads compact 16kHz mono MP3 and calls Gemini 2.5 Flash with thinkingBudget: 0)
+  app.post("/api/transcribe", async (req, res) => {
+    try {
+      const { audioUrl, rawUrl, audioBase64, mimeType: clientMime, apiKeys, msgType } = req.body || {};
+      const keys: string[] = Array.isArray(apiKeys) ? apiKeys.filter(Boolean) : [];
+      if ((!audioUrl && !audioBase64) || keys.length === 0) {
+        res.status(400).json({ error: "Missing audio source or apiKeys" });
+        return;
+      }
+
+      let base64Data = audioBase64 || "";
+      let mimeType = clientMime || "audio/mp3";
+
+      if (!base64Data) {
+        const toDirectCloudinary = (u: string) => {
+          if (!u) return "";
+          const idx = u.indexOf("/cloudinary/");
+          if (idx !== -1) {
+            return "https://res.cloudinary.com/" + u.substring(idx + "/cloudinary/".length);
+          }
+          return u;
+        };
+
+        const toCompactMp3Cloudinary = (u: string) => {
+          const direct = toDirectCloudinary(u);
+          const m = direct.match(/^(https?:\/\/res\.cloudinary\.com\/[^/]+\/video\/upload\/)(?:[^/]+\/)?(v\d+\/.+?)(\.[a-zA-Z0-9]+)?(\?.*)?$/);
+          if (m) {
+            return `${m[1]}f_mp3,br_32k,ac_1,ar_16000/${m[2]}.mp3`;
+          }
+          return direct;
+        };
+
+        const primaryFetchUrl = toCompactMp3Cloudinary(rawUrl || audioUrl);
+        const secondaryFetchUrl = toDirectCloudinary(audioUrl);
+        const fallbackFetchUrl = toDirectCloudinary(rawUrl || audioUrl);
+
+        let mediaRes = await fetch(primaryFetchUrl);
+        if (!mediaRes.ok && secondaryFetchUrl && secondaryFetchUrl !== primaryFetchUrl) {
+          mediaRes = await fetch(secondaryFetchUrl);
+        }
+        if (!mediaRes.ok && fallbackFetchUrl && fallbackFetchUrl !== secondaryFetchUrl) {
+          mediaRes = await fetch(fallbackFetchUrl);
+        }
+        if (!mediaRes.ok) {
+          res.status(502).json({ error: "Audio fetch failed: " + mediaRes.status });
+          return;
+        }
+
+        const arrayBuf = await mediaRes.arrayBuffer();
+        base64Data = Buffer.from(arrayBuf).toString("base64");
+        const ct = mediaRes.headers.get("content-type") || "";
+        if (ct.includes("mpeg") || ct.includes("mp3") || (mediaRes.url && mediaRes.url.endsWith(".mp3"))) {
+          mimeType = "audio/mp3";
+        } else if (ct.includes("ogg")) {
+          mimeType = "audio/ogg";
+        } else if (ct.includes("mp4") || ct.includes("m4a")) {
+          mimeType = "audio/mp4";
+        } else if (msgType === "voice" || msgType === "video_circle" || ct.includes("webm") || ct.includes("video")) {
+          mimeType = "audio/webm";
+        } else {
+          mimeType = ct.split(";")[0] || "audio/mp3";
+        }
+      }
+
+      const callGeminiWithKey = async (key: string) => {
+        const geminiUrl = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=" + encodeURIComponent(key);
+        const gRes = await fetch(geminiUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            contents: [{
+              role: "user",
+              parts: [
+                { text: "Transcribe this audio accurately. Return ONLY the spoken text in its original language without quotes or extra commentary. If there is no speech, return an empty string." },
+                { inlineData: { data: base64Data, mimeType } }
+              ]
+            }],
+            generationConfig: {
+              temperature: 0.1,
+              thinkingConfig: { thinkingBudget: 0 }
+            }
+          })
+        });
+        const gData: any = await gRes.json();
+        if (!gRes.ok) {
+          throw new Error(gData?.error?.message || ("HTTP " + gRes.status));
+        }
+        return gData?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "Нет речи";
+      };
+
+      let lastErr = "All keys failed";
+      for (let i = 0; i < keys.length; i += 2) {
+        const batch = keys.slice(i, i + 2);
+        try {
+          const text = await Promise.any(batch.map(k => callGeminiWithKey(k)));
+          res.status(200).json({ text });
+          return;
+        } catch (aggErr: any) {
+          const errs = aggErr?.errors || [aggErr];
+          lastErr = errs.map((e: any) => e?.message || String(e)).join("; ");
+        }
+      }
+
+      res.status(500).json({ error: lastErr });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message || String(e) });
+    }
+  });
+
   // WebSocket Reverse Proxy for Supabase Realtime (/realtime/v1/websocket)
   const wss = new WebSocketServer({ noServer: true });
 

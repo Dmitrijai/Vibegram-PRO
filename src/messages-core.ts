@@ -8,6 +8,7 @@ import { getMediaObserver, clearFile } from "./messages-media";
 import { cancelReply } from "./messages-actions";
 import { saveCachedMessages, getCachedMessages } from "./cache";
 import { getVideoPosterUrl } from "./network";
+import { getCachedTranscription } from "./transcribe";
 
 export let currentMessageLimit = 50;
 let isSendingMessage = false;
@@ -488,8 +489,11 @@ export function renderMessages(messages: any[], isInitialLoad = false) {
                 </div>
             `;
         } else if (msg.message_type === 'voice' && actualMedia.length > 0) {
-            const transcriptionText = `<div id="transcription-text-${msg.id}" class="w-full">${actualMedia[0].transcription ? `<div class="mt-1 text-sm text-gray-700 dark:text-gray-200 bg-black/5 dark:bg-white/5 p-2 rounded-lg">${escapeHtml(actualMedia[0].transcription)}</div>` : ''}</div>`;
-            const transcribeBtn = !actualMedia[0].transcription ? `<button id="transcribe-btn-${msg.id}" onclick="transcribeMedia('${actualMedia[0].url}', '${msg.id}', 'voice')" class="w-7 h-7 shrink-0 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-600 dark:text-gray-300 rounded-full flex items-center justify-center transition-colors ml-1" title="Расшифровать"><span class="text-[10px] font-bold">Aa</span></button>` : '';
+            const txVal = actualMedia[0].transcription || getCachedTranscription(msg.id, actualMedia[0].url) || '';
+            const durSec = Number(actualMedia[0].duration) || 0;
+            const durLabel = durSec > 0 ? `${Math.floor(durSec / 60)}:${(durSec % 60).toString().padStart(2, '0')}` : '0:00';
+            const transcriptionText = `<div id="transcription-text-${msg.id}" class="w-full">${txVal ? `<div class="mt-1 text-sm text-gray-700 dark:text-gray-200 bg-black/5 dark:bg-white/5 p-2 rounded-lg">${escapeHtml(txVal)}</div>` : ''}</div>`;
+            const transcribeBtn = !txVal ? `<button id="transcribe-btn-${msg.id}" onclick="transcribeMedia('${actualMedia[0].url}', '${msg.id}', 'voice')" class="w-7 h-7 shrink-0 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-600 dark:text-gray-300 rounded-full flex items-center justify-center transition-colors ml-1" title="Расшифровать"><span class="text-[10px] font-bold">Aa</span></button>` : '';
             
             fileHtml = `
                 <div class="flex flex-col mb-1">
@@ -502,7 +506,7 @@ export function renderMessages(messages: any[], isInitialLoad = false) {
                             <div class="flex-1 h-1 bg-blue-200 dark:bg-blue-900/50 rounded-full relative overflow-hidden cursor-pointer media-progress-container">
                                 <div class="absolute left-0 top-0 h-full bg-blue-500 progress-bar" style="width: 0%"></div>
                             </div>
-                            <span class="text-[11px] font-medium text-blue-600 dark:text-blue-400 w-8 text-right time-display">0:00</span>
+                            <span class="text-[11px] font-medium text-blue-600 dark:text-blue-400 w-8 text-right time-display">${durLabel}</span>
                         </div>
                         ${transcribeBtn}
                     </div>
@@ -511,14 +515,16 @@ export function renderMessages(messages: any[], isInitialLoad = false) {
             `;
         } else if (msg.message_type === 'video_circle' && actualMedia.length > 0) {
             const circlePoster = getVideoPosterUrl(actualMedia[0].url);
-            const transcriptionText = `<div id="transcription-text-${msg.id}" class="w-full flex ${isMe ? 'justify-end' : 'justify-start'}">${actualMedia[0].transcription ? `<div class="mt-1 text-sm text-gray-700 dark:text-gray-200 bg-black/5 dark:bg-white/5 p-2 rounded-lg max-w-[200px]">${escapeHtml(actualMedia[0].transcription)}</div>` : ''}</div>`;
-            const transcribeBtn = !actualMedia[0].transcription ? `<button id="transcribe-btn-${msg.id}" onclick="transcribeMedia('${actualMedia[0].url}', '${msg.id}', 'video_circle')" class="absolute bottom-0 right-0 w-8 h-8 bg-gray-800/70 hover:bg-gray-800 text-white rounded-full flex items-center justify-center transition-colors z-10 backdrop-blur-sm" title="Расшифровать"><span class="text-[11px] font-bold">Aa</span></button>` : '';
+            const txVal = actualMedia[0].transcription || getCachedTranscription(msg.id, actualMedia[0].url) || '';
+            const durAttr = Number(actualMedia[0].duration) > 0 ? `data-duration="${Number(actualMedia[0].duration)}"` : '';
+            const transcriptionText = `<div id="transcription-text-${msg.id}" class="w-full flex ${isMe ? 'justify-end' : 'justify-start'}">${txVal ? `<div class="mt-1 text-sm text-gray-700 dark:text-gray-200 bg-black/5 dark:bg-white/5 p-2 rounded-lg max-w-[200px]">${escapeHtml(txVal)}</div>` : ''}</div>`;
+            const transcribeBtn = !txVal ? `<button id="transcribe-btn-${msg.id}" onclick="transcribeMedia('${actualMedia[0].url}', '${msg.id}', 'video_circle')" class="absolute bottom-0 right-0 w-8 h-8 bg-gray-800/70 hover:bg-gray-800 text-white rounded-full flex items-center justify-center transition-colors z-10 backdrop-blur-sm" title="Расшифровать"><span class="text-[11px] font-bold">Aa</span></button>` : '';
 
             fileHtml = `
                 <div class="flex flex-col mb-1 ${isMe ? 'items-end' : 'items-start'}">
                     <div class="relative">
                         <div class="video-circle-container uninteracted" onclick="handleVideoCircleClick(event, this)">
-                            <video data-src="${actualMedia[0].url}" ${circlePoster ? `poster="${circlePoster}"` : ''} preload="metadata" loop muted playsinline data-autoplay="true" ontimeupdate="updateVideoProgress(this)" onerror="this.onerror=null; window.handleMediaError(this, '${actualMedia[0].url}');"></video>
+                            <video data-src="${actualMedia[0].url}" ${circlePoster ? `poster="${circlePoster}"` : ''} ${durAttr} preload="metadata" loop muted playsinline data-autoplay="true" ontimeupdate="updateVideoProgress(this)" onerror="this.onerror=null; window.handleMediaError(this, '${actualMedia[0].url}');"></video>
                             <svg class="video-progress-ring" viewBox="0 0 100 100">
                                 <circle cx="50" cy="50" r="48" stroke-linecap="round"></circle>
                             </svg>
@@ -565,7 +571,7 @@ export function renderMessages(messages: any[], isInitialLoad = false) {
                     const videoPoster = getVideoPosterUrl(file.url);
                     fileHtml += `
                         <div class="relative ${aspectCls} w-full rounded-xl overflow-hidden shadow-sm border border-black/5 group chat-media-item-container mb-1 bg-gray-800">
-                            <video data-src="${file.url}" ${videoPoster ? `poster="${videoPoster}"` : ''} preload="metadata" class="w-full h-full object-cover chat-media-item cursor-pointer" onclick="toggleInlineVideo(this)" onloadeddata="const l=this.closest('#messages-list'); if(l && l.scrollHeight - l.scrollTop - l.clientHeight < 250) l.scrollTop = l.scrollHeight;" onloadedmetadata="this.parentElement.querySelector('.video-time').textContent = Math.floor(this.duration / 60) + ':' + Math.floor(this.duration % 60).toString().padStart(2, '0')" onerror="this.onerror=null; window.handleMediaError(this, '${file.url}');"></video>
+                            <video data-src="${file.url}" ${videoPoster ? `poster="${videoPoster}"` : ''} preload="metadata" class="w-full h-full object-cover chat-media-item cursor-pointer" onclick="toggleInlineVideo(this)" onloadeddata="const l=this.closest('#messages-list'); if(l && l.scrollHeight - l.scrollTop - l.clientHeight < 250) l.scrollTop = l.scrollHeight;" onloadedmetadata="if(Number.isFinite(this.duration)&&this.duration>0){this.parentElement.querySelector('.video-time').textContent = Math.floor(this.duration / 60) + ':' + Math.floor(this.duration % 60).toString().padStart(2, '0')}" onerror="this.onerror=null; window.handleMediaError(this, '${file.url}');"></video>
                             <div class="absolute inset-0 bg-black/20 group-hover:bg-black/30 transition-colors flex items-center justify-center pointer-events-none video-overlay">
                                 <div class="w-12 h-12 bg-black/50 rounded-full flex items-center justify-center text-white backdrop-blur-sm">
                                     <svg class="w-6 h-6 ml-0.5 play-icon" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
@@ -672,6 +678,8 @@ export function renderMessages(messages: any[], isInitialLoad = false) {
             `;
         }
 
+        const safeJsSenderName = displaySenderName.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+
         const deleteBtnHtml = `
             <div class="relative ml-1 -mr-1 flex items-center">
                 <button onclick="toggleReactionMenu(event, '${msg.id}')" class="hidden md:block text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 p-0.5 rounded-full transition-opacity opacity-0 group-hover:opacity-100 mr-1">
@@ -697,12 +705,12 @@ export function renderMessages(messages: any[], isInitialLoad = false) {
                         Копировать
                     </button>
                     ${document.getElementById('input-area')?.style.display !== 'none' ? `
-                    <button onclick="event.stopPropagation(); closeAllMessageMenus(); replyToMessage('${msg.id}', decodeURIComponent('${encodedPreviewContent}'), '${displaySenderName}')" class="w-full text-left px-4 py-2.5 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors flex items-center gap-3">
+                    <button onclick="event.stopPropagation(); closeAllMessageMenus(); replyToMessage('${msg.id}', decodeURIComponent('${encodedPreviewContent}'), '${safeJsSenderName}')" class="w-full text-left px-4 py-2.5 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors flex items-center gap-3">
                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6"></path></svg>
                         Ответить
                     </button>
                     ` : ''}
-                    <button onclick="event.stopPropagation(); closeAllMessageMenus(); forwardMessage('${msg.id}', decodeURIComponent('${encodedContent}'), '${displaySenderName}')" class="w-full text-left px-4 py-2.5 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors flex items-center gap-3">
+                    <button onclick="event.stopPropagation(); closeAllMessageMenus(); forwardMessage('${msg.id}', decodeURIComponent('${encodedContent}'), '${safeJsSenderName}')" class="w-full text-left px-4 py-2.5 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors flex items-center gap-3">
                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 10h-10a8 8 0 00-8 8v2M21 10l-6 6m6-6l-6-6"></path></svg>
                         Переслать
                     </button>
@@ -1110,15 +1118,61 @@ async function actuallySend(text: string, files: File[], input: HTMLTextAreaElem
     input.value = ''; input.style.height = '';
     clearFile();
     
-    // Optimistic UI
+    // Optimistic UI with instant local media previews
     const tempId = 'temp_' + Date.now();
     const list = document.getElementById('messages-list')!;
     const tempDiv = document.createElement('div');
     tempDiv.id = tempId;
-    tempDiv.className = `flex flex-col max-w-[85%] md:max-w-[65%] min-w-0 self-end items-end animate-fadeIn opacity-70`;
+    tempDiv.className = `flex flex-col max-w-[85%] md:max-w-[65%] min-w-0 self-end items-end animate-fadeIn opacity-90`;
+    const localBlobUrls: string[] = [];
+    let optimisticMediaHtml = '';
+    if (files.length > 0) {
+        optimisticMediaHtml = '<div class="flex flex-wrap gap-1 mb-1.5 w-full">';
+        for (const f of files) {
+            if (f.type?.startsWith('image/') && !(f as any).asFile) {
+                const u = URL.createObjectURL(f);
+                localBlobUrls.push(u);
+                optimisticMediaHtml += `
+                    <div class="relative aspect-[4/3] max-w-[200px] sm:max-w-[240px] w-full rounded-xl overflow-hidden shadow-sm">
+                        <img src="${u}" class="w-full h-full object-cover">
+                        <div class="absolute inset-0 bg-black/25 flex items-center justify-center">
+                            <svg class="w-7 h-7 text-white animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="3"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
+                        </div>
+                    </div>`;
+            } else if (f.type?.startsWith('video/') && !(f as any).asFile) {
+                const u = URL.createObjectURL(f);
+                localBlobUrls.push(u);
+                optimisticMediaHtml += `
+                    <div class="relative aspect-[4/3] max-w-[200px] sm:max-w-[240px] w-full rounded-xl overflow-hidden shadow-sm bg-gray-900">
+                        <video src="${u}" muted playsinline class="w-full h-full object-cover opacity-80"></video>
+                        <div class="absolute inset-0 bg-black/30 flex items-center justify-center">
+                            <svg class="w-7 h-7 text-white animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="3"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
+                        </div>
+                    </div>`;
+            } else {
+                optimisticMediaHtml += `
+                    <div class="flex items-center gap-2.5 bg-black/5 dark:bg-white/5 p-2.5 rounded-xl w-full min-w-[180px]">
+                        <div class="w-8 h-8 rounded-lg bg-blue-500 text-white flex items-center justify-center shrink-0">
+                            <svg class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="3"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
+                        </div>
+                        <div class="flex-1 min-w-0">
+                            <div class="text-xs font-semibold truncate">${escapeHtml(f.name || 'Файл')}</div>
+                            <div class="text-[10px] opacity-70">Загрузка...</div>
+                        </div>
+                    </div>`;
+            }
+        }
+        optimisticMediaHtml += '</div>';
+    }
+    const cleanupLocalUrls = () => {
+        while (localBlobUrls.length > 0) {
+            const u = localBlobUrls.pop();
+            if (u) URL.revokeObjectURL(u);
+        }
+    };
     tempDiv.innerHTML = `
         <div class="bg-[#e3f2fd] dark:bg-blue-900/40 text-gray-900 dark:text-gray-100 rounded-[18px] rounded-br-[4px] p-2 px-3 shadow-sm border border-gray-200/60 dark:border-gray-700/60 relative group max-w-full">
-            ${files.length > 0 ? `<div class="text-xs text-blue-500 dark:text-blue-400 mb-1">Загрузка файлов (${files.length})...</div>` : ''}
+            ${optimisticMediaHtml}
             ${renderContent(text)}
             <div class="text-[11px] font-medium text-blue-500 dark:text-blue-400 mt-1 flex justify-end items-center float-right ml-4 pt-1">Отправка...</div>
             <div class="clear-both"></div>
@@ -1272,6 +1326,7 @@ async function actuallySend(text: string, files: File[], input: HTMLTextAreaElem
 
         cancelReply();
         delete (window as any).pendingUploads[tempId];
+        cleanupLocalUrls();
         
         // Remove tempDiv and immediately render the inserted message in 0ms without flicker
         const tempDivEl = document.getElementById(tempId);
@@ -1290,6 +1345,7 @@ async function actuallySend(text: string, files: File[], input: HTMLTextAreaElem
         }
 
     } catch (err: any) {
+        cleanupLocalUrls();
         if (err.message === 'Upload cancelled' || err.name === 'AbortError' || String(err).toLowerCase().includes('abort')) {
             document.getElementById(tempId)?.remove();
             import('./utils').then(m => m.customToast('Отправка отменена'));

@@ -1,45 +1,112 @@
 import { supabase, state } from './supabase';
-import { customToast, escapeHtml } from './utils';
+import { customToast, escapeHtml, getLocalMediaBlob } from './utils';
 import { GoogleGenAI } from '@google/genai';
 import { executeAiWithFallback, getAvailableGeminiKeys } from './ai-keys';
 import { getOptimizedAudioForTranscriptionUrl, rewriteMediaUrl, AI_GATEWAY_URLS } from './network';
 import { currentMessages } from './messages-core';
 import { saveCachedMessages } from './cache';
 
+const TX_STORAGE_KEY = 'vibegram_tx_cache_v1';
 const transcriptionCache = new Map<string, string>();
+
+// Hydrate persistent transcription cache on load
+try {
+    const raw = localStorage.getItem(TX_STORAGE_KEY);
+    if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed === 'object') {
+            for (const [k, v] of Object.entries(parsed)) {
+                if (typeof v === 'string' && v) transcriptionCache.set(k, v);
+            }
+        }
+    }
+} catch {}
+
+function saveTranscriptionToCache(messageId: string, url: string, text: string) {
+    if (!text) return;
+    transcriptionCache.set(messageId, text);
+    if (url) transcriptionCache.set(url.split('?')[0], text);
+    try {
+        const obj: Record<string, string> = {};
+        const entries = Array.from(transcriptionCache.entries()).slice(-200);
+        for (const [k, v] of entries) obj[k] = v;
+        localStorage.setItem(TX_STORAGE_KEY, JSON.stringify(obj));
+    } catch {}
+}
+
+export function getCachedTranscription(messageId: string, url?: string): string | undefined {
+    return transcriptionCache.get(messageId) || (url ? transcriptionCache.get(url.split('?')[0]) : undefined);
+}
+
+async function blobToBase64(blob: Blob): Promise<string> {
+    return new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => {
+            const base64 = (reader.result as string).split(',')[1];
+            resolve(base64);
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+    });
+}
 
 async function requestServerSideTranscription(
     fastAudioUrl: string,
     rawUrl: string,
-    msgType?: string
+    msgType?: string,
+    localAudioBase64?: string,
+    localMimeType?: string
 ): Promise<string | null> {
     const apiKeys = getAvailableGeminiKeys();
     if (apiKeys.length === 0) return null;
 
-    for (const gwUrl of AI_GATEWAY_URLS) {
+    const payload = JSON.stringify({
+        audioUrl: fastAudioUrl,
+        rawUrl,
+        audioBase64: localAudioBase64,
+        mimeType: localMimeType,
+        apiKeys: apiKeys.slice(0, 6),
+        msgType
+    });
+
+    const callGateway = async (gwUrl: string, timeoutMs: number): Promise<string> => {
+        const ctrl = new AbortController();
+        const timer = setTimeout(() => ctrl.abort(), timeoutMs);
         try {
-            const ctrl = new AbortController();
-            const timer = setTimeout(() => ctrl.abort(), 14000);
-            const res = await fetch(`${gwUrl}/api/transcribe`, {
+            const res = await fetch(`${gwUrl.replace(/\/$/, '')}/api/transcribe`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    audioUrl: fastAudioUrl,
-                    rawUrl,
-                    apiKeys: apiKeys.slice(0, 3),
-                    msgType
-                }),
+                body: payload,
                 signal: ctrl.signal
             });
             clearTimeout(timer);
-            if (res.ok) {
-                const data = await res.json();
-                if (data && typeof data.text === 'string') {
-                    return data.text.trim() || 'Нет речи';
-                }
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            const data = await res.json();
+            if (data && typeof data.text === 'string') {
+                return data.text.trim() || 'Нет речи';
             }
-        } catch (_e) {
-            // Try next gateway in AI_GATEWAY_URLS
+            throw new Error('Empty transcription');
+        } catch (e) {
+            clearTimeout(timer);
+            throw e;
+        }
+    };
+
+    // Race top 2 Edge Gateways in parallel so cold starts or slow nodes never delay transcription
+    const primaryGateways = AI_GATEWAY_URLS.slice(0, 2);
+    if (primaryGateways.length > 0) {
+        try {
+            return await Promise.any(primaryGateways.map(gw => callGateway(gw, 11000)));
+        } catch {
+            // Try remaining gateways if top 2 failed
+        }
+    }
+
+    for (const gwUrl of AI_GATEWAY_URLS.slice(2)) {
+        try {
+            return await callGateway(gwUrl, 12000);
+        } catch {
+            // Continue
         }
     }
     return null;
@@ -53,38 +120,44 @@ export async function transcribeMedia(url: string, messageId: string, msgType?: 
             btn.classList.add('pointer-events-none');
         }
 
-        let transcription = transcriptionCache.get(messageId) || '';
+        let transcription = getCachedTranscription(messageId, url) || '';
 
         if (!transcription) {
             const fastAudioUrl = getOptimizedAudioForTranscriptionUrl(url);
+            const localBlob = getLocalMediaBlob(url);
+            let localBase64: string | undefined;
+            let localMime: string | undefined;
 
-            // 1. Primary path: Server-side cloud-to-cloud transcription on our Edge Gateway (~150 bytes payload, immune to TSPU resets)
-            const serverResult = await requestServerSideTranscription(fastAudioUrl, url, msgType);
+            // If we just recorded this voice note or small video circle locally (< 350KB), send base64 directly to skip Cloudinary download
+            if (localBlob && localBlob.size < 350 * 1024) {
+                try {
+                    localBase64 = await blobToBase64(localBlob);
+                    localMime = localBlob.type ? localBlob.type.split(';')[0] : 'audio/webm';
+                    if (localMime.includes('video')) localMime = 'audio/webm';
+                } catch {}
+            }
+
+            // 1. Primary path: Server-side cloud-to-cloud transcription on our Edge Gateway (downloads tiny 16kHz mono MP3 in EU/US + Gemini 2.5 Flash thinkingBudget: 0)
+            const serverResult = await requestServerSideTranscription(fastAudioUrl, url, msgType, localBase64, localMime);
             if (serverResult) {
                 transcription = serverResult;
             } else {
-                // 2. Fallback path: Client-side download of tiny 48kbps MP3 stream + Gemini Edge proxy
-                let response = await fetch(fastAudioUrl);
-                if (!response.ok && fastAudioUrl !== url) {
-                    response = await fetch(rewriteMediaUrl(url, undefined, false));
+                // 2. Fallback path: Client-side download of tiny 32kbps 16kHz MP3 stream (or local blob) + Gemini Edge proxy
+                let blob = localBlob;
+                if (!blob) {
+                    let response = await fetch(fastAudioUrl);
+                    if (!response.ok && fastAudioUrl !== url) {
+                        response = await fetch(rewriteMediaUrl(url, undefined, false));
+                    }
+                    if (!response.ok) {
+                        throw new Error(`Fetch error: ${response.status}`);
+                    }
+                    blob = await response.blob();
                 }
-                if (!response.ok) {
-                    throw new Error(`Fetch error: ${response.status}`);
-                }
 
-                const blob = await response.blob();
+                const base64data = localBase64 || (await blobToBase64(blob));
 
-                const base64data = await new Promise<string>((resolve, reject) => {
-                    const reader = new FileReader();
-                    reader.onloadend = () => {
-                        const base64 = (reader.result as string).split(',')[1];
-                        resolve(base64);
-                    };
-                    reader.onerror = reject;
-                    reader.readAsDataURL(blob);
-                });
-
-                let mimeType = blob.type || (fastAudioUrl.endsWith('.mp3') ? 'audio/mp3' : url.includes('.mp4') ? 'video/mp4' : 'audio/webm');
+                let mimeType = localMime || blob.type || (fastAudioUrl.endsWith('.mp3') ? 'audio/mp3' : url.includes('.mp4') ? 'video/mp4' : 'audio/webm');
                 if (mimeType.includes(';')) {
                     mimeType = mimeType.split(';')[0];
                 }
@@ -105,14 +178,18 @@ export async function transcribeMedia(url: string, messageId: string, msgType?: 
                                     { inlineData: { data: base64data, mimeType } }
                                 ]
                             }
-                        ]
+                        ],
+                        config: {
+                            temperature: 0.1,
+                            thinkingConfig: { thinkingBudget: 0 }
+                        }
                     });
                 });
 
                 transcription = result.text?.trim() || 'Нет речи';
             }
 
-            transcriptionCache.set(messageId, transcription);
+            saveTranscriptionToCache(messageId, url, transcription);
         }
 
         // Update UI immediately

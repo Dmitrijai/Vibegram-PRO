@@ -35,12 +35,12 @@ function getSupportedMediaRecorderOptions(type: 'voice' | 'video'): MediaRecorde
             if (typeof MediaRecorder.isTypeSupported === 'function' && MediaRecorder.isTypeSupported(mime)) {
                 return {
                     mimeType: mime,
-                    videoBitsPerSecond: 650000,
-                    audioBitsPerSecond: 48000
+                    videoBitsPerSecond: 380000,
+                    audioBitsPerSecond: 32000
                 };
             }
         }
-        return { videoBitsPerSecond: 650000, audioBitsPerSecond: 48000 };
+        return { videoBitsPerSecond: 380000, audioBitsPerSecond: 32000 };
     } else {
         const audioCandidates = [
             'audio/webm;codecs=opus',
@@ -52,11 +52,11 @@ function getSupportedMediaRecorderOptions(type: 'voice' | 'video'): MediaRecorde
             if (typeof MediaRecorder.isTypeSupported === 'function' && MediaRecorder.isTypeSupported(mime)) {
                 return {
                     mimeType: mime,
-                    audioBitsPerSecond: 48000
+                    audioBitsPerSecond: 32000
                 };
             }
         }
-        return { audioBitsPerSecond: 48000 };
+        return { audioBitsPerSecond: 32000 };
     }
 }
 
@@ -134,7 +134,7 @@ export async function switchCamera() {
     
     try {
         const newVideoStream = await navigator.mediaDevices.getUserMedia({ 
-            video: { facingMode: newFacingMode, width: 400, height: 400 } 
+            video: { facingMode: newFacingMode, width: { ideal: 360 }, height: { ideal: 360 } } 
         });
         
         const newVideoTrack = newVideoStream.getVideoTracks()[0];
@@ -194,10 +194,17 @@ export async function toggleRecording(type: 'voice' | 'video') {
         try {
             let stream: MediaStream;
             if (type === 'video') {
-                const audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-                const videoStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user", width: 400, height: 400 } });
+                try {
+                    stream = await navigator.mediaDevices.getUserMedia({
+                        audio: { echoCancellation: true, noiseSuppression: true },
+                        video: { facingMode: "user", width: { ideal: 360 }, height: { ideal: 360 } }
+                    });
+                } catch {
+                    const audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                    const videoStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user", width: 320, height: 320 } });
+                    stream = new MediaStream([...audioStream.getTracks(), ...videoStream.getTracks()]);
+                }
                 
-                stream = new MediaStream([...audioStream.getTracks(), ...videoStream.getTracks()]);
                 state.localStream = stream;
                 (state as any).currentFacingMode = "user";
                 
@@ -210,17 +217,19 @@ export async function toggleRecording(type: 'voice' | 'video') {
                 document.getElementById('video-preview-container')?.classList.remove('hidden');
                 document.getElementById('switch-camera-btn')?.classList.remove('hidden');
                 
+                const canvasSize = 320;
+                const halfSize = 160;
                 const canvas = document.createElement('canvas');
-                canvas.width = 400;
-                canvas.height = 400;
+                canvas.width = canvasSize;
+                canvas.height = canvasSize;
                 const ctx = canvas.getContext('2d')!;
                 
                 const draw = () => {
                     if (videoEl.readyState >= 2) {
-                        ctx.clearRect(0, 0, 400, 400);
+                        ctx.clearRect(0, 0, canvasSize, canvasSize);
                         ctx.save();
                         ctx.beginPath();
-                        ctx.arc(200, 200, 200, 0, Math.PI * 2);
+                        ctx.arc(halfSize, halfSize, halfSize, 0, Math.PI * 2);
                         ctx.clip();
                         
                         const videoAspect = videoEl.videoWidth / videoEl.videoHeight;
@@ -234,11 +243,11 @@ export async function toggleRecording(type: 'voice' | 'video') {
                         }
                         
                         if ((state as any).currentFacingMode === 'user') {
-                            ctx.translate(400, 0);
+                            ctx.translate(canvasSize, 0);
                             ctx.scale(-1, 1);
                         }
                         
-                        ctx.drawImage(videoEl, sx, sy, sWidth, sHeight, 0, 0, 400, 400);
+                        ctx.drawImage(videoEl, sx, sy, sWidth, sHeight, 0, 0, canvasSize, canvasSize);
                         ctx.restore();
                     }
                     (state as any).animationFrameId = requestAnimationFrame(draw);
@@ -246,16 +255,19 @@ export async function toggleRecording(type: 'voice' | 'video') {
                 draw();
                 
                 const canvasStream = canvas.captureStream(24);
-                const recordStream = new MediaStream([...canvasStream.getVideoTracks(), ...audioStream.getAudioTracks()]);
+                const recordStream = new MediaStream([...canvasStream.getVideoTracks(), ...stream.getAudioTracks()]);
                 (state as any).recordStream = recordStream;
                 state.mediaRecorder = new MediaRecorder(recordStream, getSupportedMediaRecorderOptions('video'));
             } else {
-                stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                stream = await navigator.mediaDevices.getUserMedia({
+                    audio: { echoCancellation: true, noiseSuppression: true }
+                }).catch(() => navigator.mediaDevices.getUserMedia({ audio: true }));
                 state.localStream = stream;
                 document.getElementById('switch-camera-btn')?.classList.add('hidden');
                 state.mediaRecorder = new MediaRecorder(stream, getSupportedMediaRecorderOptions('voice'));
             }
             
+            const recordingStartMs = Date.now();
             state.mediaChunks = [];
             state.mediaRecorder.ondataavailable = e => { if (e.data.size > 0) state.mediaChunks.push(e.data); };
             state.mediaRecorder.onstop = async () => {
@@ -264,57 +276,112 @@ export async function toggleRecording(type: 'voice' | 'video') {
                     return;
                 }
                 
+                const targetChatId = state.activeChatId;
+                if (!targetChatId) return;
+
+                const recordedDurationSec = Math.max(1, Math.round((Date.now() - recordingStartMs) / 1000));
+                const mins = Math.floor(recordedDurationSec / 60);
+                const secs = (recordedDurationSec % 60).toString().padStart(2, '0');
+                const durationLabel = `${mins}:${secs}`;
+
                 const mimeType = state.mediaRecorder?.mimeType || (type === 'voice' ? 'audio/webm' : 'video/webm');
                 const blob = new Blob(state.mediaChunks, { type: mimeType });
+                const localPreviewUrl = URL.createObjectURL(blob);
                 
-                // Optimistic UI for voice/video
+                // Instant Optimistic UI with local preview for voice/video circle
                 const tempId = 'temp_' + Date.now();
                 const list = document.getElementById('messages-list')!;
                 const tempDiv = document.createElement('div');
                 tempDiv.id = tempId;
-                tempDiv.className = `flex flex-col max-w-[85%] md:max-w-[65%] min-w-0 self-end items-end animate-fadeIn opacity-70`;
-                tempDiv.innerHTML = `<div class="bg-[#e3f2fd] text-gray-900 rounded-[18px] rounded-br-[4px] p-2 px-3 shadow-sm border border-gray-200/60 max-w-full"><div class="text-xs text-blue-500 mb-1">Загрузка ${type === 'voice' ? 'голосового' : 'видео'}...</div><div class="text-[11px] font-medium text-blue-500 mt-1 flex justify-end items-center float-right ml-4 pt-1">Отправка...</div><div class="clear-both"></div></div>`;
+                tempDiv.className = `flex flex-col max-w-[85%] md:max-w-[65%] min-w-0 self-end items-end animate-fadeIn`;
+                if (type === 'video') {
+                    tempDiv.innerHTML = `
+                        <div class="relative w-[200px] h-[200px] sm:w-[240px] sm:h-[240px] rounded-full overflow-hidden shadow-md border-2 border-blue-400/50">
+                            <video src="${localPreviewUrl}" autoplay muted loop playsinline class="w-full h-full object-cover"></video>
+                            <div class="absolute inset-0 bg-black/25 flex flex-col items-center justify-center text-white">
+                                <svg class="w-8 h-8 animate-spin mb-1" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="3"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
+                                <span class="text-[11px] font-semibold drop-shadow">${durationLabel}</span>
+                            </div>
+                        </div>`;
+                } else {
+                    tempDiv.innerHTML = `
+                        <div class="bg-[#e3f2fd] dark:bg-blue-900/40 text-gray-900 dark:text-gray-100 rounded-[18px] rounded-br-[4px] p-2.5 px-3.5 shadow-sm border border-blue-200/60 dark:border-blue-800/50 flex items-center gap-3 min-w-[200px]">
+                            <div class="w-9 h-9 rounded-full bg-blue-500 text-white flex items-center justify-center shrink-0">
+                                <svg class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="3"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
+                            </div>
+                            <div class="flex-1 min-w-0">
+                                <div class="text-xs font-semibold text-blue-600 dark:text-blue-300">Отправка голосового...</div>
+                                <div class="text-[11px] text-gray-500 dark:text-gray-400">${durationLabel}</div>
+                            </div>
+                        </div>`;
+                }
                 list.appendChild(tempDiv);
                 scrollToBottom(true);
 
                 const ext = mimeType.includes('mp4') ? 'mp4' : mimeType.includes('ogg') ? 'ogg' : 'webm';
                 const file = new File([blob], `${Date.now()}_${type}.${ext}`, { type: mimeType });
-                
+                const replySnap = state.replyingTo ? { ...state.replyingTo } : null;
+                const forwardSnap = state.forwardingMsg ? { ...state.forwardingMsg } : null;
+                cancelReply();
+
                 try {
-                    const { uploadToCloudinary } = await import('./utils');
+                    const { uploadToCloudinary, cacheLocalMediaBlob } = await import('./utils');
                     const fileUrl = await uploadToCloudinary(file);
+                    cacheLocalMediaBlob(fileUrl, blob);
                     
-                    let mediaArr = [{ url: fileUrl, type: mimeType, size: blob.size }];
+                    const mediaArr: any[] = [{ url: fileUrl, type: mimeType, size: blob.size, duration: recordedDurationSec }];
                     
-                    if (state.replyingTo) {
+                    if (replySnap) {
                         mediaArr.push({
                             type: 'reply',
-                            original_id: state.replyingTo.id,
-                            original_content: state.replyingTo.content,
-                            original_sender: state.replyingTo.senderName
-                        } as any);
+                            original_id: replySnap.id,
+                            original_content: replySnap.content,
+                            original_sender: replySnap.senderName
+                        });
                     }
                     
-                    if (state.forwardingMsg) {
+                    if (forwardSnap) {
                         mediaArr.push({
                             type: 'forward',
-                            original_id: state.forwardingMsg.id,
-                            original_content: state.forwardingMsg.content,
-                            original_sender: state.forwardingMsg.senderName
-                        } as any);
+                            original_id: forwardSnap.id,
+                            original_content: forwardSnap.content,
+                            original_sender: forwardSnap.senderName
+                        });
                     }
 
-                    const { error: insertError } = await supabase.from('messages').insert({
-                        chat_id: state.activeChatId, sender_id: state.currentUser.id, content: '',
+                    const { data: insertedData, error: insertError } = await supabase.from('messages').insert({
+                        chat_id: targetChatId,
+                        sender_id: state.currentUser.id,
+                        content: '',
                         media: mediaArr,
                         message_type: type === 'voice' ? 'voice' : 'video_circle',
-                        parent_id: state.replyingTo ? state.replyingTo.id : null
-                    });
+                        parent_id: replySnap ? replySnap.id : null
+                    }).select('*, profiles(*)').single();
+
+                    URL.revokeObjectURL(localPreviewUrl);
+                    document.getElementById(tempId)?.remove();
+
                     if (insertError) {
-                        document.getElementById(tempId)?.remove();
                         customAlert('Ошибка отправки сообщения');
                     } else {
-                        // Push Notification Logic
+                        // Immediately render inserted message and broadcast to chat participants
+                        const coreMod = await import('./messages-core');
+                        const chatMod = await import('./chat');
+                        const supaMod = await import('./supabase');
+                        if (insertedData && state.activeChatId === targetChatId) {
+                            if (!coreMod.currentMessages.some((m: any) => m.id === insertedData.id)) {
+                                const nextMsgs = [...coreMod.currentMessages, insertedData];
+                                const { saveCachedMessages } = await import('./cache');
+                                saveCachedMessages(targetChatId, nextMsgs);
+                                coreMod.renderMessages(nextMsgs, false);
+                            } else {
+                                coreMod.loadMessages(targetChatId);
+                            }
+                        }
+                        chatMod.loadChats();
+                        supaMod.broadcastUpdate(targetChatId, 'message');
+
+                        // Push Notification Logic in background
                         let senderName = state.currentProfile?.display_name || state.currentProfile?.username || state.currentUser?.user_metadata?.full_name;
                         if (!senderName) {
                             const { data: p } = await supabase.from('profiles').select('display_name, username').eq('id', state.currentUser.id).single();
@@ -330,12 +397,12 @@ export async function toggleRecording(type: 'voice' | 'video') {
                         
                         const pushTitle = isGroup ? groupName : senderName;
                         const pushBody = isGroup && !isChannel ? `${senderName}: ${rawBodyContent}` : rawBodyContent;
-                        const pushData = { chatId: String(state.activeChatId) };
+                        const pushData = { chatId: String(targetChatId) };
                         
                         const pushPayloadBase = { 
                             title: pushTitle, 
                             body: pushBody,
-                            chat_id: String(state.activeChatId),
+                            chat_id: String(targetChatId),
                             text: rawBodyContent,
                             sender_name: senderName,
                             data: pushData
@@ -351,7 +418,7 @@ export async function toggleRecording(type: 'voice' | 'video') {
                                 }
                             });
                         } else if (state.activeChatIsGroup) {
-                            supabase.from('chat_members').select('user_id').eq('chat_id', state.activeChatId).then(({ data: members }) => {
+                            supabase.from('chat_members').select('user_id').eq('chat_id', targetChatId).then(({ data: members }) => {
                                 if (members) {
                                     const memberIds = members.map((m: any) => m.user_id).filter((id: string) => id !== state.currentUser?.id);
                                     if (memberIds.length > 0) {
@@ -369,13 +436,10 @@ export async function toggleRecording(type: 'voice' | 'video') {
                                 }
                             });
                         }
-
-                        document.getElementById(tempId)?.remove();
-                        cancelReply();
-                        import('./messages-core').then(m => m.loadMessages(state.activeChatId!));
                     }
                 } catch(err) {
                     console.error(err);
+                    URL.revokeObjectURL(localPreviewUrl);
                     document.getElementById(tempId)?.remove();
                     customAlert('Ошибка загрузки медиа');
                 }
@@ -386,7 +450,7 @@ export async function toggleRecording(type: 'voice' | 'video') {
                     state.localStream.getTracks().forEach(track => track.stop());
                 }
             };
-            state.mediaRecorder.start();
+            state.mediaRecorder.start(250);
             if(type === 'voice') state.isRecordingVoice = true; else state.isRecordingVideo = true;
             
             broadcastTyping(type === 'voice' ? 'recording_voice' : 'recording_video');

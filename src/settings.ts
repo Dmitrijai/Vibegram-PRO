@@ -1,5 +1,5 @@
 import { supabase, state } from './supabase';
-import { closeModal, customToast, escapeHtml } from './utils';
+import { closeModal, customToast, customAlert, customConfirm, escapeHtml } from './utils';
 import { loadChats } from './chat';
 import { logout } from './auth';
 import {
@@ -534,7 +534,7 @@ export async function uploadAvatar(e: any) {
         }
     } catch(err) {
         console.error(err);
-        alert('Ошибка загрузки аватара');
+        customAlert('Ошибка загрузки аватара');
     }
 }
 
@@ -553,7 +553,7 @@ export async function saveSettings() {
     const paidPriceInput = document.getElementById('settings-paid-message-price') as HTMLInputElement;
     const paid_message_price = paidPriceInput ? parseInt(paidPriceInput.value) || 0 : undefined;
     
-    if(!newName || newName.length < 3 || newName.length > 35) return alert('Имя должно быть от 3 до 35 символов');
+    if(!newName || newName.length < 3 || newName.length > 35) return customAlert('Имя должно быть от 3 до 35 символов');
     
     const oldSettings = state.currentProfile?.settings || {};
     const newSettings = { ...oldSettings, notifications: notif, privacy, theme, textSize, chatBg, show_header_shorts, show_header_miniapps };
@@ -967,8 +967,8 @@ let isSendVibProcessing = false;
             return;
         }
         
-        // Второе подтверждение (хотя UI предупреждает, можно еще раз)
-        if (!confirm(`Вы действительно хотите отправить ${amount} VIB пользователю @${username}? Это действие необратимо!`)) {
+        const confirmedVib = await customConfirm(`Вы действительно хотите отправить ${amount} VIB пользователю @${username}? Это действие необратимо!`);
+        if (!confirmedVib) {
             isSendVibProcessing = false;
             return;
         }

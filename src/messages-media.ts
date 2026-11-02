@@ -402,7 +402,13 @@ export function handleVideoCircleClick(event: MouseEvent, container: HTMLElement
         let angle = Math.atan2(dy, dx) + Math.PI / 2;
         if (angle < 0) angle += 2 * Math.PI;
         const progress = angle / (2 * Math.PI);
-        video.currentTime = progress * video.duration;
+        const attrDur = parseFloat(video.getAttribute('data-duration') || '0');
+        const effDuration = (Number.isFinite(video.duration) && video.duration > 0)
+            ? video.duration
+            : ((video as any)._knownDuration || (attrDur > 0 ? attrDur : 0));
+        if (effDuration > 0 && Number.isFinite(progress)) {
+            video.currentTime = progress * effDuration;
+        }
         
         // Показываем статус при перемотке
         container.classList.add('show-status');
@@ -443,16 +449,28 @@ export function handleVideoCircleClick(event: MouseEvent, container: HTMLElement
     (container as any).statusTimeout = setTimeout(() => container.classList.remove('show-status'), 1000);
 }
 export function updateVideoProgress(video: HTMLVideoElement) {
-    const container = video.closest('.video-circle-container')!;
+    const container = video.closest('.video-circle-container');
+    if (!container) return;
     const ring = container.querySelector('.video-progress-ring');
     if (isDraggingMedia && currentDragContainer === ring) return;
     const circle = container.querySelector('.video-progress-ring circle') as SVGCircleElement;
     if (!circle) return;
     
-    const percent = video.currentTime / video.duration;
+    if (Number.isFinite(video.duration) && video.duration > 0) {
+        (video as any)._knownDuration = video.duration;
+    } else if (Number.isFinite(video.currentTime) && video.currentTime > ((video as any)._knownDuration || 0)) {
+        (video as any)._knownDuration = Math.max(video.currentTime + 1, 5);
+    }
+    const attrDur = parseFloat(video.getAttribute('data-duration') || '0');
+    const effDuration = (Number.isFinite(video.duration) && video.duration > 0)
+        ? video.duration
+        : ((video as any)._knownDuration || (attrDur > 0 ? attrDur : 10));
+    const percent = Math.max(0, Math.min(1, (video.currentTime || 0) / effDuration));
     const circumference = 301.6; // 2 * PI * 48
     const offset = circumference - (percent * circumference);
-    circle.style.strokeDashoffset = offset.toString();
+    if (Number.isFinite(offset)) {
+        circle.style.strokeDashoffset = offset.toString();
+    }
 }
 export function toggleInlineVideo(video: HTMLVideoElement) {
     if (isSelectionMode) {
@@ -684,13 +702,22 @@ function stopMediaDrag() {
 }
 
 function seekMedia(container: HTMLElement, percent: number) {
+    if (!Number.isFinite(percent)) return;
+    const clampedPercent = Math.max(0, Math.min(1, percent));
     const audioContainer = container.closest('.audio-player-container');
     if (audioContainer) {
         const btn = audioContainer.querySelector('button[onclick^="toggleAudio"]') as HTMLElement;
         const url = btn?.getAttribute('onclick')?.match(/'([^']+)'/)?.[1];
         if (url) {
             const player = state.audioPlayers.get(url);
-            if (player && player.duration) player.currentTime = percent * player.duration;
+            if (player) {
+                const dur = Number.isFinite(player.duration) && player.duration > 0
+                    ? player.duration
+                    : (player as any)._knownDuration;
+                if (Number.isFinite(dur) && dur > 0) {
+                    player.currentTime = clampedPercent * dur;
+                }
+            }
         }
         return;
     }
@@ -698,6 +725,8 @@ function seekMedia(container: HTMLElement, percent: number) {
     const videoContainer = container.closest('.chat-media-item-container') || container.closest('.video-circle-container');
     if (videoContainer) {
         const video = videoContainer.querySelector('video');
-        if (video && video.duration) video.currentTime = percent * video.duration;
+        if (video && Number.isFinite(video.duration) && video.duration > 0) {
+            video.currentTime = clampedPercent * video.duration;
+        }
     }
 }

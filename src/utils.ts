@@ -663,7 +663,129 @@ export async function softDeleteCloudinaryFile(fileUrl: string): Promise<boolean
     }
 }
 
+const localMediaBlobCache = new Map<string, Blob>();
+
+function normalizeMediaCacheKey(url: string): string {
+    if (!url) return '';
+    return url
+        .split('?')[0]
+        .replace(/^https?:\/\/[^/]+/, '')
+        .replace(/^\/cloudinary/, '')
+        .replace(/\/upload\/(?:f_[^/]+|q_[^/]+|w_[^/]+|h_[^/]+|c_[^/]+|g_[^/]+|br_[^/]+|ac_[^/]+|ar_[^/]+)+\//, '/upload/');
+}
+
+export function cacheLocalMediaBlob(url: string, blob: Blob) {
+    if (!url || !blob) return;
+    localMediaBlobCache.set(url, blob);
+    const norm = normalizeMediaCacheKey(url);
+    if (norm) localMediaBlobCache.set(norm, blob);
+}
+
+export function getLocalMediaBlob(url: string): Blob | undefined {
+    if (!url) return undefined;
+    if (localMediaBlobCache.has(url)) return localMediaBlobCache.get(url);
+    const norm = normalizeMediaCacheKey(url);
+    return norm ? localMediaBlobCache.get(norm) : undefined;
+}
+
+export async function compressImageFile(file: File | Blob, isAvatar = false): Promise<File | Blob> {
+    if (!file || !file.type || !file.type.startsWith('image/')) return file;
+    if ((file as any).asFile) return file;
+    if (file.type === 'image/gif' || file.type === 'image/svg+xml') return file;
+    if (!isAvatar && file.size < 80 * 1024) return file;
+
+    return new Promise((resolve) => {
+        const objectUrl = URL.createObjectURL(file);
+        const img = new Image();
+        const cleanup = () => URL.revokeObjectURL(objectUrl);
+
+        img.onload = () => {
+            try {
+                const srcW = img.naturalWidth || img.width;
+                const srcH = img.naturalHeight || img.height;
+                if (!srcW || !srcH) {
+                    cleanup();
+                    resolve(file);
+                    return;
+                }
+
+                const canvas = document.createElement('canvas');
+                const ctx = canvas.getContext('2d');
+                if (!ctx) {
+                    cleanup();
+                    resolve(file);
+                    return;
+                }
+
+                if (isAvatar) {
+                    const targetSize = Math.min(256, Math.min(srcW, srcH));
+                    canvas.width = targetSize;
+                    canvas.height = targetSize;
+                    const minSide = Math.min(srcW, srcH);
+                    const sx = Math.floor((srcW - minSide) / 2);
+                    const sy = Math.floor((srcH - minSide) / 2);
+                    ctx.imageSmoothingEnabled = true;
+                    ctx.imageSmoothingQuality = 'high';
+                    ctx.drawImage(img, sx, sy, minSide, minSide, 0, 0, targetSize, targetSize);
+                } else {
+                    const maxDim = 1600;
+                    let targetW = srcW;
+                    let targetH = img.naturalHeight || img.height;
+                    if (srcW > maxDim || targetH > maxDim) {
+                        if (srcW >= targetH) {
+                            targetW = maxDim;
+                            targetH = Math.round((srcH * maxDim) / srcW);
+                        } else {
+                            targetH = maxDim;
+                            targetW = Math.round((srcW * maxDim) / srcH);
+                        }
+                    }
+                    canvas.width = targetW;
+                    canvas.height = targetH;
+                    ctx.imageSmoothingEnabled = true;
+                    ctx.imageSmoothingQuality = 'high';
+                    ctx.drawImage(img, 0, 0, targetW, targetH);
+                }
+
+                cleanup();
+                const outType = 'image/webp';
+                const quality = isAvatar ? 0.86 : 0.82;
+
+                canvas.toBlob(
+                    (blob) => {
+                        if (!blob || (!isAvatar && blob.size >= file.size)) {
+                            resolve(file);
+                            return;
+                        }
+                        const origName = (file as File).name || 'image.webp';
+                        const baseName = origName.replace(/\.[^.]+$/, '');
+                        const ext = blob.type === 'image/webp' ? 'webp' : 'jpg';
+                        const compressedFile = new File([blob], `${baseName}.${ext}`, {
+                            type: blob.type || outType,
+                            lastModified: Date.now()
+                        });
+                        resolve(compressedFile);
+                    },
+                    outType,
+                    quality
+                );
+            } catch {
+                cleanup();
+                resolve(file);
+            }
+        };
+
+        img.onerror = () => {
+            cleanup();
+            resolve(file);
+        };
+
+        img.src = objectUrl;
+    });
+}
+
 export async function uploadToCloudinary(file: File | Blob, isAvatar = false, abortSignal?: AbortSignal, targetBucket?: string): Promise<string> {
+    const optimizedFile = await compressImageFile(file, isAvatar);
     const { cloudName, apiKey, apiSecret } = getCloudinaryConfig();
     
     if (cloudName && apiKey && apiSecret) {
@@ -672,31 +794,64 @@ export async function uploadToCloudinary(file: File | Blob, isAvatar = false, ab
             const paramsToSign = { timestamp };
             const signature = await generateCloudinarySignature(paramsToSign, apiSecret);
 
-            const formData = new FormData();
-            formData.append('file', file);
-            formData.append('api_key', apiKey);
-            formData.append('timestamp', timestamp);
-            formData.append('signature', signature);
+            const buildFormData = () => {
+                const fd = new FormData();
+                fd.append('file', optimizedFile);
+                fd.append('api_key', apiKey);
+                fd.append('timestamp', timestamp);
+                fd.append('signature', signature);
+                return fd;
+            };
             
-            const { getActiveMediaGatewayBaseUrl, rewriteMediaUrl } = await import('./network');
-            const res = await fetch(`${getActiveMediaGatewayBaseUrl()}/cloudinary-api/v1_1/${cloudName}/auto/upload`, {
-                method: 'POST',
-                body: formData,
-                signal: abortSignal
-            });
-            
-            if (!res.ok) throw new Error(`Cloudinary upload error: ${await res.text()}`);
-            
-            const data = await res.json();
+            const { getActiveMediaGatewayBaseUrl, MEDIA_GATEWAY_URLS, rewriteMediaUrl } = await import('./network');
+            const activeGw = getActiveMediaGatewayBaseUrl();
+            const candidateGateways = Array.from(new Set([activeGw, ...MEDIA_GATEWAY_URLS])).filter(Boolean);
+
+            const uploadViaGateway = async (gw: string) => {
+                const res = await fetch(`${gw.replace(/\/$/, '')}/cloudinary-api/v1_1/${cloudName}/auto/upload`, {
+                    method: 'POST',
+                    body: buildFormData(),
+                    signal: abortSignal
+                });
+                if (!res.ok) throw new Error(`Cloudinary upload error (${res.status}): ${await res.text()}`);
+                return await res.json();
+            };
+
+            let data: any = null;
+            // For small files (< 2.5MB: photos, avatars, voice notes, video circles), race the top 2 gateways in parallel for fastest upload!
+            if (optimizedFile.size < 2.5 * 1024 * 1024 && candidateGateways.length >= 2) {
+                try {
+                    data = await Promise.any(candidateGateways.slice(0, 2).map(gw => uploadViaGateway(gw)));
+                } catch {
+                    // Fallback to remaining gateways below
+                }
+            }
+
+            if (!data) {
+                let lastGwErr: any = null;
+                for (const gw of candidateGateways) {
+                    try {
+                        data = await uploadViaGateway(gw);
+                        break;
+                    } catch (e: any) {
+                        if (e?.name === 'AbortError') throw e;
+                        lastGwErr = e;
+                    }
+                }
+                if (!data) throw lastGwErr || new Error('All Cloudinary upload gateways failed');
+            }
+
             let url = data.secure_url;
-            
             if (data.resource_type === 'image' || data.resource_type === 'video') {
                  if (isAvatar && data.resource_type === 'image') {
                      url = url.replace('/upload/', `/upload/f_auto,q_auto,c_fill,g_face,w_256,h_256/`);
                  }
             }
             
-            return rewriteMediaUrl(url);
+            const rewritten = rewriteMediaUrl(url);
+            cacheLocalMediaBlob(url, optimizedFile);
+            cacheLocalMediaBlob(rewritten, optimizedFile);
+            return rewritten;
         } catch (err: any) {
             if (err.name === 'AbortError') throw err;
             console.warn("Cloudinary upload warning, trying fallback storage:", err);
@@ -710,16 +865,16 @@ export async function uploadToCloudinary(file: File | Blob, isAvatar = false, ab
              bucket = targetBucket;
         } else if (isAvatar) {
              bucket = 'vibegram_avatars';
-        } else if (file.type.startsWith('video/') || file.type.startsWith('audio/')) {
+        } else if (optimizedFile.type.startsWith('video/') || optimizedFile.type.startsWith('audio/')) {
              bucket = 'vibegram_voice_video';
         }
 
-        const ext = file instanceof File ? (file.name.split('.').pop() || '') : (file.type.split('/')[1] || 'bin');
+        const ext = optimizedFile instanceof File ? (optimizedFile.name.split('.').pop() || '') : (optimizedFile.type.split('/')[1] || 'bin');
         const userId = state?.currentUser?.id || 'public';
         const fileName = `${Date.now()}_${Math.random().toString(36).substring(2)}.${ext}`;
         const filePath = `${userId}/${fileName}`;
 
-        const { error } = await supabase.storage.from(bucket).upload(filePath, file, {
+        const { error } = await supabase.storage.from(bucket).upload(filePath, optimizedFile, {
             upsert: false
         });
 
@@ -729,7 +884,10 @@ export async function uploadToCloudinary(file: File | Blob, isAvatar = false, ab
 
         const { data: publicUrlData } = supabase.storage.from(bucket).getPublicUrl(filePath);
         const { rewriteMediaUrl } = await import('./network');
-        return rewriteMediaUrl(publicUrlData.publicUrl);
+        const rewritten = rewriteMediaUrl(publicUrlData.publicUrl);
+        cacheLocalMediaBlob(publicUrlData.publicUrl, optimizedFile);
+        cacheLocalMediaBlob(rewritten, optimizedFile);
+        return rewritten;
     } catch (err: any) {
         if (err.name === 'AbortError') throw err;
         console.error("Upload failed:", err);

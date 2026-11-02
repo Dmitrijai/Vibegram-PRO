@@ -43,78 +43,114 @@ export default async function handler(request) {
     });
   }
 
-  // Server-side Audio/Video Transcription endpoint (downloads audio in EU/US and calls Gemini in EU/US)
+  // Server-side Audio/Video Transcription endpoint (downloads compact 16kHz mono MP3 in EU/US and calls Gemini 2.5 Flash with thinkingBudget: 0)
   if (url.pathname === '/api/transcribe' && request.method === 'POST') {
     try {
       const body = await request.json();
-      const { audioUrl, rawUrl, apiKeys, msgType } = body;
+      const { audioUrl, rawUrl, audioBase64, mimeType: clientMime, apiKeys, msgType } = body;
       const keys = Array.isArray(apiKeys) ? apiKeys.filter(Boolean) : [];
-      if (!audioUrl || keys.length === 0) {
-        return new Response(JSON.stringify({ error: 'Missing audioUrl or apiKeys' }), {
+      if ((!audioUrl && !audioBase64) || keys.length === 0) {
+        return new Response(JSON.stringify({ error: 'Missing audio source or apiKeys' }), {
           status: 400,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         });
       }
 
-      const toDirectCloudinary = (u) => {
-        if (!u) return '';
-        const idx = u.indexOf('/cloudinary/');
-        if (idx !== -1) {
-          return 'https://res.cloudinary.com/' + u.substring(idx + '/cloudinary/'.length);
+      let base64Data = audioBase64 || '';
+      let mimeType = clientMime || 'audio/mp3';
+
+      if (!base64Data) {
+        const toDirectCloudinary = (u) => {
+          if (!u) return '';
+          const idx = u.indexOf('/cloudinary/');
+          if (idx !== -1) {
+            return 'https://res.cloudinary.com/' + u.substring(idx + '/cloudinary/'.length);
+          }
+          return u;
+        };
+
+        const toCompactMp3Cloudinary = (u) => {
+          const direct = toDirectCloudinary(u);
+          const m = direct.match(/^(https?:\/\/res\.cloudinary\.com\/[^/]+\/video\/upload\/)(?:[^/]+\/)?(v\d+\/.+?)(\.[a-zA-Z0-9]+)?(\?.*)?$/);
+          if (m) {
+            return `${m[1]}f_mp3,br_32k,ac_1,ar_16000/${m[2]}.mp3`;
+          }
+          return direct;
+        };
+
+        const primaryFetchUrl = toCompactMp3Cloudinary(rawUrl || audioUrl);
+        const secondaryFetchUrl = toDirectCloudinary(audioUrl);
+        const fallbackFetchUrl = toDirectCloudinary(rawUrl || audioUrl);
+
+        let mediaRes = await fetch(primaryFetchUrl);
+        if (!mediaRes.ok && secondaryFetchUrl && secondaryFetchUrl !== primaryFetchUrl) {
+          mediaRes = await fetch(secondaryFetchUrl);
         }
-        return u;
+        if (!mediaRes.ok && fallbackFetchUrl && fallbackFetchUrl !== secondaryFetchUrl) {
+          mediaRes = await fetch(fallbackFetchUrl);
+        }
+        if (!mediaRes.ok) {
+          return new Response(JSON.stringify({ error: 'Audio fetch failed: ' + mediaRes.status }), {
+            status: 502,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+        }
+
+        const arrayBuf = await mediaRes.arrayBuffer();
+        base64Data = arrayBufferToBase64(arrayBuf);
+        const ct = mediaRes.headers.get('content-type') || '';
+        if (ct.includes('mpeg') || ct.includes('mp3') || (mediaRes.url && mediaRes.url.endsWith('.mp3'))) {
+          mimeType = 'audio/mp3';
+        } else if (ct.includes('ogg')) {
+          mimeType = 'audio/ogg';
+        } else if (ct.includes('mp4') || ct.includes('m4a')) {
+          mimeType = 'audio/mp4';
+        } else if (msgType === 'voice' || msgType === 'video_circle' || ct.includes('webm') || ct.includes('video')) {
+          mimeType = 'audio/webm';
+        } else {
+          mimeType = ct.split(';')[0] || 'audio/mp3';
+        }
+      }
+
+      const callGeminiWithKey = async (key) => {
+        const geminiUrl = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=' + encodeURIComponent(key);
+        const gRes = await fetch(geminiUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{
+              role: 'user',
+              parts: [
+                { text: 'Transcribe this audio accurately. Return ONLY the spoken text in its original language without quotes or extra commentary. If there is no speech, return an empty string.' },
+                { inlineData: { data: base64Data, mimeType } }
+              ]
+            }],
+            generationConfig: {
+              temperature: 0.1,
+              thinkingConfig: { thinkingBudget: 0 }
+            }
+          })
+        });
+        const gData = await gRes.json();
+        if (!gRes.ok) {
+          throw new Error(gData?.error?.message || ('HTTP ' + gRes.status));
+        }
+        return gData?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || 'Нет речи';
       };
 
-      const primaryFetchUrl = toDirectCloudinary(audioUrl);
-      const fallbackFetchUrl = toDirectCloudinary(rawUrl || audioUrl);
-
-      let mediaRes = await fetch(primaryFetchUrl);
-      if (!mediaRes.ok && fallbackFetchUrl && fallbackFetchUrl !== primaryFetchUrl) {
-        mediaRes = await fetch(fallbackFetchUrl);
-      }
-      if (!mediaRes.ok) {
-        return new Response(JSON.stringify({ error: 'Audio fetch failed: ' + mediaRes.status }), {
-          status: 502,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-        });
-      }
-
-      const arrayBuf = await mediaRes.arrayBuffer();
-      const base64Data = arrayBufferToBase64(arrayBuf);
-      let mimeType = mediaRes.headers.get('content-type') || (primaryFetchUrl.endsWith('.mp3') ? 'audio/mp3' : 'audio/webm');
-      if (mimeType.includes(';')) mimeType = mimeType.split(';')[0];
-      if (mimeType === 'audio/mpeg' || primaryFetchUrl.endsWith('.mp3')) mimeType = 'audio/mp3';
-      else if (msgType === 'voice' || msgType === 'video_circle' || mimeType.includes('video')) mimeType = 'audio/webm';
-
       let lastErr = 'All keys failed';
-      for (const key of keys) {
+      // Race keys in parallel batches of 2 so slow or rate-limited keys never stall transcription
+      for (let i = 0; i < keys.length; i += 2) {
+        const batch = keys.slice(i, i + 2);
         try {
-          const geminiUrl = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=' + encodeURIComponent(key);
-          const gRes = await fetch(geminiUrl, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              contents: [{
-                role: 'user',
-                parts: [
-                  { text: 'Transcribe this audio accurately. Return ONLY the spoken text in its original language without quotes or extra commentary. If there is no speech, return an empty string.' },
-                  { inlineData: { data: base64Data, mimeType } }
-                ]
-              }]
-            })
+          const text = await Promise.any(batch.map(k => callGeminiWithKey(k)));
+          return new Response(JSON.stringify({ text }), {
+            status: 200,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
           });
-          const gData = await gRes.json();
-          if (gRes.ok) {
-            const text = gData?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || 'Нет речи';
-            return new Response(JSON.stringify({ text }), {
-              status: 200,
-              headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-            });
-          } else {
-            lastErr = gData?.error?.message || ('HTTP ' + gRes.status);
-          }
-        } catch (e) {
-          lastErr = e.message || String(e);
+        } catch (aggErr) {
+          const errs = aggErr?.errors || [aggErr];
+          lastErr = errs.map(e => e?.message || String(e)).join('; ');
         }
       }
 
